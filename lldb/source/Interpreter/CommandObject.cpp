@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/CommandObject.h"
 
 #include <string>
@@ -754,9 +756,9 @@ LanguageTypeHelpTextCallback ()
     StreamString sstr;
     sstr << "One of the following languages:\n";
     
-    for (LanguageType l = eLanguageTypeUnknown; l < eNumLanguageTypes; l = (LanguageType)((int)l + 1))
+    for (unsigned int l = eLanguageTypeUnknown; l < eNumLanguageTypes; ++l)
     {
-        sstr << "  " << LanguageRuntime::GetNameForLanguageType(l) << "\n";
+        sstr << "  " << LanguageRuntime::GetNameForLanguageType(static_cast<LanguageType>(l)) << "\n";
     }
     
     sstr.Flush();

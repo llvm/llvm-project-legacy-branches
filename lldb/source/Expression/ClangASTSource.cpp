@@ -681,13 +681,70 @@ ClangASTSource::FindExternalVisibleDecls (NameSearchContext &context,
             if (!copied_type)
             {                
                 if (log)
-                    log->Printf("  CAS::FEVD[%u] - Couldn't export the type for a constant integer result",
+                    log->Printf("  CAS::FEVD[%u] - Couldn't export a type",
                                 current_id);
                     
                 break;
             }
                 
             context.AddTypeDecl(copied_type);
+        }
+        else
+        {
+            do
+            {
+                // Couldn't find any types elsewhere.  Try the Objective-C runtime if one exists.
+                
+                lldb::ProcessSP process(m_target->GetProcessSP());
+                
+                if (!process)
+                    break;
+                
+                ObjCLanguageRuntime *language_runtime(process->GetObjCLanguageRuntime());
+                
+                if (!language_runtime)
+                    break;
+                
+                TypeVendor *type_vendor = language_runtime->GetTypeVendor();
+                
+                if (!type_vendor)
+                    break;
+                
+                bool append = false;
+                uint32_t max_matches = 1;
+                std::vector <ClangASTType> types;
+                
+                if (!type_vendor->FindTypes(name,
+                                            append,
+                                            max_matches,
+                                            types))
+                    break;
+                
+                if (log)
+                {                    
+                    log->Printf("  CAS::FEVD[%u] Matching type found for \"%s\" in the runtime",
+                                current_id,
+                                name.GetCString());
+                }
+                
+                const clang::Type *runtime_clang_type = QualType::getFromOpaquePtr(types[0].GetOpaqueQualType()).getTypePtr();
+                
+                clang::QualType runtime_qual_type(runtime_clang_type, 0);
+                
+                void *copied_type = GuardedCopyType(m_ast_context, type_vendor->GetClangASTContext(), runtime_qual_type.getAsOpaquePtr());
+                
+                if (!copied_type)
+                {
+                    if (log)
+                        log->Printf("  CAS::FEVD[%u] - Couldn't export a type from the runtime",
+                                    current_id);
+                    
+                    break;
+                }
+                
+                context.AddTypeDecl(copied_type);
+            }
+            while(0);
         }
         
     } while(0);
@@ -750,7 +807,7 @@ DeclFromUser<D>::Import(ClangASTImporter *importer, ASTContext &dest_ctx)
     return DeclFromParser<D>(dyn_cast<D>(parser_generic_decl.decl));
 }
 
-static void
+static bool
 FindObjCMethodDeclsWithOrigin (unsigned int current_id,
                                NameSearchContext &context,
                                ObjCInterfaceDecl *original_interface_decl,
@@ -797,26 +854,26 @@ FindObjCMethodDeclsWithOrigin (unsigned int current_id,
     
     ObjCInterfaceDecl::lookup_result result = original_interface_decl->lookup(original_decl_name);
     
-    if (result.first == result.second)
-        return;
+    if (result.empty())
+        return false;
     
-    if (!*result.first)
-        return;
+    if (!result[0])
+        return false;
     
-    ObjCMethodDecl *result_method = dyn_cast<ObjCMethodDecl>(*result.first);
+    ObjCMethodDecl *result_method = dyn_cast<ObjCMethodDecl>(result[0]);
     
     if (!result_method)
-        return;
+        return false;
     
     Decl *copied_decl = ast_importer->CopyDecl(ast_context, &result_method->getASTContext(), result_method);
     
     if (!copied_decl)
-        return;
+        return false;
     
     ObjCMethodDecl *copied_method_decl = dyn_cast<ObjCMethodDecl>(copied_decl);
     
     if (!copied_method_decl)
-        return;
+        return false;
     
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
@@ -828,7 +885,7 @@ FindObjCMethodDeclsWithOrigin (unsigned int current_id,
     
     context.AddNamedDecl(copied_method_decl);
     
-    return;
+    return true;
 }
 
 void
@@ -859,12 +916,13 @@ ClangASTSource::FindObjCMethodDecls (NameSearchContext &context)
             
         ObjCInterfaceDecl *original_interface_decl = dyn_cast<ObjCInterfaceDecl>(original_decl);
         
-        FindObjCMethodDeclsWithOrigin(current_id,
-                                      context,
-                                      original_interface_decl,
-                                      m_ast_context,
-                                      m_ast_importer,
-                                      "at origin");
+        if (FindObjCMethodDeclsWithOrigin(current_id,
+                                          context,
+                                          original_interface_decl,
+                                          m_ast_context,
+                                          m_ast_importer,
+                                          "at origin"))
+            return; // found it, no need to look any further
     } while (0);
     
     StreamString ss;
@@ -1074,6 +1132,9 @@ ClangASTSource::FindObjCMethodDecls (NameSearchContext &context)
             break;
         
         ObjCLanguageRuntime *language_runtime(process->GetObjCLanguageRuntime());
+        
+        if (!language_runtime)
+            break;
         
         TypeVendor *type_vendor = language_runtime->GetTypeVendor();
         
@@ -1430,14 +1491,14 @@ ClangASTSource::layoutRecordType(const RecordDecl *record,
     {
         log->Printf("LRT[%u] returned:", current_id);
         log->Printf("LRT[%u]   Original = (RecordDecl*)%p", current_id, origin_record.decl);
-        log->Printf("LRT[%u]   Size = %lld", current_id, size);
-        log->Printf("LRT[%u]   Alignment = %lld", current_id, alignment);
+        log->Printf("LRT[%u]   Size = %" PRId64, current_id, size);
+        log->Printf("LRT[%u]   Alignment = %" PRId64, current_id, alignment);
         log->Printf("LRT[%u]   Fields:", current_id);
         for (RecordDecl::field_iterator fi = record->field_begin(), fe = record->field_end();
              fi != fe;
              ++fi)
         {
-            log->Printf("LRT[%u]     (FieldDecl*)%p, Name = '%s', Offset = %lld bits",
+            log->Printf("LRT[%u]     (FieldDecl*)%p, Name = '%s', Offset = %" PRId64 " bits",
                         current_id,
                         *fi,
                         fi->getNameAsString().c_str(),
@@ -1458,7 +1519,7 @@ ClangASTSource::layoutRecordType(const RecordDecl *record,
                 DeclFromParser <RecordDecl> base_record(base_record_type->getDecl());
                 DeclFromParser <CXXRecordDecl> base_cxx_record = DynCast<CXXRecordDecl>(base_record);
                 
-                log->Printf("LRT[%u]     %s(CXXRecordDecl*)%p, Name = '%s', Offset = %lld chars",
+                log->Printf("LRT[%u]     %s(CXXRecordDecl*)%p, Name = '%s', Offset = %" PRId64 " chars",
                             current_id,
                             (is_virtual ? "Virtual " : ""),
                             base_cxx_record.decl,
@@ -1745,10 +1806,8 @@ NameSearchContext::AddTypeDecl(void *type)
 void 
 NameSearchContext::AddLookupResult (clang::DeclContextLookupConstResult result)
 {
-    for (clang::NamedDecl * const *decl_iterator = result.first;
-         decl_iterator != result.second;
-         ++decl_iterator)
-        m_decls.push_back (*decl_iterator);
+    for (auto decl = result.begin(); decl != result.end(); ++decl)
+        m_decls.push_back (*decl);
 }
 
 void

@@ -47,7 +47,7 @@ SymbolVendorMacOSX::~SymbolVendorMacOSX()
 
 
 static bool
-UUIDsMatch(Module *module, ObjectFile *ofile)
+UUIDsMatch(Module *module, ObjectFile *ofile, lldb_private::Stream *feedback_strm)
 {
     if (module && ofile)
     {
@@ -56,9 +56,12 @@ UUIDsMatch(Module *module, ObjectFile *ofile)
 
         if (!ofile->GetUUID(&dsym_uuid))
         {
-            Host::SystemLog (Host::eSystemLogWarning, 
-                             "warning: failed to get the uuid for object file: '%s'\n", 
-                             ofile->GetFileSpec().GetFilename().GetCString());
+            if (feedback_strm)
+            {
+                feedback_strm->PutCString("warning: failed to get the uuid for object file: '");
+                ofile->GetFileSpec().Dump(feedback_strm);
+                feedback_strm->PutCString("\n");
+            }
             return false;
         }
 
@@ -66,18 +69,18 @@ UUIDsMatch(Module *module, ObjectFile *ofile)
             return true;
 
         // Emit some warning messages since the UUIDs do not match!
-        const FileSpec &m_file_spec = module->GetFileSpec();
-        const FileSpec &o_file_spec = ofile->GetFileSpec();
-        StreamString ss_m_path, ss_o_path;
-        m_file_spec.Dump(&ss_m_path);
-        o_file_spec.Dump(&ss_o_path);
-
-        StreamString ss_m_uuid, ss_o_uuid;
-        module->GetUUID().Dump(&ss_m_uuid);
-        dsym_uuid.Dump(&ss_o_uuid);
-        Host::SystemLog (Host::eSystemLogWarning, 
-                         "warning: UUID mismatch detected between module '%s' (%s) and:\n\t'%s' (%s)\n", 
-                         ss_m_path.GetData(), ss_m_uuid.GetData(), ss_o_path.GetData(), ss_o_uuid.GetData());
+        if (feedback_strm)
+        {
+            feedback_strm->PutCString("warning: UUID mismatch detected between modules:\n    ");
+            module->GetUUID().Dump(feedback_strm);
+            feedback_strm->PutChar(' ');
+            module->GetFileSpec().Dump(feedback_strm);
+            feedback_strm->PutCString("\n    ");
+            dsym_uuid.Dump(feedback_strm);
+            feedback_strm->PutChar(' ');
+            ofile->GetFileSpec().Dump(feedback_strm);
+            feedback_strm->EOL();
+        }
     }
     return false;
 }
@@ -152,7 +155,7 @@ SymbolVendorMacOSX::GetPluginDescriptionStatic()
 // also allow for finding separate debug information files.
 //----------------------------------------------------------------------
 SymbolVendor*
-SymbolVendorMacOSX::CreateInstance (const lldb::ModuleSP &module_sp)
+SymbolVendorMacOSX::CreateInstance (const lldb::ModuleSP &module_sp, lldb_private::Stream *feedback_strm)
 {
     if (!module_sp)
         return NULL;
@@ -185,24 +188,22 @@ SymbolVendorMacOSX::CreateInstance (const lldb::ModuleSP &module_sp)
             {
                 // No symbol file was specified in the module, lets try and find
                 // one ourselves.
-                const FileSpec &file_spec = obj_file->GetFileSpec();
-                if (file_spec)
-                {
-                    ModuleSpec module_spec(file_spec, module_sp->GetArchitecture());
-                    module_spec.GetUUID() = module_sp->GetUUID();
-                    dsym_fspec = Symbols::LocateExecutableSymbolFile (module_spec);
-                    if (module_spec.GetSourceMappingList().GetSize())
-                    {
-                        module_sp->GetSourceMappingList().Append (module_spec.GetSourceMappingList (), true);
-                    }
-                }
+                FileSpec file_spec = obj_file->GetFileSpec();
+                if (!file_spec)
+                    file_spec = module_sp->GetFileSpec();
+                
+                ModuleSpec module_spec(file_spec, module_sp->GetArchitecture());
+                module_spec.GetUUID() = module_sp->GetUUID();
+                dsym_fspec = Symbols::LocateExecutableSymbolFile (module_spec);
+                if (module_spec.GetSourceMappingList().GetSize())
+                    module_sp->GetSourceMappingList().Append (module_spec.GetSourceMappingList (), true);
             }
             
             if (dsym_fspec)
             {
                 DataBufferSP dsym_file_data_sp;
                 dsym_objfile_sp = ObjectFile::FindPlugin(module_sp, &dsym_fspec, 0, dsym_fspec.GetByteSize(), dsym_file_data_sp);
-                if (UUIDsMatch(module_sp.get(), dsym_objfile_sp.get()))
+                if (UUIDsMatch(module_sp.get(), dsym_objfile_sp.get(), feedback_strm))
                 {
                     char dsym_path[PATH_MAX];
                     if (module_sp->GetSourceMappingList().IsEmpty() && dsym_fspec.GetPath(dsym_path, sizeof(dsym_path)))

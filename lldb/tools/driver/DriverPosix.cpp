@@ -244,6 +244,25 @@ sigint_handler (int signo)
     
     exit (signo);
 }
+
+void
+sigtstp_handler (int signo)
+{
+    g_driver->GetDebugger().SaveInputTerminalState();
+    signal (signo, SIG_DFL);
+    kill (getpid(), signo);
+    signal (signo, sigtstp_handler);
+}
+
+void
+sigcont_handler (int signo)
+{
+    g_driver->GetDebugger().RestoreInputTerminalState();
+    signal (signo, SIG_DFL);
+    kill (getpid(), signo);
+    signal (signo, sigcont_handler);
+}
+
 #endif
 
 void
@@ -253,5 +272,7 @@ SetupPosixSignals()
     signal (SIGPIPE, SIG_IGN);
     signal (SIGWINCH, sigwinch_handler);
     signal (SIGINT, sigint_handler);
+    signal (SIGTSTP, sigtstp_handler);
+    signal (SIGCONT, sigcont_handler);
 #endif
 }

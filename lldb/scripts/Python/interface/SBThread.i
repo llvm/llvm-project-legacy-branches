@@ -88,6 +88,7 @@ public:
     /// eStopReasonWatchpoint    1     watchpoint id
     /// eStopReasonSignal        1     unix signal number
     /// eStopReasonException     N     exception data
+    /// eStopReasonExec          0
     /// eStopReasonPlanComplete  0
     //--------------------------------------------------------------------------
     ") GetStopReasonDataAtIndex;
@@ -121,6 +122,9 @@ public:
 
     void
     StepInto (lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
+
+    void
+    StepInto (const char *target_name, lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
 
     void
     StepOut ();

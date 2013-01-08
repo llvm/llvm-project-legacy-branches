@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "PlatformDarwin.h"
 
 // C Includes
@@ -52,10 +54,22 @@ FileSpec
 PlatformDarwin::LocateExecutableScriptingResource (const ModuleSpec &module_spec)
 {
     const FileSpec *exec_fspec = module_spec.GetFileSpecPtr();
+    // APIs such as NSLinkModule() allow us to attach a library without a filename
+    // make sure we do not crash under those circumstances
+    if (!exec_fspec)
+        return FileSpec();
+
+    // if the arch and uuid are ever used for anything other than display purposes
+    // make sure they are not NULL before proceeding
     const ArchSpec *arch = module_spec.GetArchitecturePtr();
     const UUID *uuid = module_spec.GetUUIDPtr();
     
     const char* module_directory = exec_fspec->GetDirectory().GetCString();
+
+    // NB some extensions might be meaningful and should not be stripped - "this.binary.file"
+    // should not lose ".file" but GetFileNameStrippingExtension() will do precisely that.
+    // Ideally, we should have a per-platform list of extensions (".exe", ".app", ".dSYM", ".framework")
+    // which should be stripped while leaving "this.binary.file" as-is.
     const char* module_basename = exec_fspec->GetFileNameStrippingExtension().GetCString();
     
     if (!module_directory || !module_basename)
@@ -67,6 +81,21 @@ PlatformDarwin::LocateExecutableScriptingResource (const ModuleSpec &module_spec
                         arch ? arch->GetArchitectureName() : "<NULL>",
                         uuid);
     
+    // FIXME: for Python, we cannot allow dots in the middle of the filenames we import.
+    // Theoretically, different scripting languages may have different sets of
+    // forbidden tokens in filenames, and that should be dealt with by each ScriptInterpreter.
+    // For now, we just replace dots with underscores, but if we ever support anything
+    // other than Python we will need to rework this
+    std::auto_ptr<char> module_basename_fixed_ap(new char[strlen(module_basename)+1]);
+    char* module_basename_fixed = module_basename_fixed_ap.get();
+    strcpy(module_basename_fixed, module_basename);
+    while (*module_basename_fixed)
+    {
+        if (*module_basename_fixed == '.')
+            *module_basename_fixed = '_';
+        module_basename_fixed++;
+    }
+    module_basename_fixed = module_basename_fixed_ap.get();
     
     FileSpec symbol_fspec (Symbols::LocateExecutableSymbolFile(module_spec));
     
@@ -78,7 +107,7 @@ PlatformDarwin::LocateExecutableScriptingResource (const ModuleSpec &module_spec
     {
         // for OSX we are going to be in .dSYM/Contents/Resources/DWARF/<basename>
         // let us go to .dSYM/Contents/Resources/Python/<basename>.py and see if the file exists
-        path_string.Printf("%s/../Python/%s.py",symbol_fspec.GetDirectory().AsCString(""),module_basename);
+        path_string.Printf("%s/../Python/%s.py",symbol_fspec.GetDirectory().AsCString(""),module_basename_fixed);
         script_fspec.SetFile(path_string.GetData(), true);
         if (!script_fspec.Exists())
             script_fspec.Clear();
@@ -94,7 +123,7 @@ PlatformDarwin::LocateExecutableScriptingResource (const ModuleSpec &module_spec
             // we are going to be in foo.framework/Versions/X/foo
             path_string.Clear();
             // let's go to foo.framework/Versions/X/Resources/Python/foo.py
-            path_string.Printf("%s/Resources/Python/%s.py",module_directory,module_basename);
+            path_string.Printf("%s/Resources/Python/%s.py",module_directory,module_basename_fixed);
             script_fspec.SetFile(path_string.GetData(), true);
             if (!script_fspec.Exists())
                 script_fspec.Clear();
@@ -676,7 +705,7 @@ PlatformDarwin::x86GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
     {
         ArchSpec platform_arch (Host::GetArchitecture (Host::eSystemDefaultArchitecture));
         ArchSpec platform_arch64 (Host::GetArchitecture (Host::eSystemDefaultArchitecture64));
-        if (platform_arch == platform_arch64)
+        if (platform_arch.IsExactMatch(platform_arch64))
         {
             // This macosx platform supports both 32 and 64 bit. Since we already
             // returned the 64 bit arch for idx == 0, return the 32 bit arch 

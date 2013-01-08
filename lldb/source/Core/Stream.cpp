@@ -14,6 +14,10 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifndef _WIN32
+#include <inttypes.h>
+#endif
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -85,7 +89,11 @@ Stream::PutSLEB128 (int64_t sval)
     }
     else
     {
-        bytes_written = Printf ("0x%lli", sval);
+#ifdef _WIN32
+        bytes_written = Printf ("0x%llu", sval);
+#else
+        bytes_written = Printf ("0x%" PRIi64, sval);
+#endif
     }
 
     return bytes_written;
@@ -117,7 +125,11 @@ Stream::PutULEB128 (uint64_t uval)
     }
     else
     {
-        bytes_written = Printf ("0x%llx", uval);
+#ifdef _WIN32
+        bytes_written = Printf ("0x%llu", uval);
+#else
+        bytes_written = Printf ("0x%" PRIi64, uval);
+#endif
     }
     return bytes_written;
 }
@@ -157,8 +169,12 @@ Stream::Address (uint64_t addr, int addr_size, const char *prefix, const char *s
     if (suffix == NULL)
         suffix = "";
 //    int addr_width = m_addr_size << 1;
-//    Printf ("%s0x%0*llx%s", prefix, addr_width, addr, suffix);
-    Printf ("%s0x%0*llx%s", prefix, addr_size * 2, (uint64_t)addr, suffix);
+//    Printf ("%s0x%0*" PRIx64 "%s", prefix, addr_width, addr, suffix);
+#if _WIN32
+    Printf ("%s0x%d*%llu%s", prefix, addr_size * 2, (uint64_t)addr, suffix);
+#else
+    Printf ("%s0x%0*" PRIx64 "%s", prefix, addr_size * 2, (uint64_t)addr, suffix);
+#endif
 }
 
 //------------------------------------------------------------------
@@ -364,7 +380,11 @@ Stream::operator<< (int32_t sval)
 Stream&
 Stream::operator<< (int64_t sval)
 {
-    Printf ("%lli", sval);
+#if _WIN32
+    Printf ("%llu", sval);
+#else
+    Printf ("%" PRIi64, sval);
+#endif
     return *this;
 }
 

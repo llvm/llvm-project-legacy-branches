@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectThread.h"
 
 // C Includes
@@ -67,7 +69,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -296,7 +298,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -323,6 +325,13 @@ public:
                 }
                 break;
 
+            case 't':
+                {
+                    m_step_in_target.clear();
+                    m_step_in_target.assign(option_arg);
+
+                }
+                break;
             default:
                 error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
                 break;
@@ -337,6 +346,7 @@ public:
             m_avoid_no_debug = true;
             m_run_mode = eOnlyDuringStepping;
             m_avoid_regexp.clear();
+            m_step_in_target.clear();
         }
 
         const OptionDefinition*
@@ -353,6 +363,7 @@ public:
         bool m_avoid_no_debug;
         RunMode m_run_mode;
         std::string m_avoid_regexp;
+        std::string m_step_in_target;
     };
 
     CommandObjectThreadStepWithTypeAndScope (CommandInterpreter &interpreter,
@@ -467,9 +478,10 @@ protected:
 
                 if (frame->HasDebugInformation ())
                 {
-                    new_plan = thread->QueueThreadPlanForStepRange (abort_other_plans, m_step_type, 
+                    new_plan = thread->QueueThreadPlanForStepInRange (abort_other_plans,
                                                                     frame->GetSymbolContext(eSymbolContextEverything).line_entry.range, 
-                                                                    frame->GetSymbolContext(eSymbolContextEverything), 
+                                                                    frame->GetSymbolContext(eSymbolContextEverything),
+                                                                    m_options.m_step_in_target.c_str(),
                                                                     stop_other_threads,
                                                                     m_options.m_avoid_no_debug);
                     if (new_plan && !m_options.m_avoid_regexp.empty())
@@ -487,12 +499,10 @@ protected:
                 StackFrame *frame = thread->GetStackFrameAtIndex(0).get();
 
                 if (frame->HasDebugInformation())
-                    new_plan = thread->QueueThreadPlanForStepRange (abort_other_plans, 
-                                                                    m_step_type, 
-                                                                    frame->GetSymbolContext(eSymbolContextEverything).line_entry.range, 
-                                                                    frame->GetSymbolContext(eSymbolContextEverything), 
-                                                                    stop_other_threads,
-                                                                    false);
+                    new_plan = thread->QueueThreadPlanForStepOverRange (abort_other_plans,
+                                                                        frame->GetSymbolContext(eSymbolContextEverything).line_entry.range, 
+                                                                        frame->GetSymbolContext(eSymbolContextEverything), 
+                                                                        stop_other_threads);
                 else
                     new_plan = thread->QueueThreadPlanForStepSingleInstruction (true, 
                                                                                 abort_other_plans, 
@@ -548,7 +558,7 @@ protected:
                     //  }
                     process->GetThreadList().SetSelectedThreadByID (thread->GetID());
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                    result.AppendMessageWithFormat ("Process %" PRIu64 " %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else
@@ -593,7 +603,8 @@ CommandObjectThreadStepWithTypeAndScope::CommandOptions::g_option_table[] =
 {
 { LLDB_OPT_SET_1, false, "avoid-no-debug",  'a', required_argument, NULL,               0, eArgTypeBoolean,     "A boolean value that sets whether step-in will step over functions with no debug information."},
 { LLDB_OPT_SET_1, false, "run-mode",        'm', required_argument, g_tri_running_mode, 0, eArgTypeRunMode, "Determine how to run other threads while stepping the current thread."},
-{ LLDB_OPT_SET_1, false, "step-over-regexp",'r', required_argument, NULL,               0, eArgTypeRegularExpression,   "A regular expression that defines function names to step over."},
+{ LLDB_OPT_SET_1, false, "step-over-regexp",'r', required_argument, NULL,               0, eArgTypeRegularExpression,   "A regular expression that defines function names to not to stop at when stepping in."},
+{ LLDB_OPT_SET_1, false, "step-in-target",  't', required_argument, NULL,               0, eArgTypeFunctionName,   "The name of the directly called function step in should stop at when stepping into."},
 { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
@@ -723,7 +734,7 @@ public:
                             thread->SetResumeState (eStateSuspended);
                         }
                     }
-                    result.AppendMessageWithFormat ("in process %llu\n", process->GetID());
+                    result.AppendMessageWithFormat ("in process %" PRIu64 "\n", process->GetID());
                 }
             }
             else
@@ -741,7 +752,7 @@ public:
                     Thread *thread = process->GetThreadList().GetThreadAtIndex(idx).get();
                     if (thread == current_thread)
                     {
-                        result.AppendMessageWithFormat ("Resuming thread 0x%4.4llx in process %llu\n", thread->GetID(), process->GetID());
+                        result.AppendMessageWithFormat ("Resuming thread 0x%4.4" PRIx64 " in process %" PRIu64 "\n", thread->GetID(), process->GetID());
                         thread->SetResumeState (eStateRunning);
                     }
                     else
@@ -754,13 +765,13 @@ public:
             Error error (process->Resume());
             if (error.Success())
             {
-                result.AppendMessageWithFormat ("Process %llu resuming\n", process->GetID());
+                result.AppendMessageWithFormat ("Process %" PRIu64 " resuming\n", process->GetID());
                 if (synchronous_execution)
                 {
                     state = process->WaitForProcessToStop (NULL);
                     
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                    result.AppendMessageWithFormat ("Process %" PRIu64 " %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else
@@ -818,7 +829,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -1082,13 +1093,13 @@ protected:
             Error error (process->Resume ());
             if (error.Success())
             {
-                result.AppendMessageWithFormat ("Process %llu resuming\n", process->GetID());
+                result.AppendMessageWithFormat ("Process %" PRIu64 " resuming\n", process->GetID());
                 if (synchronous_execution)
                 {
                     StateType state = process->WaitForProcessToStop (NULL);
 
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                    result.AppendMessageWithFormat ("Process %" PRIu64 " %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else
@@ -1183,17 +1194,9 @@ protected:
             return false;
         }
 
-        process->GetThreadList().SetSelectedThreadByID(new_thread->GetID());
+        process->GetThreadList().SetSelectedThreadByID(new_thread->GetID(), true);
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
         
-        const uint32_t start_frame = 0;
-        const uint32_t num_frames = 1;
-        const uint32_t num_frames_with_source = 1;
-        new_thread->GetStatus (result.GetOutputStream(), 
-                               start_frame,
-                               num_frames,
-                               num_frames_with_source);
-
         return result.Succeeded();
     }
 

@@ -10,6 +10,9 @@
 #include "lldb/Core/History.h"
 
 // C Includes
+#ifndef _WIN32
+#include <inttypes.h>
+#endif
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
@@ -21,5 +24,9 @@ using namespace lldb_private;
 void
 HistorySourceUInt::DumpHistoryEvent (Stream &strm, HistoryEvent event)
 {
+#if _WIN32
     strm.Printf ("%s %llu", m_name.c_str(), (uint64_t)((uintptr_t)event));
+#else
+    strm.Printf ("%s %" PRIu64, m_name.c_str(), (uint64_t)((uintptr_t)event));
+#endif
 }

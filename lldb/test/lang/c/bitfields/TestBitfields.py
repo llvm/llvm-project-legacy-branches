@@ -64,7 +64,7 @@ class BitfieldsTestCase(TestBase):
             substrs = [' resolved, hit count = 1'])
 
         # This should display correctly.
-        self.expect("frame variable -T bits", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types bits", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['(uint32_t:1) b1 = 1',
                        '(uint32_t:2) b2 = 3',
                        '(uint32_t:3) b3 = 7',
@@ -76,7 +76,7 @@ class BitfieldsTestCase(TestBase):
 
         # And so should this.
         # rdar://problem/8348251
-        self.expect("frame variable -T", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['(uint32_t:1) b1 = 1',
                        '(uint32_t:2) b2 = 3',
                        '(uint32_t:3) b3 = 7',
@@ -85,6 +85,39 @@ class BitfieldsTestCase(TestBase):
                        '(uint32_t:6) b6 = 63',
                        '(uint32_t:7) b7 = 127',
                        '(uint32_t:4) four = 15'])
+
+        self.expect("expr (bits.b1)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '1'])
+        self.expect("expr (bits.b2)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '3'])
+        self.expect("expr (bits.b3)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '7'])
+        self.expect("expr (bits.b4)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '15'])
+        self.expect("expr (bits.b5)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '31'])
+        self.expect("expr (bits.b6)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '63'])
+        self.expect("expr (bits.b7)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '127'])
+        self.expect("expr (bits.four)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '15'])
+
+        self.expect("frame variable --show-types more_bits", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['(uint32_t:3) a = 3',
+                       '(int:1)  = 0',
+                       '(uint8_t:1) b = \'\\0\'',
+                       '(uint8_t:1) c = \'\\x01\'',
+                       '(uint8_t:1) d = \'\\0\''])
+
+        self.expect("expr (more_bits.a)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '3'])
+        self.expect("expr (more_bits.b)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint8_t', '\\0'])
+        self.expect("expr (more_bits.c)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint8_t', '\\x01'])
+        self.expect("expr (more_bits.d)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint8_t', '\\0'])
 
     def bitfields_variable_python(self):
         """Use Python APIs to inspect a bitfields variable."""

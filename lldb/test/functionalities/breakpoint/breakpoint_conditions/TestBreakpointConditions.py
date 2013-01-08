@@ -34,18 +34,21 @@ class BreakpointConditionsTestCase(TestBase):
         self.buildDsym()
         self.breakpoint_conditions_python()
 
+    @expectedFailureLinux # bugzilla 14426
     @dwarf_test
     def test_breakpoint_condition_with_dwarf_and_run_command(self):
         """Exercise breakpoint condition with 'breakpoint modify -c <expr> id'."""
         self.buildDwarf()
         self.breakpoint_conditions()
 
+    @expectedFailureLinux # bugzilla 14426
     @dwarf_test
     def test_breakpoint_condition_inline_with_dwarf_and_run_command(self):
         """Exercise breakpoint condition inline with 'breakpoint set'."""
         self.buildDwarf()
         self.breakpoint_conditions(inline=True)
 
+    @expectedFailureLinux # bugzilla 14426
     @python_api_test
     @dwarf_test
     def test_breakpoint_condition_with_dwarf_and_python_api(self):
@@ -82,8 +85,8 @@ class BreakpointConditionsTestCase(TestBase):
         self.expect("process status", PROCESS_STOPPED,
             patterns = ['Process .* stopped'])
 
-        # 'frame variable -T val' should return 3 due to breakpoint condition.
-        self.expect("frame variable -T val", VARIABLES_DISPLAYED_CORRECTLY,
+        # 'frame variable --show-types val' should return 3 due to breakpoint condition.
+        self.expect("frame variable --show-types val", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = '(int) val = 3')
 
         # Also check the hit count, which should be 3, by design.
@@ -113,8 +116,8 @@ class BreakpointConditionsTestCase(TestBase):
         self.expect("process status", PROCESS_STOPPED,
             patterns = ['Process .* stopped'])
 
-        # 'frame variable -T val' should return 1 since it is the first breakpoint hit.
-        self.expect("frame variable -T val", VARIABLES_DISPLAYED_CORRECTLY,
+        # 'frame variable --show-types val' should return 1 since it is the first breakpoint hit.
+        self.expect("frame variable --show-types val", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = '(int) val = 1')
 
 

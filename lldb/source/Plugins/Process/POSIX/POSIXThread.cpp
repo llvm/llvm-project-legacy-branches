@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 #include <errno.h>
 
@@ -39,7 +41,7 @@ POSIXThread::POSIXThread(Process &process, lldb::tid_t tid)
 {
     LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
-        log->Printf ("POSIXThread::%s (tid = %i)", __FUNCTION__, tid);
+        log->Printf ("POSIXThread::%s (tid = %" PRIi64 ")", __FUNCTION__, tid);
 }
 
 POSIXThread::~POSIXThread()
@@ -242,7 +244,7 @@ POSIXThread::BreakNotify(const ProcessMessage &message)
     assert(GetRegisterContext());
     lldb::addr_t pc = GetRegisterContext()->GetPC();
     if (log)
-        log->Printf ("POSIXThread::%s () PC=0x%8.8llx", __FUNCTION__, pc);
+        log->Printf ("POSIXThread::%s () PC=0x%8.8" PRIx64, __FUNCTION__, pc);
     lldb::BreakpointSiteSP bp_site(GetProcess()->GetBreakpointSiteList().FindByAddress(pc));
     assert(bp_site);
     lldb::break_id_t bp_id = bp_site->GetID();
@@ -279,8 +281,7 @@ POSIXThread::SignalDeliveredNotify(const ProcessMessage &message)
 {
     int signo = message.GetSignal();
 
-    // Just treat debugger generated signal events like breakpoints for now.
-    m_stop_info = StopInfo::CreateStopReasonToTrace(*this);
+    m_stop_info = StopInfo::CreateStopReasonWithSignal(*this, signo);
     SetResumeSignal(signo);
 }
 

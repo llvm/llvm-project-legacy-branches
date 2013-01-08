@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/API/SBValue.h"
 
 #include "lldb/API/SBDeclaration.h"
@@ -301,7 +303,7 @@ SBValue::GetByteSize ()
     }
 
     if (log)
-        log->Printf ("SBValue(%p)::GetByteSize () => %llu", value_sp.get(), (uint64_t)result);
+        log->Printf ("SBValue(%p)::GetByteSize () => %" PRIu64, value_sp.get(), (uint64_t)result);
 
     return result;
 }
@@ -386,7 +388,6 @@ SBValue::GetValueType ()
         case eValueTypeRegister:        log->Printf ("SBValue(%p)::GetValueType () => eValueTypeRegister", value_sp.get()); break;
         case eValueTypeRegisterSet:     log->Printf ("SBValue(%p)::GetValueType () => eValueTypeRegisterSet", value_sp.get()); break;
         case eValueTypeConstResult:     log->Printf ("SBValue(%p)::GetValueType () => eValueTypeConstResult", value_sp.get()); break;
-        default:     log->Printf ("SBValue(%p)::GetValueType () => %i ???", value_sp.get(), result); break;
         }
     }
     return result;
@@ -1755,7 +1756,7 @@ SBValue::GetLoadAddress()
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetLoadAddress () => (%llu)", value_sp.get(), value);
+        log->Printf ("SBValue(%p)::GetLoadAddress () => (%" PRIu64 ")", value_sp.get(), value);
     
     return value;
 }
@@ -1792,7 +1793,7 @@ SBValue::GetAddress()
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetAddress () => (%s,%llu)", value_sp.get(),
+        log->Printf ("SBValue(%p)::GetAddress () => (%s,%" PRIu64 ")", value_sp.get(),
                      (addr.GetSection() ? addr.GetSection()->GetName().GetCString() : "NULL"),
                      addr.GetOffset());
     return SBAddress(new Address(addr));

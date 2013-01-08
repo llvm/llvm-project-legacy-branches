@@ -12,7 +12,11 @@
 #ifdef _WIN32
 #include "lldb/lldb-windows.h"
 #endif
+#ifndef _WIN32
+#include <inttypes.h>
+#endif
 
+#include "IOChannel.h"
 #include "lldb/API/SBHostOS.h"
 using namespace lldb;
 
@@ -22,7 +26,7 @@ typedef struct
                                              // then this option belongs to option set n.
     bool required;                           // This option is required (in the current usage level)
     const char * long_option;                // Full name for this option.
-    char short_option;                       // Single character for this option.
+    int short_option;                       // Single character for this option.
     int option_has_arg;                      // no_argument, required_argument or optional_argument
     uint32_t completion_type;                // Cookie the option class can use to do define the argument completion.
     lldb::CommandArgumentType argument_type; // Type of argument this option takes
@@ -64,6 +68,8 @@ static OptionDefinition g_options[] =
         "Tells the debugger to open source files using the host's \"external editor\" mechanism." },
     { LLDB_3_TO_5,       false, "no-lldbinit"    , 'x', no_argument      , 0,  eArgTypeNone,
         "Do not automatically parse any '.lldbinit' files." },
+    { LLDB_OPT_SET_6,    true , "python-path"        , 'P', no_argument      , 0,  eArgTypeNone,
+        "Prints out the path to the lldb.py file for this version of lldb." },
     { 0,                 false, NULL             , 0  , 0                , 0,  eArgTypeNone,         NULL }
 };
 
@@ -303,6 +309,7 @@ Driver::OptionData::OptionData () :
     m_source_command_files (),
     m_debug_mode (false),
     m_print_version (false),
+    m_print_python_path (false),
     m_print_help (false),
     m_wait_for(false),
     m_process_name(),
@@ -325,6 +332,7 @@ Driver::OptionData::Clear ()
     m_debug_mode = false;
     m_print_help = false;
     m_print_version = false;
+    m_print_python_path = false;
     m_use_external_editor = false;
     m_wait_for = false;
     m_process_name.erase();
@@ -451,7 +459,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
 
             if (long_options_index >= 0)
             {
-                const char short_option = (char) g_options[long_options_index].short_option;
+                const int short_option = g_options[long_options_index].short_option;
 
                 switch (short_option)
                 {
@@ -463,6 +471,10 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
                         m_option_data.m_print_version = true;
                         break;
 
+                    case 'P':
+                        m_option_data.m_print_python_path = true;
+                        break;
+						
                     case 'c':
                         m_option_data.m_crash_log = optarg;
                         break;
@@ -568,6 +580,24 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
         ::fprintf (out_fh, "%s\n", m_debugger.GetVersionString());
         exit = true;
     }
+    else if (m_option_data.m_print_python_path)
+    {
+        SBFileSpec python_file_spec = SBHostOS::GetLLDBPythonPath();
+        if (python_file_spec.IsValid())
+        {
+            char python_path[PATH_MAX];
+            size_t num_chars = python_file_spec.GetPath(python_path, PATH_MAX);
+            if (num_chars < PATH_MAX)
+            {
+                ::fprintf (out_fh, "%s\n", python_path);
+            }
+            else
+                ::fprintf (out_fh, "<PATH TOO LONG>\n");
+        }
+        else
+            ::fprintf (out_fh, "<COULD NOT FIND PATH>\n");
+        exit = true;
+    }
     else if (! m_option_data.m_crash_log.empty())
     {
         // Handle crash log stuff here.
@@ -614,6 +644,7 @@ Driver::HandleCommandLine(SBCommandReturnObject& result)
     // Now we handle options we got from the command line
     char command_string[PATH_MAX * 2];
     const size_t num_source_command_files = GetNumSourceCommandFiles();
+    const bool dump_stream_only_if_no_immediate = true;
     if (num_source_command_files > 0)
     {
         for (size_t i=0; i < num_source_command_files; ++i)
@@ -626,6 +657,20 @@ Driver::HandleCommandLine(SBCommandReturnObject& result)
                 result.PutError (m_debugger.GetErrorFileHandle());
                 result.PutOutput (m_debugger.GetOutputFileHandle());
             }
+                    
+			// if the command sourcing generated an error - dump the result object
+			if (result.Succeeded() == false)
+			{
+				const size_t output_size = result.GetOutputSize();
+				if (output_size > 0)
+					m_io_channel_ap->OutWrite (result.GetOutput(dump_stream_only_if_no_immediate), output_size, NO_ASYNC);
+				const size_t error_size = result.GetErrorSize();
+				if (error_size > 0)
+					m_io_channel_ap->OutWrite (result.GetError(dump_stream_only_if_no_immediate), error_size, NO_ASYNC);
+			}
+			
+			result.Clear();
+			
         }
     }
 

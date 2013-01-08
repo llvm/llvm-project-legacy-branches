@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectLog.h"
 
 // C Includes
@@ -132,11 +134,11 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
-            case 'f':  log_file = option_arg;                                 break;
+            case 'f':  log_file.SetFile(option_arg, true);                    break;
             case 't':  log_options |= LLDB_LOG_OPTION_THREADSAFE;             break;
             case 'v':  log_options |= LLDB_LOG_OPTION_VERBOSE;                break;
             case 'g':  log_options |= LLDB_LOG_OPTION_DEBUG;                  break;
@@ -156,7 +158,7 @@ public:
         void
         OptionParsingStarting ()
         {
-            log_file.clear();
+            log_file.Clear();
             log_options = 0;
         }
 
@@ -172,7 +174,7 @@ public:
 
         // Instance variables to hold the values for command options.
 
-        std::string log_file;
+        FileSpec log_file;
         uint32_t log_options;
     };
 
@@ -189,9 +191,14 @@ protected:
         {
             std::string channel(args.GetArgumentAtIndex(0));
             args.Shift ();  // Shift off the channel
+            char log_file[PATH_MAX];
+            if (m_options.log_file)
+                m_options.log_file.GetPath(log_file, sizeof(log_file));
+            else
+                log_file[0] = '\0';
             bool success = m_interpreter.GetDebugger().EnableLog (channel.c_str(), 
                                                                   args.GetConstArgumentVector(), 
-                                                                  m_options.log_file.c_str(), 
+                                                                  log_file, 
                                                                   m_options.log_options, 
                                                                   result.GetErrorStream());
             if (success)

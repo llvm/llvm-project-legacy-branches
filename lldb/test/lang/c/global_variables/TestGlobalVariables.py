@@ -13,13 +13,13 @@ class GlobalVariablesTestCase(TestBase):
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
     def test_with_dsym(self):
-        """Test 'frame variable -s -a' which omits args and shows scopes."""
+        """Test 'frame variable --scope --no-args' which omits args and shows scopes."""
         self.buildDsym()
         self.global_variables()
 
     @dwarf_test
     def test_with_dwarf(self):
-        """Test 'frame variable -s -a' which omits args and shows scopes."""
+        """Test 'frame variable --scope --no-args' which omits args and shows scopes."""
         self.buildDwarf()
         self.global_variables()
 
@@ -28,9 +28,13 @@ class GlobalVariablesTestCase(TestBase):
         TestBase.setUp(self)
         # Find the line number to break inside main().
         self.line = line_number('main.c', '// Set break point at this line.')
+        if sys.platform.startswith("linux"):
+            # On Linux, LD_LIBRARY_PATH must be set so the shared libraries are found on startup
+            self.runCmd("settings set target.env-vars " + self.dylibPath + "=" + os.getcwd())
+            self.addTearDownHook(lambda: self.runCmd("settings remove target.env-vars " + self.dylibPath))
 
     def global_variables(self):
-        """Test 'frame variable -s -a' which omits args and shows scopes."""
+        """Test 'frame variable --scope --no-args' which omits args and shows scopes."""
         exe = os.path.join(os.getcwd(), "a.out")
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
@@ -49,7 +53,7 @@ class GlobalVariablesTestCase(TestBase):
             substrs = [' resolved, hit count = 1'])
 
         # Check that GLOBAL scopes are indicated for the variables.
-        self.expect("frame variable -T -s -g -a", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types --scope --show-globals --no-args", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['GLOBAL: (int) g_file_global_int = 42',
                        'GLOBAL: (const char *) g_file_global_cstr',
                        '"g_file_global_cstr"',

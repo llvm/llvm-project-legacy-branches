@@ -1,4 +1,4 @@
-//===-- ClangASTType.cpp ---------------------------------------------*- C++ -*-===//
+//===-- ClangASTType.cpp ----------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -6,6 +6,8 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+
+#include "lldb/lldb-python.h"
 
 #include "lldb/Symbol/ClangASTType.h"
 
@@ -35,6 +37,7 @@
 #include "lldb/Core/Scalar.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Core/UniqueCStringMap.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
@@ -246,7 +249,9 @@ ClangASTType::GetTypeClass (clang::ASTContext *ast_context, lldb::clang_type_t c
         case clang::Type::Typedef:                  return lldb::eTypeClassTypedef;
         case clang::Type::UnresolvedUsing:          break;
         case clang::Type::Paren:                    break;
-        case clang::Type::Elaborated:               break;
+        case clang::Type::Elaborated:
+            return ClangASTType::GetTypeClass (ast_context, llvm::cast<clang::ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
+
         case clang::Type::Attributed:               break;
         case clang::Type::TemplateTypeParm:         break;
         case clang::Type::SubstTemplateTypeParm:    break;
@@ -451,14 +456,15 @@ ClangASTType::GetEncoding (clang_type_t clang_type, uint32_t &count)
     case clang::Type::Record:                   break;
     case clang::Type::Enum:                     return lldb::eEncodingSint;
     case clang::Type::Typedef:
-            return GetEncoding(llvm::cast<clang::TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(), count);
-        break;
+        return GetEncoding(llvm::cast<clang::TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(), count);
+
+    case clang::Type::Elaborated:
+        return ClangASTType::GetEncoding (llvm::cast<clang::ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(), count);
 
     case clang::Type::DependentSizedArray:
     case clang::Type::DependentSizedExtVector:
     case clang::Type::UnresolvedUsing:
     case clang::Type::Paren:
-    case clang::Type::Elaborated:
     case clang::Type::Attributed:
     case clang::Type::TemplateTypeParm:
     case clang::Type::SubstTemplateTypeParm:
@@ -577,15 +583,15 @@ ClangASTType::GetFormat (clang_type_t clang_type)
     case clang::Type::Record:                   break;
     case clang::Type::Enum:                     return lldb::eFormatEnum;
     case clang::Type::Typedef:
-            return ClangASTType::GetFormat(llvm::cast<clang::TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
-
+        return ClangASTType::GetFormat(llvm::cast<clang::TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
     case clang::Type::Auto:
-            return ClangASTType::GetFormat(llvm::cast<clang::AutoType>(qual_type)->desugar().getAsOpaquePtr());
+        return ClangASTType::GetFormat(llvm::cast<clang::AutoType>(qual_type)->desugar().getAsOpaquePtr());
+    case clang::Type::Elaborated:
+        return ClangASTType::GetFormat(llvm::cast<clang::ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
     case clang::Type::DependentSizedArray:
     case clang::Type::DependentSizedExtVector:
     case clang::Type::UnresolvedUsing:
     case clang::Type::Paren:
-    case clang::Type::Elaborated:
     case clang::Type::Attributed:
     case clang::Type::TemplateTypeParm:
     case clang::Type::SubstTemplateTypeParm:
@@ -812,7 +818,7 @@ ClangASTType::DumpValue
             }
             // If we have gotten here we didn't get find the enumerator in the
             // enum decl, so just print the integer.
-            s->Printf("%lli", enum_value);
+            s->Printf("%" PRIi64, enum_value);
         }
         return;
 
@@ -910,6 +916,29 @@ ClangASTType::DumpValue
         }
         break;
 
+    case clang::Type::Elaborated:
+        {
+            clang::QualType elaborated_qual_type = llvm::cast<clang::ElaboratedType>(qual_type)->getNamedType();
+            lldb::Format elaborated_format = ClangASTType::GetFormat(elaborated_qual_type.getAsOpaquePtr());
+            std::pair<uint64_t, unsigned> elaborated_type_info = ast_context->getTypeInfo(elaborated_qual_type);
+            uint64_t elaborated_byte_size = elaborated_type_info.first / 8;
+
+            return DumpValue (ast_context,        // The clang AST context for this type
+                              elaborated_qual_type.getAsOpaquePtr(),    // The clang type we want to dump
+                              exe_ctx,
+                              s,                  // Stream to dump to
+                              elaborated_format,  // The format with which to display the element
+                              data,               // Data buffer containing all bytes for this type
+                              data_byte_offset,   // Offset into "data" where to grab value from
+                              elaborated_byte_size,  // Size of this type in bytes
+                              bitfield_bit_size,  // Bitfield bit size
+                              bitfield_bit_offset,// Bitfield bit offset
+                              show_types,         // Boolean indicating if we should show the variable types
+                              show_summary,       // Boolean indicating if we should show a summary for the current type
+                              verbose,            // Verbose output?
+                              depth);             // Scope depth for any types that have children
+        }
+        break;
     default:
         // We are down the a scalar type that we just need to display.
         data.Dump(s, data_byte_offset, format, data_byte_size, 1, UINT32_MAX, LLDB_INVALID_ADDRESS, bitfield_bit_size, bitfield_bit_offset);
@@ -1011,7 +1040,7 @@ ClangASTType::DumpTypeValue (clang::ASTContext *ast_context,
                 // If we have gotten here we didn't get find the enumerator in the
                 // enum decl, so just print the integer.
                 
-                s->Printf("%lli", enum_value);
+                s->Printf("%" PRIi64, enum_value);
                 return true;
             }
             // format was not enum, just fall through and dump the value as requested....
@@ -1174,7 +1203,13 @@ ClangASTType::GetClangTypeBitWidth (clang::ASTContext *ast_context, clang_type_t
     if (ClangASTContext::GetCompleteType (ast_context, clang_type))
     {
         clang::QualType qual_type(clang::QualType::getFromOpaquePtr(clang_type));
-        return ast_context->getTypeSize (qual_type);
+        const uint32_t bit_size = ast_context->getTypeSize (qual_type);
+        if (bit_size == 0)
+        {
+            if (qual_type->isIncompleteArrayType())
+                return ast_context->getTypeSize (qual_type->getArrayElementTypeNoTypeQual()->getCanonicalTypeUnqualified());
+        }
+        return bit_size;
     }
     return 0;
 }
@@ -1273,7 +1308,6 @@ ClangASTType::DumpTypeDescription (clang::ASTContext *ast_context, clang_type_t 
                     if (class_interface_decl)
                     {
                         clang::PrintingPolicy policy = ast_context->getPrintingPolicy();
-                        policy.DumpSourceManager = &ast_context->getSourceManager();
 
 
                         class_interface_decl->print(llvm_ostrm, policy, s->GetIndentLevel());
@@ -1297,6 +1331,12 @@ ClangASTType::DumpTypeDescription (clang::ASTContext *ast_context, clang_type_t 
                 }
             }
             break;
+
+        case clang::Type::Elaborated:
+            DumpTypeDescription (ast_context,
+                                 llvm::cast<clang::ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(),
+                                 s);
+            return;
 
         case clang::Type::Record:
             if (ClangASTContext::GetCompleteType (ast_context, clang_type))
@@ -1788,3 +1828,200 @@ lldb_private::operator != (const lldb_private::ClangASTType &lhs, const lldb_pri
 {
     return lhs.GetASTContext() != rhs.GetASTContext() || lhs.GetOpaqueQualType() != rhs.GetOpaqueQualType();
 }
+
+lldb::BasicType
+ClangASTType::GetBasicTypeEnumeration (const ConstString &name)
+{
+    if (name)
+    {
+        typedef UniqueCStringMap<lldb::BasicType> TypeNameToBasicTypeMap;
+        static TypeNameToBasicTypeMap g_type_map;
+#if _WIN32
+        static volatile unsigned int g_once_flag = 0; 
+        if (InterlockedExchange(&g_once_flag, 1) == 0) {
+#else 
+        static std::once_flag g_once_flag;
+        std::call_once(g_once_flag, [](){
+#endif
+            // "void"
+            g_type_map.Append(ConstString("void").GetCString(), eBasicTypeVoid);
+            
+            // "char"
+            g_type_map.Append(ConstString("char").GetCString(), eBasicTypeChar);
+            g_type_map.Append(ConstString("signed char").GetCString(), eBasicTypeSignedChar);
+            g_type_map.Append(ConstString("unsigned char").GetCString(), eBasicTypeUnsignedChar);
+            g_type_map.Append(ConstString("wchar_t").GetCString(), eBasicTypeWChar);
+            g_type_map.Append(ConstString("signed wchar_t").GetCString(), eBasicTypeSignedWChar);
+            g_type_map.Append(ConstString("unsigned wchar_t").GetCString(), eBasicTypeUnsignedWChar);
+            // "short"
+            g_type_map.Append(ConstString("short").GetCString(), eBasicTypeShort);
+            g_type_map.Append(ConstString("short int").GetCString(), eBasicTypeShort);
+            g_type_map.Append(ConstString("unsigned short").GetCString(), eBasicTypeUnsignedShort);
+            g_type_map.Append(ConstString("unsigned short int").GetCString(), eBasicTypeUnsignedShort);
+            
+            // "int"
+            g_type_map.Append(ConstString("int").GetCString(), eBasicTypeInt);
+            g_type_map.Append(ConstString("signed int").GetCString(), eBasicTypeInt);
+            g_type_map.Append(ConstString("unsigned int").GetCString(), eBasicTypeUnsignedInt);
+            g_type_map.Append(ConstString("unsigned").GetCString(), eBasicTypeUnsignedInt);
+            
+            // "long"
+            g_type_map.Append(ConstString("long").GetCString(), eBasicTypeLong);
+            g_type_map.Append(ConstString("long int").GetCString(), eBasicTypeLong);
+            g_type_map.Append(ConstString("unsigned long").GetCString(), eBasicTypeUnsignedLong);
+            g_type_map.Append(ConstString("unsigned long int").GetCString(), eBasicTypeUnsignedLong);
+            
+            // "long long"
+            g_type_map.Append(ConstString("long long").GetCString(), eBasicTypeLongLong);
+            g_type_map.Append(ConstString("long long int").GetCString(), eBasicTypeLongLong);
+            g_type_map.Append(ConstString("unsigned long long").GetCString(), eBasicTypeUnsignedLongLong);
+            g_type_map.Append(ConstString("unsigned long long int").GetCString(), eBasicTypeUnsignedLongLong);
+
+            // "int128"
+            g_type_map.Append(ConstString("__int128_t").GetCString(), eBasicTypeInt128);
+            g_type_map.Append(ConstString("__uint128_t").GetCString(), eBasicTypeUnsignedInt128);
+            
+            // Miscelaneous
+            g_type_map.Append(ConstString("bool").GetCString(), eBasicTypeBool);
+            g_type_map.Append(ConstString("float").GetCString(), eBasicTypeFloat);
+            g_type_map.Append(ConstString("double").GetCString(), eBasicTypeDouble);
+            g_type_map.Append(ConstString("long double").GetCString(), eBasicTypeLongDouble);
+            g_type_map.Append(ConstString("id").GetCString(), eBasicTypeObjCID);
+            g_type_map.Append(ConstString("SEL").GetCString(), eBasicTypeObjCSel);
+            g_type_map.Append(ConstString("nullptr").GetCString(), eBasicTypeNullPtr);
+            g_type_map.Sort();
+#if _WIN32
+        };
+#else
+        });
+#endif
+
+        return g_type_map.Find(name.GetCString(), eBasicTypeInvalid);
+    }
+    return eBasicTypeInvalid;
+}
+
+ClangASTType
+ClangASTType::GetBasicType (clang::ASTContext *ast, const ConstString &name)
+{
+    if (ast)
+    {
+        lldb::BasicType basic_type = ClangASTType::GetBasicTypeEnumeration (name);
+        return ClangASTType::GetBasicType (ast, basic_type);
+    }
+    return ClangASTType();
+}
+
+ClangASTType
+ClangASTType::GetBasicType (clang::ASTContext *ast, lldb::BasicType type)
+{
+    if (ast)
+    {
+        clang_type_t clang_type = NULL;
+        
+        switch (type)
+        {
+            case eBasicTypeInvalid:
+            case eBasicTypeOther:
+                break;
+            case eBasicTypeVoid:
+                clang_type = ast->VoidTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeChar:
+                clang_type = ast->CharTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeSignedChar:
+                clang_type = ast->SignedCharTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeUnsignedChar:
+                clang_type = ast->UnsignedCharTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeWChar:
+                clang_type = ast->getWCharType().getAsOpaquePtr();
+                break;
+            case eBasicTypeSignedWChar:
+                clang_type = ast->getSignedWCharType().getAsOpaquePtr();
+                break;
+            case eBasicTypeUnsignedWChar:
+                clang_type = ast->getUnsignedWCharType().getAsOpaquePtr();
+                break;
+            case eBasicTypeChar16:
+                clang_type = ast->Char16Ty.getAsOpaquePtr();
+                break;
+            case eBasicTypeChar32:
+                clang_type = ast->Char32Ty.getAsOpaquePtr();
+                break;
+            case eBasicTypeShort:
+                clang_type = ast->ShortTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeUnsignedShort:
+                clang_type = ast->UnsignedShortTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeInt:
+                clang_type = ast->IntTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeUnsignedInt:
+                clang_type = ast->UnsignedIntTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeLong:
+                clang_type = ast->LongTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeUnsignedLong:
+                clang_type = ast->UnsignedLongTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeLongLong:
+                clang_type = ast->LongLongTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeUnsignedLongLong:
+                clang_type = ast->UnsignedLongLongTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeInt128:
+                clang_type = ast->Int128Ty.getAsOpaquePtr();
+                break;
+            case eBasicTypeUnsignedInt128:
+                clang_type = ast->UnsignedInt128Ty.getAsOpaquePtr();
+                break;
+            case eBasicTypeBool:
+                clang_type = ast->BoolTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeHalf:
+                clang_type = ast->HalfTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeFloat:
+                clang_type = ast->FloatTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeDouble:
+                clang_type = ast->DoubleTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeLongDouble:
+                clang_type = ast->LongDoubleTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeFloatComplex:
+                clang_type = ast->FloatComplexTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeDoubleComplex:
+                clang_type = ast->DoubleComplexTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeLongDoubleComplex:
+                clang_type = ast->LongDoubleComplexTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeObjCID:
+                clang_type = ast->ObjCBuiltinIdTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeObjCClass:
+                clang_type = ast->ObjCBuiltinClassTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeObjCSel:
+                clang_type = ast->ObjCBuiltinSelTy.getAsOpaquePtr();
+                break;
+            case eBasicTypeNullPtr:
+                clang_type = ast->NullPtrTy.getAsOpaquePtr();
+                break;
+        }
+        
+        if (clang_type)
+            return ClangASTType (ast, clang_type);
+    }
+    return ClangASTType();
+}
+

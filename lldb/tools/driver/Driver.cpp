@@ -19,6 +19,10 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <fcntl.h>
+#ifndef _WIN32
+#include <inttypes.h>
+#endif
+
 
 #include "IOChannel.h"
 #include "lldb/API/SBBreakpoint.h"
@@ -46,7 +50,8 @@ Driver::Driver () :
     m_editline_reader (),
     m_io_channel_ap (),
     m_option_data (),
-    m_waiting_for_command (false)
+    m_waiting_for_command (false),
+    m_done(false)
 {
 }
 
@@ -154,7 +159,6 @@ Driver::UpdateSelectedThread ()
             StopReason thread_stop_reason = thread.GetStopReason();
             switch (thread_stop_reason)
 			{
-            default:
             case eStopReasonInvalid:
             case eStopReasonNone:
                 break;
@@ -164,6 +168,8 @@ Driver::UpdateSelectedThread ()
             case eStopReasonWatchpoint:
             case eStopReasonSignal:
             case eStopReasonException:
+            case eStopReasonExec:
+            case eStopReasonThreadExiting:
                 if (!other_thread.IsValid())
                     other_thread = thread;
                 break;
@@ -196,7 +202,8 @@ Driver::HandleThreadEvent (const SBEvent &event)
     // reprint the thread status for that thread.
     using namespace lldb;
     const uint32_t event_type = event.GetType();
-    if (event_type == SBThread::eBroadcastBitStackChanged)
+    if (event_type == SBThread::eBroadcastBitStackChanged
+        || event_type == SBThread::eBroadcastBitThreadSelected)
     {
         SBThread thread = SBThread::GetThreadFromEvent (event);
         if (thread.IsValid())
@@ -244,7 +251,8 @@ void Driver::Initialize()
                                          SBTarget::eBroadcastBitBreakpointChanged);
         listener.StartListeningForEventClass(m_debugger, 
                                          SBThread::GetBroadcasterClassName(),
-                                         SBThread::eBroadcastBitStackChanged);
+                                         SBThread::eBroadcastBitStackChanged |
+                                         SBThread::eBroadcastBitThreadSelected);
     listener.StartListeningForEvents (*m_io_channel_ap,
                                         IOChannel::eBroadcastBitHasUserInput |
                                         IOChannel::eBroadcastBitUserInterrupt |

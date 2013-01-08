@@ -25,6 +25,7 @@ class ExprFormattersTestCase(TestBase):
         self.buildDsym()
         self.do_my_test()
 
+    @expectedFailureLinux # bugzilla 14437
     @dwarf_test
     def test_with_dwarf(self):
         """Test expr + formatters for good interoperability."""
@@ -51,9 +52,9 @@ class ExprFormattersTestCase(TestBase):
         self.runCmd("script import formatters")
         self.runCmd("script import foosynth")
         
-        self.runCmd("frame variable foo1 -T")
-        self.runCmd("frame variable foo1.b -T")
-        self.runCmd("frame variable foo1.b.b_ref -T")
+        self.runCmd("frame variable foo1 --show-types")
+        self.runCmd("frame variable foo1.b --show-types")
+        self.runCmd("frame variable foo1.b.b_ref --show-types")
 
         self.expect("expression *(new foo(47))",
             substrs = ['(int) a = 47', '(bar) b = {', '(int) i = 94', '(baz) b = {', '(int) k = 99'])

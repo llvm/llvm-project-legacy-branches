@@ -41,6 +41,11 @@ public:
         return m_object;
     }
     
+    operator bool ()
+    {
+        return m_object != NULL;
+    }
+    
     ScriptInterpreterObject&
     operator = (const ScriptInterpreterObject& rhs)
     {
@@ -371,6 +376,12 @@ public:
     GetDocumentationForItem (const char* item, std::string& dest)
     {
 		dest.clear();
+        return false;
+    }
+    
+    virtual bool
+    CheckObjectExists (const char* name)
+    {
         return false;
     }
 

@@ -21,6 +21,7 @@ class StopHookForMultipleThreadsTestCase(TestBase):
         self.stop_hook_multiple_threads()
 
     @dwarf_test
+    @skipOnLinux # due to bugzilla 14323
     def test_stop_hook_multiple_threads_with_dwarf(self):
         """Test that lldb stop-hook works for multiple threads."""
         self.buildDwarf(dictionary=self.d)
@@ -61,7 +62,7 @@ class StopHookForMultipleThreadsTestCase(TestBase):
         # Now run the program, expect to stop at the the first breakpoint which is within the stop-hook range.
         child.sendline('run')
         child.expect_exact(prompt)
-        child.sendline('target stop-hook add -o "frame variable -g g_val"')
+        child.sendline('target stop-hook add -o "frame variable --show-globals g_val"')
         child.expect_exact(prompt)
 
         # Continue and expect to find the output emitted by the firing of our stop hook.

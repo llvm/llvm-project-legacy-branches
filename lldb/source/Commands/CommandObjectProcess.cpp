@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectProcess.h"
 
 // C Includes
@@ -250,7 +252,7 @@ protected:
         {
             const char *archname = exe_module->GetArchitecture().GetArchitectureName();
 
-            result.AppendMessageWithFormat ("Process %llu launched: '%s' (%s)\n", process->GetID(), filename, archname);
+            result.AppendMessageWithFormat ("Process %" PRIu64 " launched: '%s' (%s)\n", process->GetID(), filename, archname);
             result.SetDidChangeProcessState (true);
             if (m_options.launch_info.GetFlags().Test(eLaunchFlagStopAtEntry) == false)
             {
@@ -355,7 +357,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success = false;
             switch (short_option)
             {
@@ -510,7 +512,7 @@ protected:
             state = process->GetState();
             if (process->IsAlive() && state != eStateConnected)
             {
-                result.AppendErrorWithFormat ("Process %llu is currently being debugged, kill the process before attaching.\n", 
+                result.AppendErrorWithFormat ("Process %" PRIu64 " is currently being debugged, kill the process before attaching.\n",
                                               process->GetID());
                 result.SetStatus (eReturnStatusFailed);
                 return false;
@@ -597,7 +599,7 @@ protected:
 
                     if (state == eStateStopped)
                     {
-                        result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                        result.AppendMessageWithFormat ("Process %" PRIu64 " %s\n", process->GetID(), StateAsCString (state));
                         result.SetStatus (eReturnStatusSuccessFinishNoResult);
                     }
                     else
@@ -640,7 +642,7 @@ protected:
             {
                 result.AppendMessageWithFormat ("Architecture set to: %s.\n", target->GetArchitecture().GetTriple().getTriple().c_str());
             }
-            else if (old_arch_spec != target->GetArchitecture())
+            else if (!old_arch_spec.IsExactMatch(target->GetArchitecture()))
             {
                 result.AppendWarningWithFormat("Architecture changed from %s to %s.\n", 
                                                old_arch_spec.GetTriple().getTriple().c_str(),
@@ -715,7 +717,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success = false;
             switch (short_option)
             {
@@ -815,13 +817,13 @@ protected:
             Error error(process->Resume());
             if (error.Success())
             {
-                result.AppendMessageWithFormat ("Process %llu resuming\n", process->GetID());
+                result.AppendMessageWithFormat ("Process %" PRIu64 " resuming\n", process->GetID());
                 if (synchronous_execution)
                 {
                     state = process->WaitForProcessToStop (NULL);
 
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                    result.AppendMessageWithFormat ("Process %" PRIu64 " %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else
@@ -897,7 +899,7 @@ protected:
             return false;
         }
 
-        result.AppendMessageWithFormat ("Detaching from process %llu\n", process->GetID());
+        result.AppendMessageWithFormat ("Detaching from process %" PRIu64 "\n", process->GetID());
         Error error (process->Detach());
         if (error.Success())
         {
@@ -941,7 +943,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -1011,7 +1013,7 @@ protected:
         {
             if (process->IsAlive())
             {
-                result.AppendErrorWithFormat ("Process %llu is currently being debugged, kill the process before connecting.\n", 
+                result.AppendErrorWithFormat ("Process %" PRIu64 " is currently being debugged, kill the process before connecting.\n",
                                               process->GetID());
                 result.SetStatus (eReturnStatusFailed);
                 return false;
@@ -1061,7 +1063,7 @@ protected:
             else
             {
                 result.AppendErrorWithFormat ("Unable to find process plug-in for remote URL '%s'.\nPlease specify a process plug-in name with the --plugin option, or specify an object file using the \"file\" command.\n", 
-                                              m_cmd_name.c_str());
+                                              remote_url);
                 result.SetStatus (eReturnStatusFailed);
             }
         }
@@ -1533,7 +1535,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {

@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Target/StopInfo.h"
 
 // C Includes
@@ -165,7 +167,7 @@ public:
                 LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
                 if (log)
-                    log->Printf ("Process::%s could not find breakpoint site id: %lld...", __FUNCTION__, m_value);
+                    log->Printf ("Process::%s could not find breakpoint site id: %" PRId64 "...", __FUNCTION__, m_value);
 
                 m_should_stop = true;
             }
@@ -219,9 +221,9 @@ public:
                         strm.Printf ("breakpoint %d which has been deleted.", m_break_id);
                 }
                 else if (m_address == LLDB_INVALID_ADDRESS)
-                    strm.Printf("breakpoint site %lli which has been deleted - unknown address", m_value);
+                    strm.Printf("breakpoint site %" PRIi64 " which has been deleted - unknown address", m_value);
                 else
-                    strm.Printf("breakpoint site %lli which has been deleted - was at 0x%llx", m_value, m_address);
+                    strm.Printf("breakpoint site %" PRIi64 " which has been deleted - was at 0x%" PRIx64, m_value, m_address);
                 
                 m_description.swap (strm.GetString());
             }
@@ -397,7 +399,7 @@ protected:
             LogSP log_process(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
             if (log_process)
-                log_process->Printf ("Process::%s could not find breakpoint site id: %lld...", __FUNCTION__, m_value);
+                log_process->Printf ("Process::%s could not find breakpoint site id: %" PRId64 "...", __FUNCTION__, m_value);
         }
         if (log)
             log->Printf ("Process::%s returning from action with m_should_stop: %d.", __FUNCTION__, m_should_stop);
@@ -433,8 +435,9 @@ public:
         {
             if (process && watchpoint)
             {
+                const bool notify = false;
                 watchpoint->TurnOnEphemeralMode();
-                process->DisableWatchpoint(watchpoint);
+                process->DisableWatchpoint(watchpoint, notify);
             }
         }
         ~WatchpointSentry()
@@ -442,7 +445,10 @@ public:
             if (process && watchpoint)
             {
                 if (!watchpoint->IsDisabledDuringEphemeralMode())
-                    process->EnableWatchpoint(watchpoint);
+                {
+                    const bool notify = false;
+                    process->EnableWatchpoint(watchpoint, notify);
+                }
                 watchpoint->TurnOffEphemeralMode();
             }
         }
@@ -475,7 +481,7 @@ public:
         if (m_description.empty())
         {
             StreamString strm;
-            strm.Printf("watchpoint %lli", m_value);
+            strm.Printf("watchpoint %" PRIi64, m_value);
             m_description.swap (strm.GetString());
         }
         return m_description.c_str();
@@ -509,7 +515,7 @@ protected:
             LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
             if (log)
-                log->Printf ("Process::%s could not find watchpoint location id: %lld...",
+                log->Printf ("Process::%s could not find watchpoint location id: %" PRId64 "...",
                              __FUNCTION__, GetValue());
 
             m_should_stop = true;
@@ -666,7 +672,7 @@ protected:
             LogSP log_process(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
             if (log_process)
-                log_process->Printf ("Process::%s could not find watchpoint id: %lld...", __FUNCTION__, m_value);
+                log_process->Printf ("Process::%s could not find watchpoint id: %" PRId64 "...", __FUNCTION__, m_value);
         }
         if (log)
             log->Printf ("Process::%s returning from action with m_should_stop: %d.", __FUNCTION__, m_should_stop);
@@ -737,7 +743,7 @@ public:
             if (signal_name)
                 strm.Printf("signal %s", signal_name);
             else
-                strm.Printf("signal %lli", m_value);
+                strm.Printf("signal %" PRIi64, m_value);
             m_description.swap (strm.GetString());
         }
         return m_description.c_str();
@@ -862,6 +868,49 @@ private:
     ThreadPlanSP m_plan_sp;
     ValueObjectSP m_return_valobj_sp;
 };
+    
+class StopInfoExec : public StopInfo
+{
+public:
+    
+    StopInfoExec (Thread &thread) :
+        StopInfo (thread, LLDB_INVALID_UID),
+        m_performed_action (false)
+    {
+    }
+    
+    virtual
+    ~StopInfoExec ()
+    {
+    }
+    
+    virtual StopReason
+    GetStopReason () const
+    {
+        return eStopReasonExec;
+    }
+    
+    virtual const char *
+    GetDescription ()
+    {
+        return "exec";
+    }
+protected:
+protected:
+    
+    virtual void
+    PerformAction (Event *event_ptr)
+    {
+        // Only perform the action once
+        if (m_performed_action)
+            return;
+        m_performed_action = true;
+        m_thread.GetProcess()->DidExec();
+    }
+    
+    bool m_performed_action;
+};
+
 } // namespace lldb_private
 
 StopInfoSP
@@ -904,6 +953,12 @@ StopInfoSP
 StopInfo::CreateStopReasonWithException (Thread &thread, const char *description)
 {
     return StopInfoSP (new StopInfoException (thread, description));
+}
+
+StopInfoSP
+StopInfo::CreateStopReasonWithExec (Thread &thread)
+{
+    return StopInfoSP (new StopInfoExec (thread));
 }
 
 ValueObjectSP

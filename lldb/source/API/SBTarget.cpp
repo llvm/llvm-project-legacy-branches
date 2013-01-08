@@ -7,12 +7,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/API/SBTarget.h"
 
 #include "lldb/lldb-public.h"
 
 #include "lldb/API/SBDebugger.h"
 #include "lldb/API/SBBreakpoint.h"
+#include "lldb/API/SBExpressionOptions.h"
 #include "lldb/API/SBFileSpec.h"
 #include "lldb/API/SBListener.h"
 #include "lldb/API/SBModule.h"
@@ -876,7 +879,7 @@ SBTarget::Attach (SBAttachInfo &sb_attach_info, SBError& error)
                     }
                     else
                     {
-                        error.ref().SetErrorStringWithFormat("no process found with process ID %llu", attach_pid);
+                        error.ref().SetErrorStringWithFormat("no process found with process ID %" PRIu64, attach_pid);
                         if (log)
                         {
                             log->Printf ("SBTarget(%p)::Attach (...) => error %s",
@@ -944,7 +947,7 @@ SBTarget::AttachToProcessWithID
 
     if (log)
     {
-        log->Printf ("SBTarget(%p)::AttachToProcessWithID (listener, pid=%lld, error)...", target_sp.get(), pid);
+        log->Printf ("SBTarget(%p)::AttachToProcessWithID (listener, pid=%" PRId64 ", error)...", target_sp.get(), pid);
     }
     
     if (target_sp)
@@ -1487,7 +1490,7 @@ SBTarget::BreakpointCreateByAddress (addr_t address)
     
     if (log)
     {
-        log->Printf ("SBTarget(%p)::BreakpointCreateByAddress (address=%llu) => SBBreakpoint(%p)", target_sp.get(), (uint64_t) address, sb_bp.get());
+        log->Printf ("SBTarget(%p)::BreakpointCreateByAddress (address=%" PRIu64 ") => SBBreakpoint(%p)", target_sp.get(), (uint64_t) address, sb_bp.get());
     }
 
     return sb_bp;
@@ -1792,7 +1795,7 @@ SBTarget::WatchAddress (lldb::addr_t addr, size_t size, bool read, bool write, S
     
     if (log)
     {
-        log->Printf ("SBTarget(%p)::WatchAddress (addr=0x%llx, 0x%u) => SBWatchpoint(%p)", 
+        log->Printf ("SBTarget(%p)::WatchAddress (addr=0x%" PRIx64 ", 0x%u) => SBWatchpoint(%p)",
                      target_sp.get(), addr, (uint32_t) size, watchpoint_sp.get());
     }
     
@@ -2062,52 +2065,138 @@ SBTarget::FindFunctions (const char *name, uint32_t name_type_mask)
 }
 
 lldb::SBType
-SBTarget::FindFirstType (const char* type)
+SBTarget::FindFirstType (const char* typename_cstr)
 {
     TargetSP target_sp(GetSP());
-    if (type && target_sp)
+    if (typename_cstr && typename_cstr[0] && target_sp)
     {
-        size_t count = target_sp->GetImages().GetSize();
+        ConstString const_typename(typename_cstr);
+        SymbolContext sc;
+        const bool exact_match = false;
+
+        const ModuleList &module_list = target_sp->GetImages();
+        size_t count = module_list.GetSize();
         for (size_t idx = 0; idx < count; idx++)
         {
-            SBType found_at_idx = GetModuleAtIndex(idx).FindFirstType(type);
-            
-            if (found_at_idx.IsValid())
-                return found_at_idx;
+            ModuleSP module_sp (module_list.GetModuleAtIndex(idx));
+            if (module_sp)
+            {
+                TypeSP type_sp (module_sp->FindFirstType(sc, const_typename, exact_match));
+                if (type_sp)
+                    return SBType(type_sp);
+            }
         }
+        
+        // Didn't find the type in the symbols; try the Objective-C runtime
+        // if one is installed
+        
+        ProcessSP process_sp(target_sp->GetProcessSP());
+        
+        if (process_sp)
+        {
+            ObjCLanguageRuntime *objc_language_runtime = process_sp->GetObjCLanguageRuntime();
+            
+            if (objc_language_runtime)
+            {
+                TypeVendor *objc_type_vendor = objc_language_runtime->GetTypeVendor();
+                
+                if (objc_type_vendor)
+                {
+                    std::vector <ClangASTType> types;
+                    
+                    if (objc_type_vendor->FindTypes(const_typename, true, 1, types) > 0)
+                        return SBType(types[0]);
+                }
+            }
+        }
+
+        // No matches, search for basic typename matches
+        ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
+        if (clang_ast)
+            return SBType (ClangASTType::GetBasicType (clang_ast->getASTContext(), const_typename));
     }
     return SBType();
 }
 
-lldb::SBTypeList
-SBTarget::FindTypes (const char* type)
+SBType
+SBTarget::GetBasicType(lldb::BasicType type)
 {
-    
-    SBTypeList retval;
-    
     TargetSP target_sp(GetSP());
-    if (type && target_sp)
+    if (target_sp)
+    {
+        ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
+        if (clang_ast)
+            return SBType (ClangASTType::GetBasicType (clang_ast->getASTContext(), type));
+    }
+    return SBType();
+}
+
+
+lldb::SBTypeList
+SBTarget::FindTypes (const char* typename_cstr)
+{
+    SBTypeList sb_type_list;
+    TargetSP target_sp(GetSP());
+    if (typename_cstr && typename_cstr[0] && target_sp)
     {
         ModuleList& images = target_sp->GetImages();
-        ConstString name_const(type);
+        ConstString const_typename(typename_cstr);
         bool exact_match = false;
         SymbolContext sc;
         TypeList type_list;
         
         uint32_t num_matches = images.FindTypes (sc,
-                                                 name_const,
+                                                 const_typename,
                                                  exact_match,
                                                  UINT32_MAX,
                                                  type_list);
         
-        for (size_t idx = 0; idx < num_matches; idx++)
+        if (num_matches > 0)
         {
-            TypeSP type_sp (type_list.GetTypeAtIndex(idx));
-            if (type_sp)
-                retval.Append(SBType(type_sp));
+            for (size_t idx = 0; idx < num_matches; idx++)
+            {
+                TypeSP type_sp (type_list.GetTypeAtIndex(idx));
+                if (type_sp)
+                    sb_type_list.Append(SBType(type_sp));
+            }
+        }
+        
+        // Try the Objective-C runtime if one is installed
+        
+        ProcessSP process_sp(target_sp->GetProcessSP());
+        
+        if (process_sp)
+        {
+            ObjCLanguageRuntime *objc_language_runtime = process_sp->GetObjCLanguageRuntime();
+            
+            if (objc_language_runtime)
+            {
+                TypeVendor *objc_type_vendor = objc_language_runtime->GetTypeVendor();
+                
+                if (objc_type_vendor)
+                {
+                    std::vector <ClangASTType> types;
+                    
+                    if (objc_type_vendor->FindTypes(const_typename, true, UINT32_MAX, types))
+                    {
+                        for (auto type = types.begin(); type != types.end(); ++type)
+                        {
+                            sb_type_list.Append(SBType(*type));
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (sb_type_list.GetSize() == 0)
+        {
+            // No matches, search for basic typename matches
+            ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
+            if (clang_ast)
+                sb_type_list.Append (SBType (ClangASTType::GetBasicType (clang_ast->getASTContext(), const_typename)));
         }
     }
-    return retval;
+    return sb_type_list;
 }
 
 SBValueList
@@ -2354,4 +2443,95 @@ SBTarget::ClearModuleLoadAddress (lldb::SBModule module)
     return sb_error;
 }
 
+
+lldb::SBSymbolContextList
+SBTarget::FindSymbols (const char *name, lldb::SymbolType symbol_type)
+{
+    SBSymbolContextList sb_sc_list;
+    if (name && name[0])
+    {
+        TargetSP target_sp(GetSP());
+        if (target_sp)
+        {
+            bool append = true;
+            target_sp->GetImages().FindSymbolsWithNameAndType (ConstString(name),
+                                                               symbol_type,
+                                                               *sb_sc_list,
+                                                               append);
+        }
+    }
+    return sb_sc_list;
+    
+}
+
+
+lldb::SBValue
+SBTarget::EvaluateExpression (const char *expr, const SBExpressionOptions &options)
+{
+    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    LogSP expr_log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    SBValue expr_result;
+    ExecutionResults exe_results = eExecutionSetupError;
+    ValueObjectSP expr_value_sp;
+    TargetSP target_sp(GetSP());
+    StackFrame *frame = NULL;
+    if (target_sp)
+    {
+        if (expr == NULL || expr[0] == '\0')
+        {
+            if (log)
+                log->Printf ("SBTarget::EvaluateExpression called with an empty expression");
+            return expr_result;
+        }
+        
+        Mutex::Locker api_locker (target_sp->GetAPIMutex());
+        ExecutionContext exe_ctx (m_opaque_sp.get());
+        
+        if (log)
+            log->Printf ("SBTarget()::EvaluateExpression (expr=\"%s\")...", expr);
+        
+        frame = exe_ctx.GetFramePtr();
+        Target *target = exe_ctx.GetTargetPtr();
+        
+        if (target)
+        {
+#ifdef LLDB_CONFIGURATION_DEBUG
+            StreamString frame_description;
+            if (frame)
+                frame->DumpUsingSettingsFormat (&frame_description);
+            Host::SetCrashDescriptionWithFormat ("SBTarget::EvaluateExpression (expr = \"%s\", fetch_dynamic_value = %u) %s",
+                                                 expr, options.GetFetchDynamicValue(), frame_description.GetString().c_str());
+#endif
+            exe_results = target->EvaluateExpression (expr,
+                                                      frame,
+                                                      expr_value_sp,
+                                                      options.ref());
+
+            expr_result.SetSP(expr_value_sp, options.GetFetchDynamicValue());
+#ifdef LLDB_CONFIGURATION_DEBUG
+            Host::SetCrashDescription (NULL);
+#endif
+        }
+        else
+        {
+            if (log)
+                log->Printf ("SBTarget::EvaluateExpression () => error: could not reconstruct frame object for this SBTarget.");
+        }
+    }
+#ifndef LLDB_DISABLE_PYTHON
+    if (expr_log)
+        expr_log->Printf("** [SBTarget::EvaluateExpression] Expression result is %s, summary %s **",
+                         expr_result.GetValue(),
+                         expr_result.GetSummary());
+    
+    if (log)
+        log->Printf ("SBTarget(%p)::EvaluateExpression (expr=\"%s\") => SBValue(%p) (execution result=%d)",
+                     frame,
+                     expr,
+                     expr_value_sp.get(),
+                     exe_results);
+#endif
+    
+    return expr_result;
+}
 

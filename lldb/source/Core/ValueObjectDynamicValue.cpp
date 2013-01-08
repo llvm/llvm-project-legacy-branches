@@ -178,6 +178,8 @@ ValueObjectDynamicValue::UpdateValue ()
     {
         if (m_type_sp)
             SetValueDidChange(true);
+        ClearDynamicTypeInformation();
+        m_type_sp.reset();
         m_value = m_parent->GetValue();
         m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
         return m_error.Success();

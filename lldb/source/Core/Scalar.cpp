@@ -10,6 +10,9 @@
 #include "lldb/Core/Scalar.h"
 
 #include <math.h>
+#ifndef _WIN32
+#include <inttypes.h>
+#endif
 
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Core/Error.h"
@@ -168,7 +171,6 @@ Scalar::GetByteSize() const
 {
     switch (m_type)
     {
-    default:
     case e_void:
         break;
     case e_sint:        return sizeof(m_data.sint);
@@ -189,7 +191,6 @@ Scalar::IsZero() const
 {
     switch (m_type)
     {
-    default:
     case e_void:
         break;
     case e_sint:        return m_data.sint == 0;
@@ -214,7 +215,6 @@ Scalar::GetValue (Stream *s, bool show_type) const
     switch (m_type)
     {
     case e_void:
-    default:
         break;
     case e_sint:        s->Printf("%i", m_data.sint);               break;
     case e_uint:        s->Printf("0x%8.8x", m_data.uint);          break;
@@ -233,8 +233,6 @@ Scalar::GetTypeAsCString() const
 {
     switch (m_type)
     {
-    default:
-        break;
     case e_void:        return "void";
     case e_sint:        return "int";
     case e_uint:        return "unsigned int";
@@ -357,7 +355,6 @@ Scalar::Promote(Scalar::Type type)
     case e_sint:
         switch (type)
         {
-        default:
         case e_void:        break;
         case e_sint:        success = true; break;
         case e_uint:        m_data.uint         = m_data.sint;      success = true; break;
@@ -374,7 +371,6 @@ Scalar::Promote(Scalar::Type type)
     case e_uint:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:        break;
         case e_uint:        success = true; break;
@@ -391,7 +387,6 @@ Scalar::Promote(Scalar::Type type)
     case e_slong:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:
         case e_uint:        break;
@@ -408,7 +403,6 @@ Scalar::Promote(Scalar::Type type)
     case e_ulong:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:
         case e_uint:
@@ -425,7 +419,6 @@ Scalar::Promote(Scalar::Type type)
     case e_slonglong:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:
         case e_uint:
@@ -442,7 +435,6 @@ Scalar::Promote(Scalar::Type type)
     case e_ulonglong:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:
         case e_uint:
@@ -459,7 +451,6 @@ Scalar::Promote(Scalar::Type type)
     case e_float:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:
         case e_uint:
@@ -476,7 +467,6 @@ Scalar::Promote(Scalar::Type type)
     case e_double:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:
         case e_uint:
@@ -493,7 +483,6 @@ Scalar::Promote(Scalar::Type type)
     case e_long_double:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:
         case e_uint:
@@ -518,7 +507,6 @@ Scalar::GetValueTypeAsCString (Scalar::Type type)
 {
     switch (type)
     {
-    default:            break;
     case e_void:        return "void";
     case e_sint:        return "int";
     case e_uint:        return "unsigned int";
@@ -582,7 +570,6 @@ Scalar::Cast(Scalar::Type type)
     case e_sint:
         switch (type)
         {
-        default:
         case e_void:        break;
         case e_sint:        success = true; break;
         case e_uint:        m_data.uint         = m_data.sint;      success = true; break;
@@ -599,7 +586,6 @@ Scalar::Cast(Scalar::Type type)
     case e_uint:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:        m_data.sint         = m_data.uint;      success = true; break;
         case e_uint:        success = true; break;
@@ -616,7 +602,6 @@ Scalar::Cast(Scalar::Type type)
     case e_slong:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:        m_data.sint         = m_data.slong;     success = true; break;
         case e_uint:        m_data.uint         = m_data.slong;     success = true; break;
@@ -633,7 +618,6 @@ Scalar::Cast(Scalar::Type type)
     case e_ulong:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:        m_data.sint         = m_data.ulong;     success = true; break;
         case e_uint:        m_data.uint         = m_data.ulong;     success = true; break;
@@ -650,7 +634,6 @@ Scalar::Cast(Scalar::Type type)
     case e_slonglong:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:        m_data.sint         = m_data.slonglong;     success = true; break;
         case e_uint:        m_data.uint         = m_data.slonglong;     success = true; break;
@@ -667,7 +650,6 @@ Scalar::Cast(Scalar::Type type)
     case e_ulonglong:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:        m_data.sint         = m_data.ulonglong;     success = true; break;
         case e_uint:        m_data.uint         = m_data.ulonglong;     success = true; break;
@@ -684,7 +666,6 @@ Scalar::Cast(Scalar::Type type)
     case e_float:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:        m_data.sint         = m_data.flt;       success = true; break;
         case e_uint:        m_data.uint         = m_data.flt;       success = true; break;
@@ -701,7 +682,6 @@ Scalar::Cast(Scalar::Type type)
     case e_double:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:        m_data.sint         = m_data.dbl;       success = true; break;
         case e_uint:        m_data.uint         = m_data.dbl;       success = true; break;
@@ -718,7 +698,6 @@ Scalar::Cast(Scalar::Type type)
     case e_long_double:
         switch (type)
         {
-        default:
         case e_void:
         case e_sint:        m_data.sint         = m_data.ldbl;      success = true; break;
         case e_uint:        m_data.uint         = m_data.ldbl;      success = true; break;
@@ -743,7 +722,6 @@ Scalar::SInt(int fail_value) const
 {
     switch (m_type)
     {
-    default:
     case e_void:        break;
     case e_sint:        return m_data.sint;
     case e_uint:        return (int)m_data.uint;
@@ -763,7 +741,6 @@ Scalar::UInt(unsigned int fail_value) const
 {
     switch (m_type)
     {
-    default:
     case e_void:        break;
     case e_sint:        return (unsigned int)m_data.sint;
     case e_uint:        return (unsigned int)m_data.uint;
@@ -784,7 +761,6 @@ Scalar::SLong(long fail_value) const
 {
     switch (m_type)
     {
-    default:
     case e_void:        break;
     case e_sint:        return (long)m_data.sint;
     case e_uint:        return (long)m_data.uint;
@@ -806,7 +782,6 @@ Scalar::ULong(unsigned long fail_value) const
 {
     switch (m_type)
     {
-    default:
     case e_void:        break;
     case e_sint:        return (unsigned long)m_data.sint;
     case e_uint:        return (unsigned long)m_data.uint;
@@ -826,7 +801,6 @@ Scalar::GetRawBits64(uint64_t fail_value) const
 {
     switch (m_type)
     {
-    default:
     case e_void:
         break;
 
@@ -879,7 +853,6 @@ Scalar::SLongLong(long long fail_value) const
 {
     switch (m_type)
     {
-    default:
     case e_void:        break;
     case e_sint:        return (long long)m_data.sint;
     case e_uint:        return (long long)m_data.uint;
@@ -900,7 +873,6 @@ Scalar::ULongLong(unsigned long long fail_value) const
 {
     switch (m_type)
     {
-    default:
     case e_void:        break;
     case e_sint:        return (unsigned long long)m_data.sint;
     case e_uint:        return (unsigned long long)m_data.uint;
@@ -921,7 +893,6 @@ Scalar::Float(float fail_value) const
 {
     switch (m_type)
     {
-    default:
     case e_void:        break;
     case e_sint:        return (float)m_data.sint;
     case e_uint:        return (float)m_data.uint;
@@ -942,7 +913,6 @@ Scalar::Double(double fail_value) const
 {
     switch (m_type)
     {
-    default:
     case e_void:        break;
     case e_sint:        return (double)m_data.sint;
     case e_uint:        return (double)m_data.uint;
@@ -963,7 +933,6 @@ Scalar::LongDouble(long double fail_value) const
 {
     switch (m_type)
     {
-    default:
     case e_void:        break;
     case e_sint:        return (long double)m_data.sint;
     case e_uint:        return (long double)m_data.uint;
@@ -989,7 +958,6 @@ Scalar::operator+= (const Scalar& rhs)
     {
         switch (m_type)
         {
-        default:
         case e_void:        break;
         case e_sint:        m_data.sint         = a->m_data.sint        + b->m_data.sint;       break;
         case e_uint:        m_data.uint         = a->m_data.uint        + b->m_data.uint;       break;
@@ -1010,7 +978,6 @@ Scalar::operator<<= (const Scalar& rhs)
 {
     switch (m_type)
     {
-    default:
     case e_void:
     case e_float:
     case e_double:
@@ -1021,7 +988,6 @@ Scalar::operator<<= (const Scalar& rhs)
     case e_sint:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1040,7 +1006,6 @@ Scalar::operator<<= (const Scalar& rhs)
     case e_uint:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1059,7 +1024,6 @@ Scalar::operator<<= (const Scalar& rhs)
     case e_slong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1078,7 +1042,6 @@ Scalar::operator<<= (const Scalar& rhs)
     case e_ulong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1096,7 +1059,6 @@ Scalar::operator<<= (const Scalar& rhs)
     case e_slonglong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1115,7 +1077,6 @@ Scalar::operator<<= (const Scalar& rhs)
     case e_ulonglong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1139,7 +1100,6 @@ Scalar::ShiftRightLogical(const Scalar& rhs)
 {
     switch (m_type)
     {
-    default:
     case e_void:
     case e_float:
     case e_double:
@@ -1151,7 +1111,6 @@ Scalar::ShiftRightLogical(const Scalar& rhs)
     case e_uint:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1171,7 +1130,6 @@ Scalar::ShiftRightLogical(const Scalar& rhs)
     case e_ulong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1191,7 +1149,6 @@ Scalar::ShiftRightLogical(const Scalar& rhs)
     case e_ulonglong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1216,7 +1173,6 @@ Scalar::operator>>= (const Scalar& rhs)
 {
     switch (m_type)
     {
-    default:
     case e_void:
     case e_float:
     case e_double:
@@ -1227,7 +1183,6 @@ Scalar::operator>>= (const Scalar& rhs)
     case e_sint:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1246,7 +1201,6 @@ Scalar::operator>>= (const Scalar& rhs)
     case e_uint:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1265,7 +1219,6 @@ Scalar::operator>>= (const Scalar& rhs)
     case e_slong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1284,7 +1237,6 @@ Scalar::operator>>= (const Scalar& rhs)
     case e_ulong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1302,7 +1254,6 @@ Scalar::operator>>= (const Scalar& rhs)
     case e_slonglong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1321,7 +1272,6 @@ Scalar::operator>>= (const Scalar& rhs)
     case e_ulonglong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1346,7 +1296,6 @@ Scalar::operator&= (const Scalar& rhs)
 {
     switch (m_type)
     {
-    default:
     case e_void:
     case e_float:
     case e_double:
@@ -1357,7 +1306,6 @@ Scalar::operator&= (const Scalar& rhs)
     case e_sint:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1376,7 +1324,6 @@ Scalar::operator&= (const Scalar& rhs)
     case e_uint:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1395,7 +1342,6 @@ Scalar::operator&= (const Scalar& rhs)
     case e_slong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1414,7 +1360,6 @@ Scalar::operator&= (const Scalar& rhs)
     case e_ulong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1432,7 +1377,6 @@ Scalar::operator&= (const Scalar& rhs)
     case e_slonglong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1451,7 +1395,6 @@ Scalar::operator&= (const Scalar& rhs)
     case e_ulonglong:
         switch (rhs.m_type)
         {
-        default:
         case e_void:
         case e_float:
         case e_double:
@@ -1477,7 +1420,6 @@ Scalar::AbsoluteValue()
 {
     switch (m_type)
     {
-    default:
     case e_void:
         break;
 
@@ -1512,7 +1454,6 @@ Scalar::UnaryNegate()
 {
     switch (m_type)
     {
-    default:
     case e_void:        break;
     case e_sint:        m_data.sint = -m_data.sint;             return true;
     case e_uint:        m_data.uint = -m_data.uint;             return true;
@@ -1539,7 +1480,6 @@ Scalar::OnesComplement()
     case e_slonglong:   m_data.slonglong = ~m_data.slonglong; return true;
     case e_ulonglong:   m_data.ulonglong = ~m_data.ulonglong; return true;
 
-    default:
     case e_void:
     case e_float:
     case e_double:
@@ -1561,7 +1501,6 @@ lldb_private::operator+ (const Scalar& lhs, const Scalar& rhs)
     {
         switch (result.m_type)
         {
-        default:
         case Scalar::e_void:            break;
         case Scalar::e_sint:            result.m_data.sint      = a->m_data.sint        + b->m_data.sint;       break;
         case Scalar::e_uint:            result.m_data.uint      = a->m_data.uint        + b->m_data.uint;       break;
@@ -1589,7 +1528,6 @@ lldb_private::operator- (const Scalar& lhs, const Scalar& rhs)
     {
         switch (result.m_type)
         {
-        default:
         case Scalar::e_void:            break;
         case Scalar::e_sint:            result.m_data.sint      = a->m_data.sint        - b->m_data.sint;       break;
         case Scalar::e_uint:            result.m_data.uint      = a->m_data.uint        - b->m_data.uint;       break;
@@ -1616,7 +1554,6 @@ lldb_private::operator/ (const Scalar& lhs, const Scalar& rhs)
     {
         switch (result.m_type)
         {
-        default:
         case Scalar::e_void:            break;
 
         case Scalar::e_sint:            if (b->m_data.sint != 0)        { result.m_data.sint = a->m_data.sint/ b->m_data.sint; return result; } break;
@@ -1647,7 +1584,6 @@ lldb_private::operator* (const Scalar& lhs, const Scalar& rhs)
     {
         switch (result.m_type)
         {
-        default:
         case Scalar::e_void:            break;
         case Scalar::e_sint:            result.m_data.sint      = a->m_data.sint        * b->m_data.sint;       break;
         case Scalar::e_uint:            result.m_data.uint      = a->m_data.uint        * b->m_data.uint;       break;
@@ -1681,7 +1617,6 @@ lldb_private::operator& (const Scalar& lhs, const Scalar& rhs)
         case Scalar::e_slonglong:   result.m_data.slonglong = a->m_data.slonglong   & b->m_data.slonglong;  break;
         case Scalar::e_ulonglong:   result.m_data.ulonglong = a->m_data.ulonglong   & b->m_data.ulonglong;  break;
 
-        default:
         case Scalar::e_void:
         case Scalar::e_float:
         case Scalar::e_double:
@@ -1712,7 +1647,6 @@ lldb_private::operator| (const Scalar& lhs, const Scalar& rhs)
         case Scalar::e_slonglong:   result.m_data.slonglong = a->m_data.slonglong   | b->m_data.slonglong;  break;
         case Scalar::e_ulonglong:   result.m_data.ulonglong = a->m_data.ulonglong   | b->m_data.ulonglong;  break;
 
-        default:
         case Scalar::e_void:
         case Scalar::e_float:
         case Scalar::e_double:
@@ -1743,7 +1677,6 @@ lldb_private::operator% (const Scalar& lhs, const Scalar& rhs)
         case Scalar::e_slonglong:   result.m_data.slonglong = a->m_data.slonglong   % b->m_data.slonglong;  break;
         case Scalar::e_ulonglong:   result.m_data.ulonglong = a->m_data.ulonglong   % b->m_data.ulonglong;  break;
 
-        default:
         case Scalar::e_void:
         case Scalar::e_float:
         case Scalar::e_double:
@@ -1774,7 +1707,6 @@ lldb_private::operator^ (const Scalar& lhs, const Scalar& rhs)
         case Scalar::e_slonglong:   result.m_data.slonglong = a->m_data.slonglong   ^ b->m_data.slonglong;  break;
         case Scalar::e_ulonglong:   result.m_data.ulonglong = a->m_data.ulonglong   ^ b->m_data.ulonglong;  break;
 
-        default:
         case Scalar::e_void:
         case Scalar::e_float:
         case Scalar::e_double:
@@ -1821,7 +1753,6 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
     bool success = false;
     switch (encoding)
     {
-    default:
     case eEncodingInvalid:
         error.SetErrorString ("Invalid encoding.");
         break;
@@ -1833,7 +1764,11 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
             if (!success)
                 error.SetErrorStringWithFormat ("'%s' is not a valid unsigned integer string value", value_str);
             else if (!UIntValueIsValidForSize (uval64, byte_size))
-                error.SetErrorStringWithFormat ("value 0x%llx is too large to fit in a %u byte unsigned integer value", uval64, byte_size);
+#ifdef _WIN32
+                error.SetErrorStringWithFormat ("value 0x%llu is too large to fit in a %u byte unsigned integer value", uval64, byte_size);
+#else
+                error.SetErrorStringWithFormat ("value 0x%" PRIx64 " is too large to fit in a %u byte unsigned integer value", uval64, byte_size);
+#endif
             else
             {
                 m_type = Scalar::GetValueTypeForUnsignedIntegerWithByteSize (byte_size);
@@ -1862,7 +1797,11 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
             if (!success)
                 error.SetErrorStringWithFormat ("'%s' is not a valid signed integer string value", value_str);
             else if (!SIntValueIsValidForSize (sval64, byte_size))
-                error.SetErrorStringWithFormat ("value 0x%llx is too large to fit in a %u byte signed integer value", sval64, byte_size);
+#ifdef _WIN32
+                error.SetErrorStringWithFormat ("value 0x%llu is too large to fit in a %u byte signed integer value", sval64, byte_size);
+#else
+                error.SetErrorStringWithFormat ("value 0x%" PRIx64 " is too large to fit in a %u byte signed integer value", sval64, byte_size);
+#endif
             else
             {
                 m_type = Scalar::GetValueTypeForSignedIntegerWithByteSize (byte_size);
@@ -1932,7 +1871,6 @@ Scalar::SignExtend (uint32_t sign_bit_pos)
     {
         switch (m_type)
         {
-        default:
         case Scalar::e_void:
         case Scalar::e_float:
         case Scalar::e_double:
@@ -2042,7 +1980,6 @@ Scalar::ExtractBitfield (uint32_t bit_size,
     uint32_t lsbit = bit_offset;
     switch (m_type)
     {
-        default:
         case Scalar::e_void:
             break;
             
@@ -2122,7 +2059,6 @@ lldb_private::operator== (const Scalar& lhs, const Scalar& rhs)
     const Scalar* b;
     switch (PromoteToMaxType(lhs, rhs, temp_value, a, b))
     {
-    default:
     case Scalar::e_void:            break;
     case Scalar::e_sint:            return a->m_data.sint       == b->m_data.sint;
     case Scalar::e_uint:            return a->m_data.uint       == b->m_data.uint;
@@ -2149,7 +2085,6 @@ lldb_private::operator!= (const Scalar& lhs, const Scalar& rhs)
     const Scalar* b;
     switch (PromoteToMaxType(lhs, rhs, temp_value, a, b))
     {
-    default:
     case Scalar::e_void:            break;
     case Scalar::e_sint:            return a->m_data.sint       != b->m_data.sint;
     case Scalar::e_uint:            return a->m_data.uint       != b->m_data.uint;
@@ -2175,7 +2110,6 @@ lldb_private::operator< (const Scalar& lhs, const Scalar& rhs)
     const Scalar* b;
     switch (PromoteToMaxType(lhs, rhs, temp_value, a, b))
     {
-    default:
     case Scalar::e_void:            break;
     case Scalar::e_sint:            return a->m_data.sint       < b->m_data.sint;
     case Scalar::e_uint:            return a->m_data.uint       < b->m_data.uint;
@@ -2201,7 +2135,6 @@ lldb_private::operator<= (const Scalar& lhs, const Scalar& rhs)
     const Scalar* b;
     switch (PromoteToMaxType(lhs, rhs, temp_value, a, b))
     {
-    default:
     case Scalar::e_void:            break;
     case Scalar::e_sint:            return a->m_data.sint       <= b->m_data.sint;
     case Scalar::e_uint:            return a->m_data.uint       <= b->m_data.uint;
@@ -2228,7 +2161,6 @@ lldb_private::operator> (const Scalar& lhs, const Scalar& rhs)
     const Scalar* b;
     switch (PromoteToMaxType(lhs, rhs, temp_value, a, b))
     {
-    default:
     case Scalar::e_void:            break;
     case Scalar::e_sint:            return a->m_data.sint       > b->m_data.sint;
     case Scalar::e_uint:            return a->m_data.uint       > b->m_data.uint;
@@ -2254,7 +2186,6 @@ lldb_private::operator>= (const Scalar& lhs, const Scalar& rhs)
     const Scalar* b;
     switch (PromoteToMaxType(lhs, rhs, temp_value, a, b))
     {
-    default:
     case Scalar::e_void:            break;
     case Scalar::e_sint:            return a->m_data.sint       >= b->m_data.sint;
     case Scalar::e_uint:            return a->m_data.uint       >= b->m_data.uint;

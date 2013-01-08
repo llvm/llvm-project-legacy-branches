@@ -176,7 +176,9 @@ namespace lldb {
         eStopReasonWatchpoint,
         eStopReasonSignal,
         eStopReasonException,
-        eStopReasonPlanComplete
+        eStopReasonExec,        // Program was re-exec'ed
+        eStopReasonPlanComplete,
+        eStopReasonThreadExiting
     } StopReason;
 
     //----------------------------------------------------------------------
@@ -298,6 +300,20 @@ namespace lldb {
         eBreakpointEventTypeIgnoreChanged       = (1u << 10),
         eBreakpointEventTypeThreadChanged       = (1u << 11)
     } BreakpointEventType;
+
+    typedef enum WatchpointEventType
+    {
+        eWatchpointEventTypeInvalidType         = (1u << 0),
+        eWatchpointEventTypeAdded               = (1u << 1),
+        eWatchpointEventTypeRemoved             = (1u << 2),
+        eWatchpointEventTypeEnabled             = (1u << 6),
+        eWatchpointEventTypeDisabled            = (1u << 7),
+        eWatchpointEventTypeCommandChanged      = (1u << 8),
+        eWatchpointEventTypeConditionChanged    = (1u << 9),
+        eWatchpointEventTypeIgnoreChanged       = (1u << 10),
+        eWatchpointEventTypeThreadChanged       = (1u << 11),
+        eWatchpointEventTypeTypeChanged         = (1u << 12)
+    } WatchpointEventType;
 
 
     //----------------------------------------------------------------------

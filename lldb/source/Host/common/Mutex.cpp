@@ -26,6 +26,7 @@
 // Enable extra mutex error checking
 #ifdef LLDB_CONFIGURATION_DEBUG
 #define ENABLE_MUTEX_ERROR_CHECKING 1
+#include <inttypes.h>
 #endif
 
 #if ENABLE_MUTEX_ERROR_CHECKING
@@ -224,10 +225,6 @@ Mutex::Mutex (Mutex::Type type) :
     case eMutexTypeRecursive:
         err = ::pthread_mutexattr_settype (&attr, PTHREAD_MUTEX_RECURSIVE);
         break;
-
-    default:
-        err = -1;
-        break;
     }
     assert(err == 0);
     err = ::pthread_mutex_init (&m_mutex, &attr);
@@ -288,11 +285,12 @@ Mutex::GetMutex()
 int
 Mutex::Lock()
 {
+    DEBUG_LOG ("[%4.4" PRIx64 "/%4.4" PRIx64 "] pthread_mutex_lock (%p)...\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex);
+
 #ifdef _WIN32
     EnterCriticalSection(&m_mutex);
     return 0;
 #else 
-    DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_lock (%p)...\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex);
 
 #if ENABLE_MUTEX_ERROR_CHECKING
     error_check_mutex (&m_mutex, eMutexActionAssertInitialized);
@@ -308,7 +306,7 @@ Mutex::Lock()
         assert(err == 0);
     }
 #endif
-    DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_lock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
+    DEBUG_LOG ("[%4.4" PRIx64 "/%4.4" PRIx64 "] pthread_mutex_lock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
     return err;
 #endif
 }
@@ -332,7 +330,7 @@ Mutex::TryLock(const char *failure_message)
 #endif
 
     int err = ::pthread_mutex_trylock (&m_mutex);
-    DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_trylock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
+    DEBUG_LOG ("[%4.4" PRIx64 "/%4.4" PRIx64 "] pthread_mutex_trylock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
     return err;
 #endif
 }
@@ -366,7 +364,7 @@ Mutex::Unlock()
         assert(err == 0);
     }
 #endif
-    DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_unlock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
+    DEBUG_LOG ("[%4.4" PRIx64 "/%4.4" PRIx64 "] pthread_mutex_unlock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
     return err;
 #endif
 }
@@ -383,6 +381,38 @@ TrackingMutex::Unlock ()
     assert (m_failure_message.empty());
     return Mutex::Unlock();
 }
+
+int
+LoggingMutex::Lock ()
+{
+    printf("locking mutex %p by [%4.4" PRIx64 "/%4.4" PRIx64 "]...", this, Host::GetCurrentProcessID(), Host::GetCurrentThreadID());
+    int x = Mutex::Lock();
+    m_locked = true;
+    printf("%d\n",x);
+    return x;
+}
+
+int
+LoggingMutex::Unlock ()
+{
+    printf("unlocking mutex %p by [%4.4" PRIx64 "/%4.4" PRIx64 "]...", this, Host::GetCurrentProcessID(), Host::GetCurrentThreadID());
+    int x = Mutex::Unlock();
+    m_locked = false;
+    printf("%d\n",x);
+    return x;
+}
+
+int
+LoggingMutex::TryLock (const char *failure_message)
+{
+    printf("trylocking mutex %p by [%4.4" PRIx64 "/%4.4" PRIx64 "]...", this, Host::GetCurrentProcessID(), Host::GetCurrentThreadID());
+    int x = Mutex::TryLock(failure_message);
+    if (x == 0)
+        m_locked = true;
+    printf("%d\n",x);
+    return x;
+}
+
 #endif
-    
+
 

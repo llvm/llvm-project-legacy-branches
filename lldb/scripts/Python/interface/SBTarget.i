@@ -238,7 +238,8 @@ public:
     {
         eBroadcastBitBreakpointChanged  = (1 << 0),
         eBroadcastBitModulesLoaded      = (1 << 1),
-        eBroadcastBitModulesUnloaded    = (1 << 2)
+        eBroadcastBitModulesUnloaded    = (1 << 2),
+        eBroadcastBitWatchpointChanged  = (1 << 3)
     };
 
     //------------------------------------------------------------------
@@ -560,6 +561,9 @@ public:
     lldb::SBTypeList
     FindTypes (const char* type);
 
+    lldb::SBType
+    GetBasicType(lldb::BasicType type);
+
     lldb::SBSourceManager
     GetSourceManager ();
 
@@ -687,9 +691,14 @@ public:
     lldb::SBInstructionList
     GetInstructions (lldb::SBAddress base_addr, const void *buf, size_t size);
     
+    lldb::SBSymbolContextList
+    FindSymbols (const char *name, lldb::SymbolType type = eSymbolTypeAny);
+
     bool
     GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level);
     
+    lldb::SBValue
+    EvaluateExpression (const char *expr, const lldb::SBExpressionOptions &options);
     %pythoncode %{
         class modules_access(object):
             '''A helper object that will lazily hand out lldb.SBModule objects for a target when supplied an index, or by full or partial path.'''

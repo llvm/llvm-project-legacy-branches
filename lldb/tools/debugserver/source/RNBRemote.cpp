@@ -173,6 +173,7 @@ RNBRemote::CreatePacketTable  ()
     t.push_back (Packet (query_vattachorwait_supported, &RNBRemote::HandlePacket_qVAttachOrWaitSupported,NULL, "qVAttachOrWaitSupported", "Replys with OK if the 'vAttachOrWait' packet is supported."));
     t.push_back (Packet (query_sync_thread_state_supported, &RNBRemote::HandlePacket_qSyncThreadStateSupported,NULL, "qSyncThreadStateSupported", "Replys with OK if the 'QSyncThreadState:' packet is supported."));
     t.push_back (Packet (query_host_info,               &RNBRemote::HandlePacket_qHostInfo,     NULL, "qHostInfo", "Replies with multiple 'key:value;' tuples appended to each other."));
+    t.push_back (Packet (query_process_info,            &RNBRemote::HandlePacket_qProcessInfo,     NULL, "qProcessInfo", "Replies with multiple 'key:value;' tuples appended to each other."));
 //  t.push_back (Packet (query_symbol_lookup,           &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "qSymbol", "Notify that host debugger is ready to do symbol lookups"));
     t.push_back (Packet (start_noack_mode,              &RNBRemote::HandlePacket_QStartNoAckMode        , NULL, "QStartNoAckMode", "Request that " DEBUGSERVER_PROGRAM_NAME " stop acking remote protocol packets"));
     t.push_back (Packet (prefix_reg_packets_with_tid,   &RNBRemote::HandlePacket_QThreadSuffixSupported , NULL, "QThreadSuffixSupported", "Check if thread specifc packets (register packets 'g', 'G', 'p', and 'P') support having the thread ID appended to the end of the command"));
@@ -234,7 +235,7 @@ RNBRemote::SendAsyncProfileData ()
     if (m_ctx.HasValidProcessID())
     {
         nub_process_t pid = m_ctx.ProcessID();
-        char buf[256];
+        char buf[1024];
         nub_size_t count;
         do
         {
@@ -3467,10 +3468,10 @@ RNBRemote::HandlePacket_GetProfileData (const char *p)
     if (pid == INVALID_NUB_PROCESS)
         return SendPacket ("OK");
 
-    const char *data = DNBProcessGetProfileDataAsCString(pid);
-    if (data)
+    std::string data = DNBProcessGetProfileData(pid);
+    if (!data.empty())
     {
-        return SendPacket (data);
+        return SendPacket (data.c_str());
     }
     else
     {
@@ -3777,3 +3778,109 @@ RNBRemote::HandlePacket_qHostInfo (const char *p)
         strm << "ptrsize:" << std::dec << sizeof(void *) << ';';
     return SendPacket (strm.str());
 }
+
+
+// Note that all numeric values returned by qProcessInfo are hex encoded,
+// including the pid and the cpu type.
+
+rnb_err_t
+RNBRemote::HandlePacket_qProcessInfo (const char *p)
+{
+    nub_process_t pid;
+    std::ostringstream rep;
+
+    // If we haven't run the process yet, return an error.
+    if (!m_ctx.HasValidProcessID())
+        return SendPacket ("E68");
+
+    pid = m_ctx.ProcessID();
+
+    rep << "pid:" << std::hex << pid << ";";
+
+    int procpid_mib[4];
+    procpid_mib[0] = CTL_KERN;
+    procpid_mib[1] = KERN_PROC;
+    procpid_mib[2] = KERN_PROC_PID;
+    procpid_mib[3] = pid;
+    struct kinfo_proc proc_kinfo;
+    size_t proc_kinfo_size = sizeof(struct kinfo_proc);
+
+    if (::sysctl (procpid_mib, 4, &proc_kinfo, &proc_kinfo_size, NULL, 0) == 0)
+    {
+        if (proc_kinfo_size > 0)
+        {
+            rep << "parent-pid:" << std::hex << proc_kinfo.kp_eproc.e_ppid << ";";
+            rep << "real-uid:" << std::hex << proc_kinfo.kp_eproc.e_pcred.p_ruid << ";";
+            rep << "real-gid:" << std::hex << proc_kinfo.kp_eproc.e_pcred.p_rgid << ";";
+            rep << "effective-uid:" << std::hex << proc_kinfo.kp_eproc.e_ucred.cr_uid << ";";
+            if (proc_kinfo.kp_eproc.e_ucred.cr_ngroups > 0)
+                rep << "effective-gid:" << std::hex << proc_kinfo.kp_eproc.e_ucred.cr_groups[0] << ";";
+        }
+    }
+    
+    int cputype_mib[CTL_MAXNAME]={0,};
+    size_t cputype_mib_len = CTL_MAXNAME;
+    cpu_type_t cputype = -1;
+    if (::sysctlnametomib("sysctl.proc_cputype", cputype_mib, &cputype_mib_len) == 0)
+    {
+        cputype_mib[cputype_mib_len] = pid;
+        cputype_mib_len++;
+        size_t len = sizeof(cputype);
+        if (::sysctl (cputype_mib, cputype_mib_len, &cputype, &len, 0, 0) == 0)
+        {
+            rep << "cputype:" << std::hex << cputype << ";";
+        }
+    }
+
+    uint32_t cpusubtype;
+    size_t cpusubtype_len = sizeof(cpusubtype);
+    if (::sysctlbyname("hw.cpusubtype", &cpusubtype, &cpusubtype_len, NULL, 0) == 0)
+    {
+        if (cputype == CPU_TYPE_X86_64 && cpusubtype == CPU_SUBTYPE_486)
+        {
+            cpusubtype = CPU_SUBTYPE_X86_64_ALL;
+        }
+
+        rep << "cpusubtype:" << std::hex << cpusubtype << ';';
+    }
+
+    // The OS in the triple should be "ios" or "macosx" which doesn't match our
+    // "Darwin" which gets returned from "kern.ostype", so we need to hardcode
+    // this for now.
+    if (cputype == CPU_TYPE_ARM)
+        rep << "ostype:ios;";
+    else
+        rep << "ostype:macosx;";
+
+    rep << "vendor:apple;";
+
+#if defined (__LITTLE_ENDIAN__)
+    rep << "endian:little;";
+#elif defined (__BIG_ENDIAN__)
+    rep << "endian:big;";
+#elif defined (__PDP_ENDIAN__)
+    rep << "endian:pdp;";
+#endif
+
+    nub_thread_t thread = DNBProcessGetCurrentThread (pid);
+    kern_return_t kr;
+
+#if (defined (__x86_64__) || defined (__i386__)) && defined (x86_THREAD_STATE)
+    x86_thread_state_t gp_regs;
+    mach_msg_type_number_t gp_count = x86_THREAD_STATE_COUNT;
+    kr = thread_get_state (thread, x86_THREAD_STATE,
+                           (thread_state_t) &gp_regs, &gp_count);
+    if (kr == KERN_SUCCESS)
+    {
+        if (gp_regs.tsh.flavor == x86_THREAD_STATE64)
+            rep << "ptrsize:8;";
+        else
+            rep << "ptrsize:4;";
+    }
+#elif defined (__arm__)
+    rep << "ptrsize:4;";
+#endif
+
+    return SendPacket (rep.str());
+}
+

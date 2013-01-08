@@ -364,6 +364,7 @@ MachProcess::Kill (const struct timespec *timeout_abstime)
     nub_state_t state = DoSIGSTOP(true, false, NULL);
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::Kill() DoSIGSTOP() state = %s", DNBStateAsString(state));
     errno = 0;
+    DNBLog ("Sending ptrace PT_KILL to terminate inferior process.");
     ::ptrace (PT_KILL, m_pid, 0, 0);
     DNBError err;
     err.SetErrorToErrno();
@@ -1347,7 +1348,7 @@ MachProcess::SignalAsyncProfileData (const char *info)
 {
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (%s) ...", __FUNCTION__, info);
     PTHREAD_MUTEX_LOCKER (locker, m_profile_data_mutex);
-    m_profile_data.append(info);
+    m_profile_data.push_back(info);
     m_events.SetEvents(eEventProfileDataAvailable);
     
     // Wait for the event bit to reset if a reset ACK is requested
@@ -1360,19 +1361,22 @@ MachProcess::GetAsyncProfileData (char *buf, size_t buf_size)
 {
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (&%p[%llu]) ...", __FUNCTION__, buf, (uint64_t)buf_size);
     PTHREAD_MUTEX_LOCKER (locker, m_profile_data_mutex);
-    size_t bytes_available = m_profile_data.size();
+    if (m_profile_data.empty())
+        return 0;
+    
+    size_t bytes_available = m_profile_data.front().size();
     if (bytes_available > 0)
     {
         if (bytes_available > buf_size)
         {
-            memcpy(buf, m_profile_data.data(), buf_size);
-            m_profile_data.erase(0, buf_size);
+            memcpy(buf, m_profile_data.front().data(), buf_size);
+            m_profile_data.front().erase(0, buf_size);
             bytes_available = buf_size;
         }
         else
         {
-            memcpy(buf, m_profile_data.data(), bytes_available);
-            m_profile_data.clear();
+            memcpy(buf, m_profile_data.front().data(), bytes_available);
+            m_profile_data.erase(m_profile_data.begin());
         }
     }
     return bytes_available;
@@ -1390,10 +1394,10 @@ MachProcess::ProfileThread(void *arg)
         nub_state_t state = proc->GetState();
         if (state == eStateRunning)
         {
-            const char *data = proc->Task().GetProfileDataAsCString();
-            if (data)
+            std::string data = proc->Task().GetProfileData();
+            if (!data.empty())
             {
-                proc->SignalAsyncProfileData(data);
+                proc->SignalAsyncProfileData(data.c_str());
             }
         }
         else if ((state == eStateUnloaded) || (state == eStateDetached) || (state == eStateUnloaded))
@@ -1687,6 +1691,7 @@ MachProcess::LaunchForDebug
         {
             if (launch_err.AsString() == NULL)
                 launch_err.SetErrorString("unable to start the exception thread");
+            DNBLog ("Could not get inferior's Mach exception port, sending ptrace PT_KILL and exiting.");
             ::ptrace (PT_KILL, m_pid, 0, 0);
             m_pid = INVALID_NUB_PROCESS;
             return INVALID_NUB_PROCESS;
@@ -2027,6 +2032,7 @@ MachProcess::SBLaunchForDebug (const char *path, char const *argv[], char const 
         {
             if (launch_err.AsString() == NULL)
                 launch_err.SetErrorString("unable to start the exception thread");
+            DNBLog ("Could not get inferior's Mach exception port, sending ptrace PT_KILL and exiting.");
             ::ptrace (PT_KILL, m_pid, 0, 0);
             m_pid = INVALID_NUB_PROCESS;
             return INVALID_NUB_PROCESS;

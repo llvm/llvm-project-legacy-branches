@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/API/SBDebugger.h"
 
 #include "lldb/Core/Debugger.h"
@@ -548,6 +550,7 @@ Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
     m_input_file (),
     m_output_file (),
     m_error_file (),
+    m_terminal_state (),
     m_target_list (*this),
     m_platform_list (),
     m_listener ("lldb.Debugger"),
@@ -615,6 +618,7 @@ Debugger::Clear()
     
     // Close the input file _before_ we close the input read communications class
     // as it does NOT own the input file, our m_input_file does.
+    m_terminal_state.Clear();
     GetInputFile().Close ();
     // Now that we have closed m_input_file, we can now tell our input communication
     // class to close down. Its read thread should quickly exit after we close
@@ -662,7 +666,10 @@ Debugger::SetInputFileHandle (FILE *fh, bool tranfer_ownership)
     // want to objects trying to own and close a file descriptor.
     m_input_comm.SetConnection (new ConnectionFileDescriptor (in_file.GetDescriptor(), false));
     m_input_comm.SetReadThreadBytesReceivedCallback (Debugger::DispatchInputCallback, this);
-
+    
+    // Save away the terminal state if that is relevant, so that we can restore it in RestoreInputState.
+    SaveInputTerminalState ();
+    
     Error error;
     if (m_input_comm.StartReadThread (&error) == false)
     {
@@ -696,6 +703,20 @@ Debugger::SetErrorFileHandle (FILE *fh, bool tranfer_ownership)
     err_file.SetStream (fh, tranfer_ownership);
     if (err_file.IsValid() == false)
         err_file.SetStream (stderr, false);
+}
+
+void
+Debugger::SaveInputTerminalState ()
+{
+    File &in_file = GetInputFile();
+    if (in_file.GetDescriptor() != File::kInvalidDescriptor)
+        m_terminal_state.Save(in_file.GetDescriptor(), true);
+}
+
+void
+Debugger::RestoreInputTerminalState ()
+{
+    m_terminal_state.Restore();
 }
 
 ExecutionContext
@@ -1187,7 +1208,7 @@ ScanBracketedRange (const char* var_name_begin,
             *index_lower = ::strtoul (*open_bracket_position+1, &end, 0);
             *index_higher = *index_lower;
             if (log)
-                log->Printf("[ScanBracketedRange] [%lld] detected, high index is same", *index_lower);
+                log->Printf("[ScanBracketedRange] [%" PRId64 "] detected, high index is same", *index_lower);
         }
         else if (*close_bracket_position && *close_bracket_position < var_name_end)
         {
@@ -1195,7 +1216,7 @@ ScanBracketedRange (const char* var_name_begin,
             *index_lower = ::strtoul (*open_bracket_position+1, &end, 0);
             *index_higher = ::strtoul (*separator_position+1, &end, 0);
             if (log)
-                log->Printf("[ScanBracketedRange] [%lld-%lld] detected", *index_lower, *index_higher);
+                log->Printf("[ScanBracketedRange] [%" PRId64 "-%" PRId64 "] detected", *index_lower, *index_higher);
         }
         else
         {
@@ -1530,7 +1551,7 @@ Debugger::FormatPrompt
                                 }
                                 
                                 // TODO use flags for these
-                                bool is_array = ClangASTContext::IsArrayType(target->GetClangType());
+                                bool is_array = ClangASTContext::IsArrayType(target->GetClangType(), NULL, NULL, NULL);
                                 bool is_pointer = ClangASTContext::IsPointerType(target->GetClangType());
                                 bool is_aggregate = ClangASTContext::IsAggregateType(target->GetClangType());
                                 
@@ -1642,7 +1663,7 @@ Debugger::FormatPrompt
                                         if (!item)
                                         {
                                             if (log)
-                                                log->Printf("[Debugger::FormatPrompt] ERROR in getting child item at index %lld", index_lower);
+                                                log->Printf("[Debugger::FormatPrompt] ERROR in getting child item at index %" PRId64, index_lower);
                                         }
                                         else
                                         {
@@ -1898,7 +1919,7 @@ Debugger::FormatPrompt
                                         var_name_begin += ::strlen ("process.");
                                         if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
                                         {
-                                            s.Printf("%llu", process->GetID());
+                                            s.Printf("%" PRIu64, process->GetID());
                                             var_success = true;
                                         }
                                         else if ((::strncmp (var_name_begin, "name}", strlen("name}")) == 0) ||
@@ -1936,7 +1957,7 @@ Debugger::FormatPrompt
                                         var_name_begin += ::strlen ("thread.");
                                         if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
                                         {
-                                            s.Printf("0x%4.4llx", thread->GetID());
+                                            s.Printf("0x%4.4" PRIx64, thread->GetID());
                                             var_success = true;
                                         }
                                         else if (::strncmp (var_name_begin, "index}", strlen("index}")) == 0)
@@ -2144,7 +2165,7 @@ Debugger::FormatPrompt
                                     if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
                                     {
                                         if (sc->function)
-                                            s.Printf("function{0x%8.8llx}", sc->function->GetID());
+                                            s.Printf("function{0x%8.8" PRIx64 "}", sc->function->GetID());
                                         else
                                             s.Printf("symbol[%u]", sc->symbol->GetID());
 
@@ -2248,12 +2269,12 @@ Debugger::FormatPrompt
                                                         ValueObjectSP var_value_sp (ValueObjectVariable::Create (exe_scope, var_sp));
                                                         const char *var_name = var_value_sp->GetName().GetCString();
                                                         const char *var_value = var_value_sp->GetValueAsCString();
+                                                        if (arg_idx > 0)
+                                                            s.PutCString (", ");
                                                         if (var_value_sp->GetError().Success())
-                                                        {
-                                                            if (arg_idx > 0)
-                                                                s.PutCString (", ");
                                                             s.Printf ("%s=%s", var_name, var_value);
-                                                        }
+                                                        else
+                                                            s.Printf ("%s=<unavailable>", var_name);
                                                     }
                                                     
                                                     if (close_paren)
@@ -2430,9 +2451,9 @@ Debugger::FormatPrompt
                                             addr_t func_file_addr = func_addr.GetFileAddress();
                                             addr_t addr_file_addr = format_addr.GetFileAddress();
                                             if (addr_file_addr > func_file_addr)
-                                                s.Printf(" + %llu", addr_file_addr - func_file_addr);
+                                                s.Printf(" + %" PRIu64, addr_file_addr - func_file_addr);
                                             else if (addr_file_addr < func_file_addr)
-                                                s.Printf(" - %llu", func_file_addr - addr_file_addr);
+                                                s.Printf(" - %" PRIu64, func_file_addr - addr_file_addr);
                                             var_success = true;
                                         }
                                         else
@@ -2443,9 +2464,9 @@ Debugger::FormatPrompt
                                                 addr_t func_load_addr = func_addr.GetLoadAddress (target);
                                                 addr_t addr_load_addr = format_addr.GetLoadAddress (target);
                                                 if (addr_load_addr > func_load_addr)
-                                                    s.Printf(" + %llu", addr_load_addr - func_load_addr);
+                                                    s.Printf(" + %" PRIu64, addr_load_addr - func_load_addr);
                                                 else if (addr_load_addr < func_load_addr)
-                                                    s.Printf(" - %llu", func_load_addr - addr_load_addr);
+                                                    s.Printf(" - %" PRIu64, func_load_addr - addr_load_addr);
                                                 var_success = true;
                                             }
                                         }
@@ -2465,7 +2486,7 @@ Debugger::FormatPrompt
                                         int addr_width = target->GetArchitecture().GetAddressByteSize() * 2;
                                         if (addr_width == 0)
                                             addr_width = 16;
-                                        s.Printf("0x%*.*llx", addr_width, addr_width, vaddr);
+                                        s.Printf("0x%*.*" PRIx64, addr_width, addr_width, vaddr);
                                         var_success = true;
                                     }
                                 }
@@ -2593,13 +2614,13 @@ Debugger::EnableLog (const char *channel, const char **categories, const char *l
     else
     {
         LogStreamMap::iterator pos = m_log_streams.find(log_file);
-        if (pos == m_log_streams.end())
+        if (pos != m_log_streams.end())
+            log_stream_sp = pos->second.lock();
+        if (!log_stream_sp)
         {
             log_stream_sp.reset (new StreamFile (log_file));
             m_log_streams[log_file] = log_stream_sp;
         }
-        else
-            log_stream_sp = pos->second;
     }
     assert (log_stream_sp.get());
     

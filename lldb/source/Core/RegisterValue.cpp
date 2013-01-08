@@ -450,7 +450,6 @@ RegisterValue::SetValueFromCString (const RegisterInfo *reg_info, const char *va
     const uint32_t byte_size = reg_info->byte_size;
     switch (reg_info->encoding)
     {
-        default:
         case eEncodingInvalid:
             error.SetErrorString ("Invalid encoding.");
             break;
@@ -462,7 +461,7 @@ RegisterValue::SetValueFromCString (const RegisterInfo *reg_info, const char *va
                 if (!success)
                     error.SetErrorStringWithFormat ("'%s' is not a valid unsigned integer string value", value_str);
                 else if (!Args::UInt64ValueIsValidForByteSize (uval64, byte_size))
-                    error.SetErrorStringWithFormat ("value 0x%llx is too large to fit in a %u byte unsigned integer value", uval64, byte_size);
+                    error.SetErrorStringWithFormat ("value 0x%" PRIx64 " is too large to fit in a %u byte unsigned integer value", uval64, byte_size);
                 else
                 {
                     if (!SetUInt (uval64, reg_info->byte_size))
@@ -483,7 +482,7 @@ RegisterValue::SetValueFromCString (const RegisterInfo *reg_info, const char *va
                 if (!success)
                     error.SetErrorStringWithFormat ("'%s' is not a valid signed integer string value", value_str);
                 else if (!Args::SInt64ValueIsValidForByteSize (sval64, byte_size))
-                    error.SetErrorStringWithFormat ("value 0x%llx is too large to fit in a %u byte signed integer value", sval64, byte_size);
+                    error.SetErrorStringWithFormat ("value 0x%" PRIx64 " is too large to fit in a %u byte signed integer value", sval64, byte_size);
                 else
                 {
                     if (!SetUInt (sval64, reg_info->byte_size))
@@ -637,7 +636,6 @@ RegisterValue::CopyValue (const RegisterValue &rhs)
     m_type = rhs.m_type;
     switch (m_type)
     {
-        default:
         case eTypeInvalid: 
             return false;
         case eTypeUInt8:        m_data.uint8 = rhs.m_data.uint8; break;

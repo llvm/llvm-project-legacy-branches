@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 #include <errno.h>
 
@@ -106,7 +108,7 @@ ProcessPOSIX::DoAttachToProcessWithID(lldb::pid_t pid)
 
     LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
-        log->Printf ("ProcessPOSIX::%s(pid = %i)", __FUNCTION__, GetID());
+        log->Printf ("ProcessPOSIX::%s(pid = %" PRIi64 ")", __FUNCTION__, GetID());
 
     m_monitor = new ProcessMonitor(this, pid, error);
 
@@ -320,10 +322,6 @@ ProcessPOSIX::SendMessage(const ProcessMessage &message)
 
     switch (message.GetKind())
     {
-    default:
-        assert(false && "Unexpected process message!");
-        break;
-
     case ProcessMessage::eInvalidMessage:
         return;
 
@@ -355,7 +353,8 @@ ProcessPOSIX::SendMessage(const ProcessMessage &message)
         break;
 
     case ProcessMessage::eCrashMessage:
-        SetPrivateState(eStateCrashed);
+        // FIXME: Update stop reason as per bugzilla 14598
+        SetPrivateState(eStateStopped);
         break;
     }
 
@@ -380,7 +379,7 @@ ProcessPOSIX::RefreshStateAfterStop()
     // fixed when this code is fixed to handle multiple threads.
     lldb::tid_t tid = message.GetTID();
     if (log)
-        log->Printf ("ProcessPOSIX::%s() pid = %i", __FUNCTION__, tid);
+        log->Printf ("ProcessPOSIX::%s() pid = %" PRIi64, __FUNCTION__, tid);
     POSIXThread *thread = static_cast<POSIXThread*>(
         GetThreadList().FindThreadByID(tid, false).get());
 
@@ -448,7 +447,7 @@ ProcessPOSIX::DoDeallocateMemory(lldb::addr_t addr)
         InferiorCallMunmap(this, addr, pos->second))
         m_addr_to_mmap_size.erase (pos);
     else
-        error.SetErrorStringWithFormat("unable to deallocate memory at 0x%llx", addr);
+        error.SetErrorStringWithFormat("unable to deallocate memory at 0x%" PRIx64, addr);
 
     return error;
 }
@@ -503,7 +502,7 @@ ProcessPOSIX::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thre
 {
     LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
-        log->Printf ("ProcessPOSIX::%s() (pid = %i)", __FUNCTION__, GetID());
+        log->Printf ("ProcessPOSIX::%s() (pid = %" PRIi64 ")", __FUNCTION__, GetID());
 
     // Update the process thread list with this new thread.
     // FIXME: We should be using tid, not pid.
@@ -514,7 +513,7 @@ ProcessPOSIX::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thre
     }
 
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
-        log->Printf ("ProcessPOSIX::%s() updated pid = %i", __FUNCTION__, GetID());
+        log->Printf ("ProcessPOSIX::%s() updated pid = %" PRIi64, __FUNCTION__, GetID());
     new_thread_list.AddThread(thread_sp);
 
     return new_thread_list.GetSize(false) > 0;

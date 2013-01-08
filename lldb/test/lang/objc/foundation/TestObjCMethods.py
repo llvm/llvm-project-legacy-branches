@@ -69,7 +69,7 @@ class FoundationTestCase(TestBase):
         lldbutil.run_break_set_by_symbol (self, '-[MyString initWithNSString:]', num_expected_locations=1, sym_exact=True)
 
         # Stop at the "description" selector.
-        lldbutil.run_break_set_by_selector (self, 'description', num_expected_locations=1)
+        lldbutil.run_break_set_by_selector (self, 'description', num_expected_locations=1, module_name='a.out')
 
         # Stop at -[NSAutoreleasePool release].
         break_results = lldbutil.run_break_set_command(self, "_regexp-break -[NSAutoreleasePool release]")
@@ -146,7 +146,7 @@ class FoundationTestCase(TestBase):
                        'NSString * str;',
                        'NSDate * date;'])
 
-        self.expect("frame variable -T -s", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types --scope", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ["ARG: (MyString *) self"],
             patterns = ["ARG: \(.*\) _cmd",
                         "(objc_selector *)|(SEL)"])
@@ -158,16 +158,16 @@ class FoundationTestCase(TestBase):
         # rdar://problem/8492646
         # test/foundation fails after updating to tot r115023
         # self->str displays nothing as output
-        self.expect("frame variable -T self->str", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types self->str", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = "(NSString *) self->str")
 
         # rdar://problem/8447030
         # 'frame variable self->date' displays the wrong data member
-        self.expect("frame variable -T self->date", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types self->date", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = "(NSDate *) self->date")
 
         # This should display the str and date member fields as well.
-        self.expect("frame variable -T *self", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types *self", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ["(MyString) *self",
                        "(NSString *) str",
                        "(NSDate *) date"])
@@ -204,7 +204,7 @@ class FoundationTestCase(TestBase):
         #
         # Test new feature with r115115:
         # Add "-o" option to "expression" which prints the object description if available.
-        self.expect("expression -o -- my", "Object description displayed correctly",
+        self.expect("expression --object-description -- my", "Object description displayed correctly",
             patterns = ["Hello from.*a.out.*with timestamp: "])
 
     # See: <rdar://problem/8717050> lldb needs to use the ObjC runtime symbols for ivar offsets

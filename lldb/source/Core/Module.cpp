@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/DataBuffer.h"
@@ -103,7 +105,7 @@ namespace lldb {
         Mutex::Locker locker (Module::GetAllocationModuleCollectionMutex());
         ModuleCollection &modules = GetModuleCollection();
         const size_t count = modules.size();
-        printf ("%s: %llu modules:\n", __PRETTY_FUNCTION__, (uint64_t)count);
+        printf ("%s: %" PRIu64 " modules:\n", __PRETTY_FUNCTION__, (uint64_t)count);
         for (size_t i=0; i<count; ++i)
         {
             
@@ -263,7 +265,7 @@ Module::GetMemoryObjectFile (const lldb::ProcessSP &process_sp, lldb::addr_t hea
                 if (m_objfile_sp)
                 {
                     StreamString s;
-                    s.Printf("0x%16.16llx", header_addr);
+                    s.Printf("0x%16.16" PRIx64, header_addr);
                     m_object_name.SetCString (s.GetData());
 
                     // Once we get the object file, update our module with the object file's
@@ -429,7 +431,7 @@ bool
 Module::ResolveFileAddress (lldb::addr_t vm_addr, Address& so_addr)
 {
     Mutex::Locker locker (m_mutex);
-    Timer scoped_timer(__PRETTY_FUNCTION__, "Module::ResolveFileAddress (vm_addr = 0x%llx)", vm_addr);
+    Timer scoped_timer(__PRETTY_FUNCTION__, "Module::ResolveFileAddress (vm_addr = 0x%" PRIx64 ")", vm_addr);
     ObjectFile* ofile = GetObjectFile();
     if (ofile)
         return so_addr.ResolveAddressUsingFileSections(vm_addr, ofile->GetSectionList());
@@ -688,6 +690,19 @@ Module::FindTypesInNamespace (const SymbolContext& sc,
     return FindTypes_Impl(sc, type_name, namespace_decl, append, max_matches, type_list);
 }
 
+lldb::TypeSP
+Module::FindFirstType (const SymbolContext& sc,
+                       const ConstString &name,
+                       bool exact_match)
+{
+    TypeList type_list;
+    const uint32_t num_matches = FindTypes (sc, name, exact_match, 1, type_list);
+    if (num_matches)
+        return type_list.GetTypeAtIndex(0);
+    return TypeSP();
+}
+
+
 uint32_t
 Module::FindTypes (const SymbolContext& sc,
                    const ConstString &name,
@@ -753,7 +768,7 @@ Module::FindTypes (const SymbolContext& sc,
 //}
 
 SymbolVendor*
-Module::GetSymbolVendor (bool can_create)
+Module::GetSymbolVendor (bool can_create, lldb_private::Stream *feedback_strm)
 {
     Mutex::Locker locker (m_mutex);
     if (m_did_load_symbol_vendor == false && can_create)
@@ -762,7 +777,7 @@ Module::GetSymbolVendor (bool can_create)
         if (obj_file != NULL)
         {
             Timer scoped_timer(__PRETTY_FUNCTION__, __PRETTY_FUNCTION__);
-            m_symfile_ap.reset(SymbolVendor::FindPlugin(shared_from_this()));
+            m_symfile_ap.reset(SymbolVendor::FindPlugin(shared_from_this(), feedback_strm));
             m_did_load_symbol_vendor = true;
         }
     }
@@ -1049,6 +1064,25 @@ Module::SymbolIndicesToSymbolContextList (Symtab *symtab, std::vector<uint32_t> 
 }
 
 size_t
+Module::FindFunctionSymbols (const ConstString &name,
+                             uint32_t name_type_mask,
+                             SymbolContextList& sc_list)
+{
+    Timer scoped_timer(__PRETTY_FUNCTION__,
+                       "Module::FindSymbolsFunctions (name = %s, mask = 0x%8.8x)",
+                       name.AsCString(),
+                       name_type_mask);
+    ObjectFile *objfile = GetObjectFile ();
+    if (objfile)
+    {
+        Symtab *symtab = objfile->GetSymtab();
+        if (symtab)
+            return symtab->FindFunctionSymbols (name, name_type_mask, sc_list);
+    }
+    return 0;
+}
+
+size_t
 Module::FindSymbolsWithNameAndType (const ConstString &name, SymbolType symbol_type, SymbolContextList &sc_list)
 {
     // No need to protect this call using m_mutex all other method calls are
@@ -1164,7 +1198,9 @@ Module::LoadScriptingResourceInTarget (Target *target, Error& error)
         {
             StreamString scripting_stream;
             scripting_fspec.Dump(&scripting_stream);
-            bool did_load = script_interpreter->LoadScriptingModule(scripting_stream.GetData(), false, true, error);
+            const bool can_reload = false;
+            const bool init_lldb_globals = false;
+            bool did_load = script_interpreter->LoadScriptingModule(scripting_stream.GetData(), can_reload, init_lldb_globals, error);
             if (!did_load)
                 return false;
         }
@@ -1185,7 +1221,7 @@ Module::SetArchitecture (const ArchSpec &new_arch)
         m_arch = new_arch;
         return true;
     }    
-    return m_arch == new_arch;
+    return m_arch.IsExactMatch(new_arch);
 }
 
 bool 
@@ -1251,7 +1287,7 @@ Module::MatchesModuleSpec (const ModuleSpec &module_ref)
     const ArchSpec &arch = module_ref.GetArchitecture();
     if (arch.IsValid())
     {
-        if (m_arch != arch)
+        if (!m_arch.IsCompatibleMatch(arch))
             return false;
     }
     

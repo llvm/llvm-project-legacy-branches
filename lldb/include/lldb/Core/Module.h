@@ -173,8 +173,9 @@ public:
     virtual void
     DumpSymbolContext (Stream *s);
 
+    
     //------------------------------------------------------------------
-    /// Find a symbol in the object files symbol table.
+    /// Find a symbol in the object file's symbol table.
     ///
     /// @param[in] name
     ///     The name of the symbol that we are looking for.
@@ -202,6 +203,28 @@ public:
     FindSymbolsMatchingRegExAndType (const RegularExpression &regex, 
                                      lldb::SymbolType symbol_type, 
                                      SymbolContextList &sc_list);
+
+    //------------------------------------------------------------------
+    /// Find a funciton symbols in the object file's symbol table.
+    ///
+    /// @param[in] name
+    ///     The name of the symbol that we are looking for.
+    ///
+    /// @param[in] name_type_mask
+    ///     A mask that has one or more bitwise OR'ed values from the
+    ///     lldb::FunctionNameType enumeration type that indicate what
+    ///     kind of names we are looking for.
+    ///
+    /// @param[out] sc_list
+    ///     A list to append any matching symbol contexts to.
+    ///
+    /// @return
+    ///     The number of symbol contexts that were added to \a sc_list
+    //------------------------------------------------------------------
+    size_t
+    FindFunctionSymbols (const ConstString &name,
+                         uint32_t name_type_mask,
+                         SymbolContextList& sc_list);
 
     //------------------------------------------------------------------
     /// Find compile units by partial or full path.
@@ -408,6 +431,11 @@ public:
                uint32_t max_matches,
                TypeList& types);
 
+    lldb::TypeSP
+    FindFirstType (const SymbolContext& sc,
+                   const ConstString &type_name,
+                   bool exact_match);
+
     //------------------------------------------------------------------
     /// Find types by name that are in a namespace. This function is
     /// used by the expression parser when searches need to happen in
@@ -598,7 +626,8 @@ public:
     ///     object and remains valid as long as the object is around.
     //------------------------------------------------------------------
     virtual SymbolVendor*
-    GetSymbolVendor(bool can_create = true);
+    GetSymbolVendor(bool can_create = true,
+                    lldb_private::Stream *feedback_strm = NULL);
 
     //------------------------------------------------------------------
     /// Get accessor the type list for this module.

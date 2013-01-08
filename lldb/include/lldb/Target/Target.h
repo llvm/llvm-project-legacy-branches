@@ -278,7 +278,8 @@ public:
     {
         eBroadcastBitBreakpointChanged  = (1 << 0),
         eBroadcastBitModulesLoaded      = (1 << 1),
-        eBroadcastBitModulesUnloaded    = (1 << 2)
+        eBroadcastBitModulesUnloaded    = (1 << 2),
+        eBroadcastBitWatchpointChanged  = (1 << 3)
     };
     
     // These two functions fill out the Broadcaster interface:
@@ -390,6 +391,8 @@ public:
     void
     DeleteCurrentProcess ();
 
+    void
+    CleanupProcess ();
     //------------------------------------------------------------------
     /// Dump a description of this object to a Stream.
     ///

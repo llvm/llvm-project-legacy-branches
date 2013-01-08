@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectScript.h"
 
 // C Includes
@@ -33,8 +35,7 @@ CommandObjectScript::CommandObjectScript (CommandInterpreter &interpreter, Scrip
     CommandObjectRaw (interpreter, 
                       "script",
                       "Pass an expression to the script interpreter for evaluation and return the results. Drop into the interactive interpreter if no expression is given.",
-                      "script [<script-expression-for-evaluation>]"),
-    m_script_lang (script_lang)
+                      "script [<script-expression-for-evaluation>]")
 {
 }
 

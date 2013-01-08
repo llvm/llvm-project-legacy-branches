@@ -9,6 +9,7 @@
 
 #include "AppleObjCRuntimeV1.h"
 #include "AppleObjCTrampolineHandler.h"
+#include "AppleObjCTypeVendor.h"
 
 #include "llvm/Support/MachO.h"
 #include "clang/AST/Type.h"
@@ -294,6 +295,15 @@ AppleObjCRuntimeV1::ClassDescriptorV1::GetSuperclass ()
     return ObjCLanguageRuntime::ClassDescriptorSP(new AppleObjCRuntimeV1::ClassDescriptorV1(m_parent_isa,process_sp));
 }
 
+bool
+AppleObjCRuntimeV1::ClassDescriptorV1::Describe (std::function <void (ObjCLanguageRuntime::ObjCISA)> const &superclass_func,
+                                                 std::function <bool (const char *, const char *)> const &instance_method_func,
+                                                 std::function <bool (const char *, const char *)> const &class_method_func,
+                                                 std::function <bool (const char *, const char *, lldb::addr_t, uint64_t)> const &ivar_func)
+{
+    return false;
+}
+
 lldb::addr_t
 AppleObjCRuntimeV1::GetISAHashTablePointer ()
 {
@@ -413,7 +423,7 @@ AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded()
                                         ClassDescriptorSP descriptor_sp (new ClassDescriptorV1(isa, process_sp));
                                         
                                         if (log && log->GetVerbose())
-                                            log->Printf("AppleObjCRuntimeV1 added (ObjCISA)0x%llx from _objc_debug_class_hash to isa->descriptor cache", isa);
+                                            log->Printf("AppleObjCRuntimeV1 added (ObjCISA)0x%" PRIx64 " from _objc_debug_class_hash to isa->descriptor cache", isa);
                                         
                                         m_isa_to_descriptor_cache[isa] = descriptor_sp;
                                     }
@@ -435,7 +445,7 @@ AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded()
                                             ClassDescriptorSP descriptor_sp (new ClassDescriptorV1(isa, process_sp));
                                             
                                             if (log && log->GetVerbose())
-                                                log->Printf("AppleObjCRuntimeV1 added (ObjCISA)0x%llx from _objc_debug_class_hash to isa->descriptor cache", isa);
+                                                log->Printf("AppleObjCRuntimeV1 added (ObjCISA)0x%" PRIx64 " from _objc_debug_class_hash to isa->descriptor cache", isa);
                                             
                                             m_isa_to_descriptor_cache[isa] = descriptor_sp;
                                         }
@@ -454,3 +464,11 @@ AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded()
     }
 }
 
+TypeVendor *
+AppleObjCRuntimeV1::GetTypeVendor()
+{
+    if (!m_type_vendor_ap.get())
+        m_type_vendor_ap.reset(new AppleObjCTypeVendor(*this));
+    
+    return m_type_vendor_ap.get();
+}

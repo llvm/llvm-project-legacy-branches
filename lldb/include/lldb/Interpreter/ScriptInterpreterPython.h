@@ -159,6 +159,15 @@ public:
     GetDocumentationForItem (const char* item, std::string& dest);
     
     virtual bool
+    CheckObjectExists (const char* name)
+    {
+        if (!name || !name[0])
+            return false;
+        std::string temp;
+        return GetDocumentationForItem (name,temp);
+    }
+    
+    virtual bool
     LoadScriptingModule (const char* filename,
                          bool can_reload,
                          bool init_session,
@@ -203,7 +212,7 @@ public:
 protected:
 
     void
-    EnterSession ();
+    EnterSession (bool init_lldb_globals);
     
     void
     LeaveSession ();
@@ -241,6 +250,12 @@ private:
             Py_XINCREF(m_object);
         }
         
+        operator bool ()
+        {
+            return m_object && m_object != Py_None;
+        }
+        
+        
         virtual
         ~ScriptInterpreterPythonObject()
         {
@@ -258,7 +273,8 @@ private:
         enum OnEntry
         {
             AcquireLock         = 0x0001,
-            InitSession         = 0x0002
+            InitSession         = 0x0002,
+            InitGlobals         = 0x0004
         };
         
         enum OnLeave
@@ -281,7 +297,7 @@ private:
         DoAcquireLock ();
         
         bool
-        DoInitSession ();
+        DoInitSession (bool init_lldb_globals);
         
         bool
         DoFreeLock ();
@@ -350,6 +366,7 @@ private:
     bool m_session_is_active;
     bool m_pty_slave_is_open;
     bool m_valid_session;
+    PyThreadState *m_command_thread_state;
 };
 } // namespace lldb_private
 

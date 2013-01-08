@@ -17,6 +17,10 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <fcntl.h>
+#ifndef _WIN32
+#include <inttypes.h>
+#endif
+
 
 #include "IOChannel.h"
 #include "lldb/API/SBBreakpoint.h"

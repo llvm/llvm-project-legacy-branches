@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Target/StackFrame.h"
 
 // C Includes
@@ -317,6 +319,17 @@ StackFrame::GetSymbolContext (uint32_t resolve_scope)
     // Copy our internal symbol context into "sc".
     if ((m_flags.Get() & resolve_scope) != resolve_scope)
     {
+        uint32_t resolved = 0;
+
+        // If the target was requested add that:
+        if (!m_sc.target_sp)
+        {
+            m_sc.target_sp = CalculateTarget();
+            if (m_sc.target_sp)
+                resolved |= eSymbolContextTarget;
+        }
+        
+
         // Resolve our PC to section offset if we haven't alreday done so
         // and if we don't have a module. The resolved address section will
         // contain the module to which it belongs
@@ -336,7 +349,6 @@ StackFrame::GetSymbolContext (uint32_t resolve_scope)
         }
 
 
-        uint32_t resolved = 0;
         if (m_sc.module_sp)
         {
             // We have something in our stack frame symbol context, lets check
@@ -420,9 +432,18 @@ StackFrame::GetSymbolContext (uint32_t resolve_scope)
                     m_sc.block = sc.block;
                 if ((resolved & eSymbolContextSymbol)    && m_sc.symbol == NULL)  
                     m_sc.symbol = sc.symbol;
-                if ((resolved & eSymbolContextLineEntry) && !m_sc.line_entry.IsValid()) 
+                if ((resolved & eSymbolContextLineEntry) && !m_sc.line_entry.IsValid())
+                {
                     m_sc.line_entry = sc.line_entry;
-
+                    if (m_sc.target_sp)
+                    {
+                        // Be sure to apply and file remappings to our file and line
+                        // entries when handing out a line entry
+                        FileSpec new_file_spec;
+                        if (m_sc.target_sp->GetSourcePathMap().FindFile (m_sc.line_entry.file, new_file_spec))
+                            m_sc.line_entry.file = new_file_spec;
+                    }
+                }
             }
         }
         else
@@ -430,17 +451,8 @@ StackFrame::GetSymbolContext (uint32_t resolve_scope)
             // If we don't have a module, then we can't have the compile unit,
             // function, block, line entry or symbol, so we can safely call
             // ResolveSymbolContextForAddress with our symbol context member m_sc.
-            TargetSP target_sp (CalculateTarget());
-            if (target_sp)
-                resolved |= target_sp->GetImages().ResolveSymbolContextForAddress (lookup_addr, resolve_scope, m_sc);
-        }
-
-        // If the target was requested add that:
-        if (!m_sc.target_sp)
-        {
-            m_sc.target_sp = CalculateTarget();
             if (m_sc.target_sp)
-                resolved |= eSymbolContextTarget;
+                resolved |= m_sc.target_sp->GetImages().ResolveSymbolContextForAddress (lookup_addr, resolve_scope, m_sc);
         }
 
         // Update our internal flags so we remember what we have tried to locate so
@@ -780,6 +792,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                     deref = false;
                                 }
                                 
+                                bool is_incomplete_array = false;
                                 if (valobj_sp->IsPointerType ())
                                 {
                                     bool is_objc_pointer = true;
@@ -843,11 +856,14 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                         }
                                     }
                                 }
-                                else if (ClangASTContext::IsArrayType (valobj_sp->GetClangType(), NULL, NULL))
+                                else if (ClangASTContext::IsArrayType (valobj_sp->GetClangType(), NULL, NULL, &is_incomplete_array))
                                 {
                                     // Pass false to dynamic_value here so we can tell the difference between
                                     // no dynamic value and no member of this type...
                                     child_valobj_sp = valobj_sp->GetChildAtIndex (child_index, true);
+                                    if (!child_valobj_sp && (is_incomplete_array || no_synth_child == false))
+                                        child_valobj_sp = valobj_sp->GetSyntheticArrayMember (child_index, true);
+
                                     if (!child_valobj_sp)
                                     {
                                         valobj_sp->GetExpressionPath (var_expr_path_strm, false);
@@ -1288,7 +1304,7 @@ StackFrame::Dump (Stream *strm, bool show_frame_index, bool show_fullpaths)
         strm->Printf("frame #%u: ", m_frame_index);
     ExecutionContext exe_ctx (shared_from_this());
     Target *target = exe_ctx.GetTargetPtr();
-    strm->Printf("0x%0*llx ", 
+    strm->Printf("0x%0*" PRIx64 " ",
                  target ? (target->GetArchitecture().GetAddressByteSize() * 2) : 16,
                  GetFrameCodeAddress().GetLoadAddress(target));
     GetSymbolContext(eSymbolContextEverything);

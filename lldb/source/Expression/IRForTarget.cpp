@@ -10,15 +10,15 @@
 #include "lldb/Expression/IRForTarget.h"
 
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Constants.h"
-#include "llvm/DataLayout.h"
-#include "llvm/InstrTypes.h"
-#include "llvm/Instructions.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/Module.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Module.h"
 #include "llvm/PassManager.h"
 #include "llvm/Transforms/IPO.h"
-#include "llvm/ValueSymbolTable.h"
+#include "llvm/IR/ValueSymbolTable.h"
 
 #include "clang/AST/ASTContext.h"
 
@@ -294,7 +294,7 @@ IRForTarget::GetFunctionAddress (llvm::Function *fun,
     }
     
     if (log)
-        log->Printf("Found \"%s\" at 0x%llx", name.GetCString(), fun_addr);
+        log->Printf("Found \"%s\" at 0x%" PRIx64, name.GetCString(), fun_addr);
     
     return true;
 }
@@ -869,7 +869,7 @@ IRForTarget::RewriteObjCConstString (llvm::GlobalVariable *ns_str,
         }
             
         if (log)
-            log->Printf("Found CFStringCreateWithBytes at 0x%llx", CFStringCreateWithBytes_addr);
+            log->Printf("Found CFStringCreateWithBytes at 0x%" PRIx64, CFStringCreateWithBytes_addr);
         
         // Build the function type:
         //
@@ -1262,7 +1262,7 @@ IRForTarget::RewriteObjCSelector (Instruction* selector_load)
             return false;
         
         if (log)
-            log->Printf("Found sel_registerName at 0x%llx", sel_registerName_addr);
+            log->Printf("Found sel_registerName at 0x%" PRIx64, sel_registerName_addr);
         
         // Build the function type: struct objc_selector *sel_registerName(uint8_t*)
         
@@ -1678,7 +1678,7 @@ IRForTarget::MaybeHandleVariable (Value *llvm_value_ptr)
         off_t value_alignment = (ast_context->getTypeAlign(qual_type) + 7) / 8;
         
         if (log)
-            log->Printf("Type of \"%s\" is [clang \"%s\", llvm \"%s\"] [size %lu, align %lld]", 
+            log->Printf("Type of \"%s\" is [clang \"%s\", llvm \"%s\"] [size %lu, align %" PRId64 "]",
                         name.c_str(), 
                         qual_type.getAsString().c_str(), 
                         PrintType(value_type).c_str(), 
@@ -1728,7 +1728,7 @@ IRForTarget::HandleSymbol (Value *symbol)
     }
 
     if (log)
-        log->Printf("Found \"%s\" at 0x%llx", name.GetCString(), symbol_addr);
+        log->Printf("Found \"%s\" at 0x%" PRIx64, name.GetCString(), symbol_addr);
     
     Type *symbol_type = symbol->getType();
     IntegerType *intptr_ty = Type::getIntNTy(m_module->getContext(),
@@ -2529,7 +2529,7 @@ IRForTarget::ReplaceVariables (Function &llvm_function)
         }
             
         if (log)
-            log->Printf("  \"%s\" (\"%s\") placed at %lld",
+            log->Printf("  \"%s\" (\"%s\") placed at %" PRId64,
                         name.GetCString(),
                         decl->getNameAsString().c_str(),
                         offset);
@@ -2573,7 +2573,7 @@ IRForTarget::ReplaceVariables (Function &llvm_function)
     }
     
     if (log)
-        log->Printf("Total structure [align %lld, size %lu]", alignment, size);
+        log->Printf("Total structure [align %" PRId64 ", size %lu]", alignment, size);
     
     return true;
 }
@@ -2679,9 +2679,10 @@ IRForTarget::StripAllGVs (Module &llvm_module)
 
         GlobalValue::use_iterator ui = global_var->use_begin();
         
-        log->Printf("Couldn't remove %s because of %s",
-                    PrintValue(global_var).c_str(),
-                    PrintValue(*ui).c_str());
+        if (log)
+            log->Printf("Couldn't remove %s because of %s",
+                        PrintValue(global_var).c_str(),
+                        PrintValue(*ui).c_str());
     }
     
     return true;

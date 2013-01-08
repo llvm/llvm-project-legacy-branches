@@ -19,6 +19,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
         self.buildDsym()
         self.data_formatter_commands()
 
+    @skipOnLinux # No standard locations for libc++ on Linux, so skip for now 
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
@@ -58,7 +59,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
 
         self.expect('image list',substrs=['libc++.1.dylib','libc++abi.dylib'])
 
-        self.runCmd("frame variable ii -T")
+        self.runCmd("frame variable ii --show-types")
         
         self.runCmd("type summary add -x \"std::__1::map<\" --summary-string \"map has ${svar%#} items\" -e") 
         
@@ -135,7 +136,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                     substrs = ['map has 0 items',
                                '{}'])
         
-        self.runCmd("frame variable si -T")
+        self.runCmd("frame variable si --show-types")
 
         self.expect('frame variable si',
                     substrs = ['map has 0 items',
@@ -206,7 +207,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                '{}'])
 
         self.runCmd("n")
-        self.runCmd("frame variable is -T")
+        self.runCmd("frame variable is --show-types")
         
         self.expect('frame variable is',
                     substrs = ['map has 0 items',
@@ -267,7 +268,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                '{}'])
 
         self.runCmd("n");self.runCmd("n");
-        self.runCmd("frame variable ss -T")
+        self.runCmd("frame variable ss --show-types")
         
         self.expect('frame variable ss',
                     substrs = ['map has 0 items',

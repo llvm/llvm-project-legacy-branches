@@ -113,7 +113,7 @@ AuxVector::DumpToLog(LogSP log) const
     log->PutCString("AuxVector: ");
     for (iterator I = begin(); I != end(); ++I)
     {
-        log->Printf("   %s [%llu]: %llx", GetEntryName(*I), I->type, I->value);
+        log->Printf("   %s [%" PRIu64 "]: %" PRIx64, GetEntryName(*I), I->type, I->value);
     }
 }
 
@@ -125,10 +125,6 @@ AuxVector::GetEntryName(EntryType type)
 #define ENTRY_NAME(_type) _type: name = #_type
     switch (type) 
     {
-    default:
-        name = "unkown";
-        break;
-
     case ENTRY_NAME(AT_NULL);   break;
     case ENTRY_NAME(AT_IGNORE); break;
     case ENTRY_NAME(AT_EXECFD); break;

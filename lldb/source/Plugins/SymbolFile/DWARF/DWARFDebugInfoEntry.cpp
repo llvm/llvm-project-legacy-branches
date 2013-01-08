@@ -798,6 +798,7 @@ DWARFDebugInfoEntry::GetDIENamesAndRanges
                     break;
 
                 case DW_AT_MIPS_linkage_name:
+                case DW_AT_linkage_name:
                     if (mangled == NULL)
                         mangled = form_value.AsCString(&dwarf2Data->get_debug_str_data());
                     break;
@@ -1077,7 +1078,7 @@ DWARFDebugInfoEntry::DumpAttribute
     {
     case DW_AT_stmt_list:
         if ( verbose ) s.PutCString(" ( ");
-        s.Printf( "0x%8.8llx", form_value.Unsigned());
+        s.Printf( "0x%8.8" PRIx64, form_value.Unsigned());
         if ( verbose ) s.PutCString(" )");
         break;
 
@@ -1488,6 +1489,9 @@ DWARFDebugInfoEntry::GetMangledName
     if (GetAttributeValue(dwarf2Data, cu, DW_AT_MIPS_linkage_name, form_value))
         name = form_value.AsCString(&dwarf2Data->get_debug_str_data());
 
+    if (GetAttributeValue(dwarf2Data, cu, DW_AT_linkage_name, form_value))
+        name = form_value.AsCString(&dwarf2Data->get_debug_str_data());
+
     if (substitute_name_allowed && name == NULL)
     {
         if (GetAttributeValue(dwarf2Data, cu, DW_AT_name, form_value))
@@ -1517,6 +1521,8 @@ DWARFDebugInfoEntry::GetPubname
     DWARFFormValue form_value;
 
     if (GetAttributeValue(dwarf2Data, cu, DW_AT_MIPS_linkage_name, form_value))
+        name = form_value.AsCString(&dwarf2Data->get_debug_str_data());
+    else if (GetAttributeValue(dwarf2Data, cu, DW_AT_linkage_name, form_value))
         name = form_value.AsCString(&dwarf2Data->get_debug_str_data());
     else if (GetAttributeValue(dwarf2Data, cu, DW_AT_name, form_value))
         name = form_value.AsCString(&dwarf2Data->get_debug_str_data());
@@ -1761,7 +1767,7 @@ DWARFDebugInfoEntry::BuildFunctionAddressRangeTable
                 hi_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_high_pc, DW_INVALID_ADDRESS);
             if (hi_pc != DW_INVALID_ADDRESS)
             {
-            //  printf("BuildAddressRangeTable() 0x%8.8x: [0x%16.16llx - 0x%16.16llx)\n", m_offset, lo_pc, hi_pc); // DEBUG ONLY
+            //  printf("BuildAddressRangeTable() 0x%8.8x: [0x%16.16" PRIx64 " - 0x%16.16" PRIx64 ")\n", m_offset, lo_pc, hi_pc); // DEBUG ONLY
                 debug_aranges->AppendRange (GetOffset(), lo_pc, hi_pc);
             }
         }

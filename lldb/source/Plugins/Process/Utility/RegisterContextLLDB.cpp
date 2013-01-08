@@ -87,6 +87,7 @@ RegisterContextLLDB::RegisterContextLLDB
 void
 RegisterContextLLDB::InitializeZerothFrame()
 {
+    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
     ExecutionContext exe_ctx(m_thread.shared_from_this());
     RegisterContextSP reg_ctx_sp = m_thread.GetRegisterContext();
 
@@ -214,8 +215,8 @@ RegisterContextLLDB::InitializeZerothFrame()
 
     m_cfa = cfa_regval + cfa_offset;
 
-    UnwindLogMsg ("cfa_regval = 0x%16.16llx (cfa_regval = 0x%16.16llx, cfa_offset = %i)", m_cfa, cfa_regval, cfa_offset);
-    UnwindLogMsg ("initialized frame current pc is 0x%llx cfa is 0x%llx using %s UnwindPlan",
+    UnwindLogMsg ("cfa_regval = 0x%16.16" PRIx64 " (cfa_regval = 0x%16.16" PRIx64 ", cfa_offset = %i)", m_cfa, cfa_regval, cfa_offset);
+    UnwindLogMsg ("initialized frame current pc is 0x%" PRIx64 " cfa is 0x%" PRIx64 " using %s UnwindPlan",
             (uint64_t) m_current_pc.GetLoadAddress (exe_ctx.GetTargetPtr()),
             (uint64_t) m_cfa,
             m_full_unwind_plan_sp->GetSourceName().GetCString());
@@ -255,12 +256,12 @@ RegisterContextLLDB::InitializeNonZerothFrame()
 
     if (log)
     {
-        UnwindLogMsg ("pc = 0x%16.16llx", pc);
+        UnwindLogMsg ("pc = 0x%16.16" PRIx64, pc);
         addr_t reg_val;
         if (ReadGPRValue (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_FP, reg_val))
-            UnwindLogMsg ("fp = 0x%16.16llx", reg_val);
+            UnwindLogMsg ("fp = 0x%16.16" PRIx64, reg_val);
         if (ReadGPRValue (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_SP, reg_val))
-            UnwindLogMsg ("sp = 0x%16.16llx", reg_val);
+            UnwindLogMsg ("sp = 0x%16.16" PRIx64, reg_val);
     }
 
     // A pc of 0x0 means it's the end of the stack crawl
@@ -298,7 +299,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
             // pc and see if we can get any further.
             if (GetNextFrame().get() && GetNextFrame()->IsValid() && GetNextFrame()->IsFrameZero())
             {
-                UnwindLogMsg ("had a pc of 0x%llx which is not in executable memory but on frame 1 -- allowing it once.",
+                UnwindLogMsg ("had a pc of 0x%" PRIx64 " which is not in executable memory but on frame 1 -- allowing it once.",
                          (uint64_t) pc);
                 m_frame_type = eSkipFrame;
             }
@@ -364,7 +365,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
                 return;
             }
 
-            UnwindLogMsg ("initialized frame cfa is 0x%llx", (uint64_t) m_cfa);
+            UnwindLogMsg ("initialized frame cfa is 0x%" PRIx64, (uint64_t) m_cfa);
             return;
         }
         m_frame_type = eNotAValidFrame;
@@ -507,7 +508,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
 
     m_cfa = cfa_regval + cfa_offset;
 
-    UnwindLogMsg ("cfa_regval = 0x%16.16llx (cfa_regval = 0x%16.16llx, cfa_offset = %i)", m_cfa, cfa_regval, cfa_offset);
+    UnwindLogMsg ("cfa_regval = 0x%16.16" PRIx64 " (cfa_regval = 0x%16.16" PRIx64 ", cfa_offset = %i)", m_cfa, cfa_regval, cfa_offset);
 
     // A couple of sanity checks..
     if (cfa_regval == LLDB_INVALID_ADDRESS || cfa_regval == 0 || cfa_regval == 1)
@@ -545,7 +546,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         }
     }
 
-    UnwindLogMsg ("initialized frame current pc is 0x%llx cfa is 0x%llx",
+    UnwindLogMsg ("initialized frame current pc is 0x%" PRIx64 " cfa is 0x%" PRIx64,
             (uint64_t) m_current_pc.GetLoadAddress (exe_ctx.GetTargetPtr()), (uint64_t) m_cfa);
 }
 

@@ -16,6 +16,8 @@
 #include "lldb/Breakpoint/Watchpoint.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Symbol/Symbol.h"
+#include "lldb/Target/DynamicLoader.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
@@ -215,14 +217,14 @@ StopInfoMachException::GetDescription ()
         if (exc_desc)
             strm.PutCString(exc_desc);
         else
-            strm.Printf("EXC_??? (%llu)", m_value);
+            strm.Printf("EXC_??? (%" PRIu64 ")", m_value);
 
         if (m_exc_data_count >= 1)
         {
             if (code_desc)
                 strm.Printf(" (%s=%s", code_label, code_desc);
             else
-                strm.Printf(" (%s=%llu", code_label, m_exc_code);
+                strm.Printf(" (%s=%" PRIu64, code_label, m_exc_code);
         }
 
         if (m_exc_data_count >= 2)
@@ -230,7 +232,7 @@ StopInfoMachException::GetDescription ()
             if (subcode_desc)
                 strm.Printf(", %s=%s", subcode_label, subcode_desc);
             else
-                strm.Printf(", %s=0x%llx", subcode_label, m_exc_subcode);
+                strm.Printf(", %s=0x%" PRIx64, subcode_label, m_exc_subcode);
         }
         
         if (m_exc_data_count > 0)
@@ -300,7 +302,39 @@ StopInfoMachException::CreateStopReasonWithMachException
 
         case 5: // EXC_SOFTWARE
             if (exc_code == 0x10003) // EXC_SOFT_SIGNAL
+            {
+                if (exc_sub_code == 5)
+                {
+                    // On MacOSX, a SIGTRAP can signify that a process has called
+                    // exec, so we should check with our dynamic loader to verify.
+                    ProcessSP process_sp (thread.GetProcess());
+                    if (process_sp)
+                    {
+                        DynamicLoader *dynamic_loader = process_sp->GetDynamicLoader();
+                        if (dynamic_loader && dynamic_loader->ProcessDidExec())
+                        {
+                            // The program was re-exec'ed
+                            return StopInfo::CreateStopReasonWithExec (thread);
+                        }
+//                        if (!process_did_exec)
+//                        {
+//                            // We have a SIGTRAP, make sure we didn't exec by checking
+//                            // for the PC being at "_dyld_start"...
+//                            lldb::StackFrameSP frame_sp (thread.GetStackFrameAtIndex(0));
+//                            if (frame_sp)
+//                            {
+//                                const Symbol *symbol = frame_sp->GetSymbolContext(eSymbolContextSymbol).symbol;
+//                                if (symbol)
+//                                {
+//                                    if (symbol->GetName() == ConstString("_dyld_start"))
+//                                        process_did_exec = true;
+//                                }
+//                            }
+//                        }
+                    }
+                }
                 return StopInfo::CreateStopReasonWithSignal (thread, exc_sub_code);
+            }
             break;
         
         case 6: // EXC_BREAKPOINT

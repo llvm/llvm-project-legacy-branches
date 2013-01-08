@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Host/Host.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/ConstString.h"
@@ -24,6 +26,7 @@
 
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MachO.h"
+#include "llvm/ADT/Twine.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -92,7 +95,7 @@ Host::StartMonitoringChildProcess
     info_ptr->monitor_signals = monitor_signals;
     
     char thread_name[256];
-    ::snprintf (thread_name, sizeof(thread_name), "<lldb.host.wait4(pid=%i)>", pid);
+    ::snprintf (thread_name, sizeof(thread_name), "<lldb.host.wait4(pid=%" PRIu64 ")>", pid);
     thread = ThreadCreate (thread_name,
                            MonitorChildProcessThreadFunction,
                            info_ptr,
@@ -155,7 +158,7 @@ MonitorChildProcessThreadFunction (void *arg)
     {
         log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
         if (log)
-            log->Printf("%s ::wait_pid (pid = %i, &status, options = %i)...", function, pid, options);
+            log->Printf("%s ::wait_pid (pid = %" PRIu64 ", &status, options = %i)...", function, pid, options);
 
         // Wait for all child processes
         ::pthread_testcancel ();
@@ -204,7 +207,7 @@ MonitorChildProcessThreadFunction (void *arg)
 
                 log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
                 if (log)
-                    log->Printf ("%s ::waitpid (pid = %i, &status, options = %i) => pid = %i, status = 0x%8.8x (%s), signal = %i, exit_state = %i",
+                    log->Printf ("%s ::waitpid (pid = %" PRIu64 ", &status, options = %i) => pid = %" PRIu64 ", status = 0x%8.8x (%s), signal = %i, exit_state = %i",
                                  function,
                                  wait_pid,
                                  options,
@@ -1060,15 +1063,9 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
         }
         break;
 
+#ifndef LLDB_DISABLE_PYTHON
     case ePathTypePythonDir:                
         {
-            // TODO: Anyone know how we can determine this for linux? Other systems?
-            // For linux and FreeBSD we are currently assuming the
-            // location of the lldb binary that contains this function is
-            // the directory that will contain a python directory which
-            // has our lldb module. This is how files get placed when
-            // compiling with Makefiles.
-
             static ConstString g_lldb_python_dir;
             if (!g_lldb_python_dir)
             {
@@ -1087,9 +1084,19 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                         ::strncpy (framework_pos, "/Resources/Python", PATH_MAX - (framework_pos - raw_path));
                     }
 #else
+                    llvm::Twine python_version_dir;
+                    python_version_dir = "/python"
+                                       + llvm::Twine(PY_MAJOR_VERSION)
+                                       + "."
+                                       + llvm::Twine(PY_MINOR_VERSION)
+                                       + "/site-packages";
+
                     // We may get our string truncated. Should we protect
                     // this with an assert?
-                    ::strncat(raw_path, "/python", sizeof(raw_path) - strlen(raw_path) - 1);
+
+                    ::strncat(raw_path, python_version_dir.str().c_str(),
+                              sizeof(raw_path) - strlen(raw_path) - 1);
+
 #endif
                     FileSpec::Resolve (raw_path, resolved_path, sizeof(resolved_path));
                     g_lldb_python_dir.SetCString(resolved_path);
@@ -1099,7 +1106,7 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
             return file_spec.GetDirectory();
         }
         break;
-    
+#endif
     case ePathTypeLLDBSystemPlugins:    // System plug-ins directory
         {
 #if defined (__APPLE__)
@@ -1158,9 +1165,6 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
             // TODO: where would user LLDB plug-ins be located on linux? Other systems?
             return false;
         }
-    default:
-        assert (!"Unhandled PathType");
-        break;
     }
 
     return false;

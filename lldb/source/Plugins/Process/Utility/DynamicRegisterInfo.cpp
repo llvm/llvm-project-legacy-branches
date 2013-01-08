@@ -8,6 +8,8 @@
 //===----------------------------------------------------------------------===//
 #ifndef LLDB_DISABLE_PYTHON
 
+#include "lldb/lldb-python.h"
+
 #include "DynamicRegisterInfo.h"
 
 // C Includes

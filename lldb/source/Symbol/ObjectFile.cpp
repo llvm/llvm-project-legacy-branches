@@ -34,7 +34,7 @@ ObjectFile::FindPlugin (const lldb::ModuleSP &module_sp, const FileSpec* file, a
     if (module_sp)
     {
         Timer scoped_timer (__PRETTY_FUNCTION__,
-                            "ObjectFile::FindPlugin (module = %s/%s, file = %p, file_offset = 0x%8.8llx, file_size = 0x%8.8llx)",
+                            "ObjectFile::FindPlugin (module = %s/%s, file = %p, file_offset = 0x%8.8" PRIx64 ", file_size = 0x%8.8" PRIx64 ")",
                             module_sp->GetFileSpec().GetDirectory().AsCString(),
                             module_sp->GetFileSpec().GetFilename().AsCString(),
                             file, (uint64_t) file_offset, (uint64_t) file_size);
@@ -114,7 +114,7 @@ ObjectFile::FindPlugin (const lldb::ModuleSP &module_sp,
     if (module_sp)
     {
         Timer scoped_timer (__PRETTY_FUNCTION__,
-                            "ObjectFile::FindPlugin (module = %s/%s, process = %p, header_addr = 0x%llx)",
+                            "ObjectFile::FindPlugin (module = %s/%s, process = %p, header_addr = 0x%" PRIx64 ")",
                             module_sp->GetFileSpec().GetDirectory().AsCString(),
                             module_sp->GetFileSpec().GetFilename().AsCString(),
                             process_sp.get(), header_addr);
@@ -162,7 +162,7 @@ ObjectFile::ObjectFile (const lldb::ModuleSP &module_sp,
     {
         if (m_file)
         {
-            log->Printf ("%p ObjectFile::ObjectFile () module = %s/%s, file = %s/%s, offset = 0x%8.8llx, size = %llu\n",
+            log->Printf ("%p ObjectFile::ObjectFile () module = %s/%s, file = %s/%s, offset = 0x%8.8" PRIx64 ", size = %" PRIu64 "\n",
                          this,
                          module_sp->GetFileSpec().GetDirectory().AsCString(),
                          module_sp->GetFileSpec().GetFilename().AsCString(),
@@ -173,7 +173,7 @@ ObjectFile::ObjectFile (const lldb::ModuleSP &module_sp,
         }
         else
         {
-            log->Printf ("%p ObjectFile::ObjectFile () module = %s/%s, file = <NULL>, offset = 0x%8.8llx, size = %llu\n",
+            log->Printf ("%p ObjectFile::ObjectFile () module = %s/%s, file = <NULL>, offset = 0x%8.8" PRIx64 ", size = %" PRIu64 "\n",
                          this,
                          module_sp->GetFileSpec().GetDirectory().AsCString(),
                          module_sp->GetFileSpec().GetFilename().AsCString(),
@@ -204,7 +204,7 @@ ObjectFile::ObjectFile (const lldb::ModuleSP &module_sp,
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
     {
-        log->Printf ("%p ObjectFile::ObjectFile () module = %s/%s, process = %p, header_addr = 0x%llx\n",
+        log->Printf ("%p ObjectFile::ObjectFile () module = %s/%s, process = %p, header_addr = 0x%" PRIx64 "\n",
                      this,
                      module_sp->GetFileSpec().GetDirectory().AsCString(),
                      module_sp->GetFileSpec().GetFilename().AsCString(),
@@ -218,29 +218,7 @@ ObjectFile::~ObjectFile()
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
-    {
-        ModuleSP module_sp (GetModule());
-        if (m_file)
-        {
-            log->Printf ("%p ObjectFile::~ObjectFile () module = %s/%s, file = %s/%s, offset = 0x%8.8llx, size = %llu\n",
-                         this,
-                         module_sp->GetFileSpec().GetDirectory().AsCString(),
-                         module_sp->GetFileSpec().GetFilename().AsCString(),
-                         m_file.GetDirectory().AsCString(),
-                         m_file.GetFilename().AsCString(),
-                         m_offset,
-                         m_length);
-        }
-        else
-        {
-            log->Printf ("%p ObjectFile::~ObjectFile () module = %s/%s, file = <NULL>, offset = 0x%8.8llx, size = %llu\n",
-                         this,
-                         module_sp->GetFileSpec().GetDirectory().AsCString(),
-                         module_sp->GetFileSpec().GetFilename().AsCString(),
-                         m_offset,
-                         m_length);
-        }
-    }
+        log->Printf ("%p ObjectFile::~ObjectFile ()\n", this);
 }
 
 bool 
@@ -399,6 +377,19 @@ ObjectFile::ReadSectionData (const Section *section, off_t section_offset, void 
             if (section_dst_len > section_bytes_left)
                 section_dst_len = section_bytes_left;
             return CopyData (section->GetFileOffset() + section_offset, section_dst_len, dst);
+        }
+        else
+        {
+            if (section->GetType() == eSectionTypeZeroFill)
+            {
+                const uint64_t section_size = section->GetByteSize();
+                const uint64_t section_bytes_left = section_size - section_offset;
+                uint64_t section_dst_len = dst_len;
+                if (section_dst_len > section_bytes_left)
+                    section_dst_len = section_bytes_left;
+                memset(dst, 0, section_dst_len);
+                return section_dst_len;
+            }
         }
     }
     return 0;

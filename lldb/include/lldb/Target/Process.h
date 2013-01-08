@@ -2061,6 +2061,27 @@ public:
 
 
     //------------------------------------------------------------------
+    /// Called after a process re-execs itself.
+    ///
+    /// Allow Process plug-ins to execute some code after a process has
+    /// exec'ed itself. Subclasses typically should override DoDidExec()
+    /// as the lldb_private::Process class needs to remove its dynamic
+    /// loader, runtime, ABI and other plug-ins, as well as unload all
+    /// shared libraries.
+    //------------------------------------------------------------------
+    virtual void
+    DidExec ();
+
+    //------------------------------------------------------------------
+    /// Subclasses of Process should implement this function if they
+    /// need to do anything after a process exec's itself.
+    //------------------------------------------------------------------
+    virtual void
+    DoDidExec ()
+    {
+    }
+
+    //------------------------------------------------------------------
     /// Called before launching to a process.
     ///
     /// Allow Process plug-ins to execute some code before launching a
@@ -3098,10 +3119,10 @@ public:
     // Process Watchpoints (optional)
     //----------------------------------------------------------------------
     virtual Error
-    EnableWatchpoint (Watchpoint *wp);
+    EnableWatchpoint (Watchpoint *wp, bool notify = true);
 
     virtual Error
-    DisableWatchpoint (Watchpoint *wp);
+    DisableWatchpoint (Watchpoint *wp, bool notify = true);
 
     //------------------------------------------------------------------
     // Thread Queries
@@ -3467,7 +3488,7 @@ protected:
     std::string                 m_stdout_data;
     std::string                 m_stderr_data;
     Mutex                       m_profile_data_comm_mutex;
-    std::string                 m_profile_data;
+    std::vector<std::string>    m_profile_data;
     MemoryCache                 m_memory_cache;
     AllocatedMemoryCache        m_allocated_memory_cache;
     bool                        m_should_detach;   /// Should we detach if the process object goes away with an explicit call to Kill or Detach?

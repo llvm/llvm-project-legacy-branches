@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectFrame.h"
 
 // C Includes
@@ -120,7 +122,7 @@ public:
         {
             Error error;
             bool success = false;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             switch (short_option)
             {
             case 'r':   

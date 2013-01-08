@@ -9,8 +9,6 @@
 
 #include "UnwindAssemblyInstEmulation.h"
 
-#include "llvm-c/EnhancedDisassembly.h"
-
 #include "lldb/Core/Address.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/DataBufferHeap.h"
@@ -271,7 +269,7 @@ UnwindAssemblyInstEmulation::GetNonCallSiteUnwindPlanFromAssembly (AddressRange&
         {
             StreamString strm;
             lldb::addr_t base_addr = range.GetBaseAddress().GetLoadAddress(thread.CalculateTarget().get());
-            strm.Printf ("Resulting unwind rows for [0x%llx - 0x%llx):", base_addr, base_addr + range.GetByteSize());
+            strm.Printf ("Resulting unwind rows for [0x%" PRIx64 " - 0x%" PRIx64 "):", base_addr, base_addr + range.GetByteSize());
             unwind_plan.Dump(strm, &thread, base_addr);
             log->PutCString (strm.GetData());
         }
@@ -403,7 +401,7 @@ UnwindAssemblyInstEmulation::ReadMemory (EmulateInstruction *instruction,
     if (log && log->GetVerbose ())
     {
         StreamString strm;
-        strm.Printf ("UnwindAssemblyInstEmulation::ReadMemory    (addr = 0x%16.16llx, dst = %p, dst_len = %llu, context = ", 
+        strm.Printf ("UnwindAssemblyInstEmulation::ReadMemory    (addr = 0x%16.16" PRIx64 ", dst = %p, dst_len = %" PRIu64 ", context = ",
                      addr,
                      dst,
                      (uint64_t)dst_len);
@@ -594,7 +592,6 @@ UnwindAssemblyInstEmulation::WriteRegister (EmulateInstruction *instruction,
 
     switch (context.type)
     {
-        default:
         case EmulateInstruction::eContextInvalid:
         case EmulateInstruction::eContextReadOpcode:
         case EmulateInstruction::eContextImmediate:

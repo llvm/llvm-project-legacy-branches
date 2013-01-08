@@ -50,6 +50,7 @@ GDBRemoteCommunicationClient::GDBRemoteCommunicationClient(bool is_platform) :
     m_supports_vCont_s (eLazyBoolCalculate),
     m_supports_vCont_S (eLazyBoolCalculate),
     m_qHostInfo_is_valid (eLazyBoolCalculate),
+    m_qProcessInfo_is_valid (eLazyBoolCalculate),
     m_supports_alloc_dealloc_memory (eLazyBoolCalculate),
     m_supports_memory_region_info  (eLazyBoolCalculate),
     m_supports_watchpoint_support_info  (eLazyBoolCalculate),
@@ -75,6 +76,7 @@ GDBRemoteCommunicationClient::GDBRemoteCommunicationClient(bool is_platform) :
     m_async_response (),
     m_async_signal (-1),
     m_host_arch(),
+    m_process_arch(),
     m_os_version_major (UINT32_MAX),
     m_os_version_minor (UINT32_MAX),
     m_os_version_update (UINT32_MAX)
@@ -191,6 +193,7 @@ GDBRemoteCommunicationClient::ResetDiscoverableSettings()
     m_supports_vCont_s = eLazyBoolCalculate;
     m_supports_vCont_S = eLazyBoolCalculate;
     m_qHostInfo_is_valid = eLazyBoolCalculate;
+    m_qProcessInfo_is_valid = eLazyBoolCalculate;
     m_supports_alloc_dealloc_memory = eLazyBoolCalculate;
     m_supports_memory_region_info = eLazyBoolCalculate;
     m_prepare_for_reg_writing_reply = eLazyBoolCalculate;
@@ -207,6 +210,7 @@ GDBRemoteCommunicationClient::ResetDiscoverableSettings()
     m_supports_z3 = true;
     m_supports_z4 = true;
     m_host_arch.Clear();
+    m_process_arch.Clear();
 }
 
 
@@ -967,6 +971,14 @@ GDBRemoteCommunicationClient::GetSystemArchitecture ()
     return ArchSpec();
 }
 
+const lldb_private::ArchSpec &
+GDBRemoteCommunicationClient::GetProcessArchitecture ()
+{
+    if (m_qProcessInfo_is_valid == eLazyBoolCalculate)
+        GetCurrentProcessInfo ();
+    return m_process_arch;
+}
+
 
 bool
 GDBRemoteCommunicationClient::GetHostInfo (bool force)
@@ -1202,7 +1214,7 @@ GDBRemoteCommunicationClient::SendAttach
     if (pid != LLDB_INVALID_PROCESS_ID)
     {
         char packet[64];
-        const int packet_len = ::snprintf (packet, sizeof(packet), "vAttach;%llx", pid);
+        const int packet_len = ::snprintf (packet, sizeof(packet), "vAttach;%" PRIx64, pid);
         assert (packet_len < sizeof(packet));
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
@@ -1229,7 +1241,7 @@ GDBRemoteCommunicationClient::AllocateMemory (size_t size, uint32_t permissions)
     {
         m_supports_alloc_dealloc_memory = eLazyBoolYes;
         char packet[64];
-        const int packet_len = ::snprintf (packet, sizeof(packet), "_M%llx,%s%s%s",
+        const int packet_len = ::snprintf (packet, sizeof(packet), "_M%" PRIx64 ",%s%s%s",
                                            (uint64_t)size,
                                            permissions & lldb::ePermissionsReadable ? "r" : "",
                                            permissions & lldb::ePermissionsWritable ? "w" : "",
@@ -1256,7 +1268,7 @@ GDBRemoteCommunicationClient::DeallocateMemory (addr_t addr)
     {
         m_supports_alloc_dealloc_memory = eLazyBoolYes;
         char packet[64];
-        const int packet_len = ::snprintf(packet, sizeof(packet), "_m%llx", (uint64_t)addr);
+        const int packet_len = ::snprintf(packet, sizeof(packet), "_m%" PRIx64, (uint64_t)addr);
         assert (packet_len < sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
@@ -1289,7 +1301,7 @@ GDBRemoteCommunicationClient::GetMemoryRegionInfo (lldb::addr_t addr,
     {
         m_supports_memory_region_info = eLazyBoolYes;
         char packet[64];
-        const int packet_len = ::snprintf(packet, sizeof(packet), "qMemoryRegionInfo:%llx", (uint64_t)addr);
+        const int packet_len = ::snprintf(packet, sizeof(packet), "qMemoryRegionInfo:%" PRIx64, (uint64_t)addr);
         assert (packet_len < sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
@@ -1622,7 +1634,7 @@ GDBRemoteCommunicationClient::GetProcessInfo (lldb::pid_t pid, ProcessInstanceIn
     if (m_supports_qProcessInfoPID)
     {
         char packet[32];
-        const int packet_len = ::snprintf (packet, sizeof (packet), "qProcessInfoPID:%llu", pid);
+        const int packet_len = ::snprintf (packet, sizeof (packet), "qProcessInfoPID:%" PRIu64, pid);
         assert (packet_len < sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
@@ -1637,6 +1649,100 @@ GDBRemoteCommunicationClient::GetProcessInfo (lldb::pid_t pid, ProcessInstanceIn
     }
     return false;
 }
+
+bool
+GDBRemoteCommunicationClient::GetCurrentProcessInfo ()
+{
+    if (m_qProcessInfo_is_valid == eLazyBoolYes)
+        return true;
+    if (m_qProcessInfo_is_valid == eLazyBoolNo)
+        return false;
+
+    GetHostInfo ();
+
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse ("qProcessInfo", response, false))
+    {
+        if (response.IsNormalResponse())
+        {
+            std::string name;
+            std::string value;
+            uint32_t cpu = LLDB_INVALID_CPUTYPE;
+            uint32_t sub = 0;
+            std::string arch_name;
+            std::string os_name;
+            std::string vendor_name;
+            std::string triple;
+            uint32_t pointer_byte_size = 0;
+            StringExtractor extractor;
+            ByteOrder byte_order = eByteOrderInvalid;
+            uint32_t num_keys_decoded = 0;
+            while (response.GetNameColonValue(name, value))
+            {
+                if (name.compare("cputype") == 0)
+                {
+                    cpu = Args::StringToUInt32 (value.c_str(), LLDB_INVALID_CPUTYPE, 16);
+                    if (cpu != LLDB_INVALID_CPUTYPE)
+                        ++num_keys_decoded;
+                }
+                else if (name.compare("cpusubtype") == 0)
+                {
+                    sub = Args::StringToUInt32 (value.c_str(), 0, 16);
+                    if (sub != 0)
+                        ++num_keys_decoded;
+                }
+                else if (name.compare("ostype") == 0)
+                {
+                    os_name.swap (value);
+                    ++num_keys_decoded;
+                }
+                else if (name.compare("vendor") == 0)
+                {
+                    vendor_name.swap(value);
+                    ++num_keys_decoded;
+                }
+                else if (name.compare("endian") == 0)
+                {
+                    ++num_keys_decoded;
+                    if (value.compare("little") == 0)
+                        byte_order = eByteOrderLittle;
+                    else if (value.compare("big") == 0)
+                        byte_order = eByteOrderBig;
+                    else if (value.compare("pdp") == 0)
+                        byte_order = eByteOrderPDP;
+                    else
+                        --num_keys_decoded;
+                }
+                else if (name.compare("ptrsize") == 0)
+                {
+                    pointer_byte_size = Args::StringToUInt32 (value.c_str(), 0, 16);
+                    if (pointer_byte_size != 0)
+                        ++num_keys_decoded;
+                }
+            }
+            if (num_keys_decoded > 0)
+                m_qProcessInfo_is_valid = eLazyBoolYes;
+            if (cpu != LLDB_INVALID_CPUTYPE && !os_name.empty() && !vendor_name.empty())
+            {
+                m_process_arch.SetArchitecture (eArchTypeMachO, cpu, sub);
+                if (pointer_byte_size)
+                {
+                    assert (pointer_byte_size == m_process_arch.GetAddressByteSize());
+                }
+                m_host_arch.GetTriple().setVendorName (llvm::StringRef (vendor_name));
+                m_host_arch.GetTriple().setOSName (llvm::StringRef (os_name));
+                return true;
+            }
+        }
+    }
+    else
+    {
+        m_qProcessInfo_is_valid = eLazyBoolNo;
+    }
+
+    return false;
+}
+
 
 uint32_t
 GDBRemoteCommunicationClient::FindProcesses (const ProcessInstanceInfoMatch &match_info,
@@ -1692,9 +1798,9 @@ GDBRemoteCommunicationClient::FindProcesses (const ProcessInstanceInfoMatch &mat
             }
             
             if (match_info.GetProcessInfo().ProcessIDIsValid())
-                packet.Printf("pid:%llu;",match_info.GetProcessInfo().GetProcessID());
+                packet.Printf("pid:%" PRIu64 ";",match_info.GetProcessInfo().GetProcessID());
             if (match_info.GetProcessInfo().ParentProcessIDIsValid())
-                packet.Printf("parent_pid:%llu;",match_info.GetProcessInfo().GetParentProcessID());
+                packet.Printf("parent_pid:%" PRIu64 ";",match_info.GetProcessInfo().GetParentProcessID());
             if (match_info.GetProcessInfo().UserIDIsValid())
                 packet.Printf("uid:%u;",match_info.GetProcessInfo().GetUserID());
             if (match_info.GetProcessInfo().GroupIDIsValid())
@@ -1817,7 +1923,7 @@ GDBRemoteCommunicationClient::TestPacketSpeed (const uint32_t num_packets)
                 end_time = TimeValue::Now();
                 total_time_nsec = end_time.GetAsNanoSecondsSinceJan1_1970() - start_time.GetAsNanoSecondsSinceJan1_1970();
                 packets_per_second = (((float)num_packets)/(float)total_time_nsec) * (float)TimeValue::NanoSecPerSec;
-                printf ("%u qSpeedTest(send=%-5u, recv=%-5u) in %llu.%9.9llu sec for %f packets/sec.\n", 
+                printf ("%u qSpeedTest(send=%-5u, recv=%-5u) in %" PRIu64 ".%9.9" PRIu64 " sec for %f packets/sec.\n",
                         num_packets, 
                         send_size,
                         recv_size,
@@ -1841,7 +1947,7 @@ GDBRemoteCommunicationClient::TestPacketSpeed (const uint32_t num_packets)
         end_time = TimeValue::Now();
         total_time_nsec = end_time.GetAsNanoSecondsSinceJan1_1970() - start_time.GetAsNanoSecondsSinceJan1_1970();
         packets_per_second = (((float)num_packets)/(float)total_time_nsec) * (float)TimeValue::NanoSecPerSec;
-        printf ("%u 'qC' packets packets in 0x%llu%9.9llu sec for %f packets/sec.\n", 
+        printf ("%u 'qC' packets packets in 0x%" PRIu64 "%9.9" PRIu64 " sec for %f packets/sec.\n",
                 num_packets, 
                 total_time_nsec / TimeValue::NanoSecPerSec, 
                 total_time_nsec % TimeValue::NanoSecPerSec, 
@@ -1961,7 +2067,7 @@ GDBRemoteCommunicationClient::GetThreadStopInfo (lldb::tid_t tid, StringExtracto
     if (m_supports_qThreadStopInfo)
     {
         char packet[256];
-        int packet_len = ::snprintf(packet, sizeof(packet), "qThreadStopInfo%llx", tid);
+        int packet_len = ::snprintf(packet, sizeof(packet), "qThreadStopInfo%" PRIx64, tid);
         assert (packet_len < sizeof(packet));
         if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
         {
@@ -1991,13 +2097,12 @@ GDBRemoteCommunicationClient::SendGDBStoppointTypePacket (GDBStoppointType type,
     case eWatchpointWrite:      if (!m_supports_z2) return UINT8_MAX; break;
     case eWatchpointRead:       if (!m_supports_z3) return UINT8_MAX; break;
     case eWatchpointReadWrite:  if (!m_supports_z4) return UINT8_MAX; break;
-    default:                    return UINT8_MAX;
     }
 
     char packet[64];
     const int packet_len = ::snprintf (packet, 
                                        sizeof(packet), 
-                                       "%c%i,%llx,%x", 
+                                       "%c%i,%" PRIx64 ",%x",
                                        insert ? 'Z' : 'z', 
                                        type, 
                                        addr, 
@@ -2021,7 +2126,6 @@ GDBRemoteCommunicationClient::SendGDBStoppointTypePacket (GDBStoppointType type,
             case eWatchpointWrite:      m_supports_z2 = false; break;
             case eWatchpointRead:       m_supports_z3 = false; break;
             case eWatchpointReadWrite:  m_supports_z4 = false; break;
-            default:                    break;
         }
     }
 

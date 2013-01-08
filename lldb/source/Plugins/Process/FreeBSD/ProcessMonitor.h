@@ -103,36 +103,50 @@ public:
     /// dependent) offset.
     ///
     /// This method is provided for use by RegisterContextFreeBSD derivatives.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    ReadRegisterValue(unsigned offset, unsigned size, lldb_private::RegisterValue &value);
+    ReadRegisterValue(lldb::tid_t tid, unsigned offset,
+                      unsigned size, lldb_private::RegisterValue &value);
 
     /// Writes the given value to the register identified by the given
     /// (architecture dependent) offset.
     ///
     /// This method is provided for use by RegisterContextFreeBSD derivatives.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    WriteRegisterValue(unsigned offset, const lldb_private::RegisterValue &value);
+    WriteRegisterValue(lldb::tid_t tid, unsigned offset,
+                       const lldb_private::RegisterValue &value);
 
     /// Reads all general purpose registers into the specified buffer.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    ReadGPR(void *buf);
+    ReadGPR(lldb::tid_t tid, void *buf);
 
     /// Reads all floating point registers into the specified buffer.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    ReadFPR(void *buf);
+    ReadFPR(lldb::tid_t tid, void *buf);
 
     /// Writes all general purpose registers into the specified buffer.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    WriteGPR(void *buf);
+    WriteGPR(lldb::tid_t tid, void *buf);
 
     /// Writes all floating point registers into the specified buffer.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    WriteFPR(void *buf);
+    WriteFPR(lldb::tid_t tid, void *buf);
 
     /// Writes a siginfo_t structure corresponding to the given thread ID to the
     /// memory region pointed to by @p siginfo.
     bool
-    GetSignalInfo(lldb::tid_t tid, void *siginfo);
+    GetSignalInfo(lldb::tid_t tid, void *siginfo, int &errno);
 
     /// Writes the raw event message code (vis-a-vis PTRACE_GETEVENTMSG)
     /// corresponding to the given thread IDto the memory pointed to by @p

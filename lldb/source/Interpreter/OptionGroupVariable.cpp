@@ -7,12 +7,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/OptionGroupVariable.h"
 
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Core/DataVisualization.h"
+#include "lldb/Core/Error.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Utility/Utils.h"
@@ -24,22 +28,41 @@ using namespace lldb_private;
 static OptionDefinition
 g_option_table[] =
 {
-    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "no-args",         'a', no_argument,       NULL, 0, eArgTypeNone,    "Omit function arguments."},
-    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "no-locals",       'l', no_argument,       NULL, 0, eArgTypeNone,    "Omit local variables."},
-    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "show-globals",    'g', no_argument,       NULL, 0, eArgTypeNone,    "Show the current frame source file global and static variables."},
-    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "show-declaration",'c', no_argument,       NULL, 0, eArgTypeNone,    "Show variable declaration information (source file and line where the variable was declared)."},
-    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "regex",           'r', no_argument,       NULL, 0, eArgTypeRegularExpression,    "The <variable-name> argument for name lookups are regular expressions."},
-    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "scope",           's', no_argument,       NULL, 0, eArgTypeNone,    "Show variable scope (argument, local, global, static)."},
-    { LLDB_OPT_SET_1, false, "summary",         'y', required_argument, NULL, 0, eArgTypeName,  "Specify the summary that the variable output should use."},
-    { LLDB_OPT_SET_2, false, "summary-string",  'z', required_argument, NULL, 0, eArgTypeName,  "Specify a summary string to use to format the variable output."},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "no-args",         'a', no_argument,       NULL, 0, eArgTypeNone, "Omit function arguments."},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "no-locals",       'l', no_argument,       NULL, 0, eArgTypeNone, "Omit local variables."},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "show-globals",    'g', no_argument,       NULL, 0, eArgTypeNone, "Show the current frame source file global and static variables."},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "show-declaration",'c', no_argument,       NULL, 0, eArgTypeNone, "Show variable declaration information (source file and line where the variable was declared)."},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "regex",           'r', no_argument,       NULL, 0, eArgTypeRegularExpression, "The <variable-name> argument for name lookups are regular expressions."},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "scope",           's', no_argument,       NULL, 0, eArgTypeNone, "Show variable scope (argument, local, global, static)."},
+    { LLDB_OPT_SET_1,                  false, "summary",         'y', required_argument, NULL, 0, eArgTypeName, "Specify the summary that the variable output should use."},
+    { LLDB_OPT_SET_2,                  false, "summary-string",  'z', required_argument, NULL, 0, eArgTypeName, "Specify a summary string to use to format the variable output."},
 };
 
+Error OptionGroupVariableNamedSummaryValidator (const char* str,void*) 
+{
+    if (!str || !str[0])
+        return Error("must specify a valid named summary");
+    TypeSummaryImplSP summary_sp;
+    if (DataVisualization::NamedSummaryFormats::GetSummaryFormat(ConstString(str), summary_sp) == false)
+        return Error("must specify a valid named summary");
+    return Error();
+}
+
+Error OptionGroupVariableNamedSummaryStringValidator (const char* str,void*) 
+{
+    if (!str || !str[0])
+        return Error("must specify a non-empty summary string");
+    return Error();
+}
 
 OptionGroupVariable::OptionGroupVariable (bool show_frame_options) :
     OptionGroup(),
-    include_frame_options (show_frame_options)
+    include_frame_options (show_frame_options),
+    summary(OptionGroupVariableNamedSummaryValidator),
+    summary_string(OptionGroupVariableNamedSummaryStringValidator)
 {
 }
+
 
 OptionGroupVariable::~OptionGroupVariable ()
 {
@@ -53,7 +76,7 @@ OptionGroupVariable::SetOptionValue (CommandInterpreter &interpreter,
     Error error;
     if (!include_frame_options)
         option_idx += 3;
-    char short_option = (char) g_option_table[option_idx].short_option;
+    const int short_option = g_option_table[option_idx].short_option;
     switch (short_option)
     {
         case 'r':   use_regex    = true;  break;
@@ -65,10 +88,10 @@ OptionGroupVariable::SetOptionValue (CommandInterpreter &interpreter,
             show_scope = true;
             break;
         case 'y':
-            summary.SetCurrentValue(option_arg);
+            error = summary.SetCurrentValue(option_arg);
             break;
         case 'z':
-            summary_string.SetCurrentValue(option_arg);
+            error = summary_string.SetCurrentValue(option_arg);
             break;
         default:
             error.SetErrorStringWithFormat("unrecognized short option '%c'", short_option);

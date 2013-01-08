@@ -22,6 +22,7 @@ class LoadUnloadTestCase(TestBase):
         self.line_d_function = line_number('d.c',
                                            '// Find this line number within d_dunction().')
 
+    @skipOnLinux # bugzilla 14424 - missing linux Makefiles/testcase support
     def test_modules_search_paths(self):
         """Test target modules list after loading a different copy of the library libd.dylib, and verifies that it works with 'target modules search-paths add'."""
 
@@ -30,7 +31,6 @@ class LoadUnloadTestCase(TestBase):
 
         if sys.platform.startswith("darwin"):
             dylibName = 'libd.dylib'
-            dylibPath = 'DYLD_LIBRARY_PATH'
 
         # The directory with the dynamic library we did not link to.
         new_dir = os.path.join(os.getcwd(), "hidden")
@@ -61,13 +61,13 @@ class LoadUnloadTestCase(TestBase):
         # Obliterate traces of libd from the old location.
         os.remove(old_dylib)
         # Inform dyld of the new path, too.
-        env_cmd_string = "settings set target.env-vars " + dylibPath + "=" + new_dir
+        env_cmd_string = "settings set target.env-vars " + self.dylibPath + "=" + new_dir
         if self.TraceOn():
             print "Set environment to: ", env_cmd_string
         self.runCmd(env_cmd_string)
         self.runCmd("settings show target.env-vars")
 
-        remove_dyld_path_cmd = "settings remove target.env-vars " + dylibPath
+        remove_dyld_path_cmd = "settings remove target.env-vars " + self.dylibPath
         self.addTearDownHook(lambda: self.runCmd(remove_dyld_path_cmd))
 
         self.runCmd("run")
@@ -75,7 +75,7 @@ class LoadUnloadTestCase(TestBase):
         self.expect("target modules list", "LLDB successfully locates the relocated dynamic library",
             substrs = [new_dylib])
 
-        
+    @skipOnLinux # bugzilla 14424 - missing linux Makefiles/testcase support
     def test_dyld_library_path(self):
         """Test DYLD_LIBRARY_PATH after moving libd.dylib, which defines d_function, somewhere else."""
 
@@ -88,7 +88,6 @@ class LoadUnloadTestCase(TestBase):
         if sys.platform.startswith("darwin"):
             dylibName = 'libd.dylib'
             dsymName = 'libd.dylib.dSYM'
-            dylibPath = 'DYLD_LIBRARY_PATH'
 
         # The directory to relocate the dynamic library and its debugging info.
         special_dir = "hidden"
@@ -104,13 +103,13 @@ class LoadUnloadTestCase(TestBase):
         # Try running with the DYLD_LIBRARY_PATH environment variable set, make sure
         # we pick up the hidden dylib.
 
-        env_cmd_string = "settings set target.env-vars " + dylibPath + "=" + new_dir
+        env_cmd_string = "settings set target.env-vars " + self.dylibPath + "=" + new_dir
         if self.TraceOn():
             print "Set environment to: ", env_cmd_string
         self.runCmd(env_cmd_string)
         self.runCmd("settings show target.env-vars")
 
-        remove_dyld_path_cmd = "settings remove target.env-vars " + dylibPath
+        remove_dyld_path_cmd = "settings remove target.env-vars " + self.dylibPath
         self.addTearDownHook(lambda: self.runCmd(remove_dyld_path_cmd))
 
         lldbutil.run_break_set_by_file_and_line (self, "d.c", self.line_d_function, num_expected_locations=1, loc_exact=True)
@@ -130,6 +129,7 @@ class LoadUnloadTestCase(TestBase):
         self.expect("target modules list",
             substrs = [special_dir, os.path.basename(new_dylib)])
 
+    @skipOnLinux # bugzilla 14424 - missing linux Makefiles/testcase support
     def test_lldb_process_load_and_unload_commands(self):
         """Test that lldb process load/unload command work correctly."""
 
@@ -176,6 +176,7 @@ class LoadUnloadTestCase(TestBase):
 
         self.runCmd("process continue")
 
+    @skipOnLinux # bugzilla 14424 - missing linux Makefiles/testcase support
     def test_load_unload(self):
         """Test breakpoint by name works correctly with dlopen'ing."""
 
@@ -215,6 +216,7 @@ class LoadUnloadTestCase(TestBase):
         self.expect("breakpoint list -f", BREAKPOINT_HIT_ONCE,
             substrs = [' resolved, hit count = 2'])
 
+    @skipOnLinux # bugzilla 14424 - missing linux Makefiles/testcase support
     def test_step_over_load (self):
         """Test stepping over code that loads a shared library works correctly."""
 

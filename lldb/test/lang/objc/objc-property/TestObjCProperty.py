@@ -22,6 +22,7 @@ class ObjCPropertyTestCase(TestBase):
         self.buildDsym()
         self.do_test_properties()
 
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
     @dwarf_test
     def test_objc_properties_with_dwarf(self):
@@ -123,6 +124,11 @@ class ObjCPropertyTestCase(TestBase):
         unbacked_value = frame.EvaluateExpression("mine.unbackedInt", False)
         unbacked_error = unbacked_value.GetError()
         self.assertTrue (unbacked_error.Success())
+
+        idWithProtocol_value = frame.EvaluateExpression("mine.idWithProtocol", False)
+        idWithProtocol_error = idWithProtocol_value.GetError()
+        self.assertTrue (idWithProtocol_error.Success())
+        self.assertTrue (idWithProtocol_value.GetTypeName() == "id")
         
 if __name__ == '__main__':
     import atexit

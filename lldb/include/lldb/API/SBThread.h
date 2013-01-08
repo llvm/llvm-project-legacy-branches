@@ -26,7 +26,8 @@ public:
         eBroadcastBitStackChanged           = (1 << 0),
         eBroadcastBitThreadSuspended        = (1 << 1),
         eBroadcastBitThreadResumed          = (1 << 2),
-        eBroadcastBitSelectedFrameChanged  = (1 << 3)
+        eBroadcastBitSelectedFrameChanged   = (1 << 3),
+        eBroadcastBitThreadSelected         = (1 << 4)
     };
 
     static const char *
@@ -67,6 +68,7 @@ public:
     /// eStopReasonWatchpoint    1     watchpoint id
     /// eStopReasonSignal        1     unix signal number
     /// eStopReasonException     N     exception data
+    /// eStopReasonExec          0
     /// eStopReasonPlanComplete  0
     //--------------------------------------------------------------------------
     uint64_t
@@ -96,6 +98,9 @@ public:
     void
     StepInto (lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
 
+    void
+    StepInto (const char *target_name, lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
+    
     void
     StepOut ();
 

@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectWatchpoint.h"
 #include "CommandObjectWatchpointCommand.h"
 
@@ -213,7 +215,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -642,7 +644,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -799,7 +801,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -1096,7 +1098,7 @@ protected:
             output_stream.EOL();
             result.SetStatus(eReturnStatusSuccessFinishResult);
         } else {
-            result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%llx, size=%lu, variable expression='%s').\n",
+            result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%" PRIx64 ", size=%lu, variable expression='%s').\n",
                                          addr, size, command.GetArgumentAtIndex(0));
             if (error.AsCString(NULL))
                 result.AppendError(error.AsCString());
@@ -1286,7 +1288,7 @@ protected:
             output_stream.EOL();
             result.SetStatus(eReturnStatusSuccessFinishResult);
         } else {
-            result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%llx, size=%lu).\n",
+            result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%" PRIx64 ", size=%lu).\n",
                                          addr, size);
             if (error.AsCString(NULL))
                 result.AppendError(error.AsCString());

@@ -23,7 +23,7 @@ namespace lldb_private {
 
 class StopInfo
 {
-    friend Process::ProcessEventData;
+    friend class Process::ProcessEventData;
     friend class ThreadPlanBase;
     
 public:
@@ -129,6 +129,9 @@ public:
     static lldb::StopInfoSP
     CreateStopReasonWithException (Thread &thread, const char *description);
     
+    static lldb::StopInfoSP
+    CreateStopReasonWithExec (Thread &thread);
+
     static lldb::ValueObjectSP
     GetReturnValueObject (lldb::StopInfoSP &stop_info_sp);
 

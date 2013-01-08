@@ -255,6 +255,7 @@ DNBProcessLaunch (const char *path,
                 // We failed to get the task for our process ID which is bad.
                 // Kill our process otherwise it will be stopped at the entry
                 // point and get reparented to someone else and never go away.
+                DNBLog ("Could not get task port for process, sending SIGKILL and exiting.");
                 kill (SIGKILL, pid);
 
                 if (err_str && err_len > 0)
@@ -1217,14 +1218,14 @@ DNBProcessMemoryRegionInfo (nub_process_t pid, nub_addr_t addr, DNBRegionInfo *r
     return -1;
 }
 
-const char *
-DNBProcessGetProfileDataAsCString (nub_process_t pid)
+std::string
+DNBProcessGetProfileData (nub_process_t pid)
 {
     MachProcessSP procSP;
     if (GetProcessSP (pid, procSP))
-        return procSP->Task().GetProfileDataAsCString();
+        return procSP->Task().GetProfileData();
     
-    return NULL;
+    return std::string("");
 }
 
 nub_bool_t

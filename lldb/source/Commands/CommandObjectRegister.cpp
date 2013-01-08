@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectRegister.h"
 
 // C Includes
@@ -289,7 +291,7 @@ protected:
                         const char *option_value)
         {
             Error error;
-            const char short_option = (char) g_option_table[option_idx].short_option;
+            const int short_option = g_option_table[option_idx].short_option;
             switch (short_option)
             {
                 case 's':

@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectPlatform.h"
 
 // C Includes
@@ -519,7 +521,7 @@ protected:
                         }
                         else
                         {
-                            result.AppendErrorWithFormat ("no process found with pid = %llu\n", pid);
+                            result.AppendErrorWithFormat ("no process found with pid = %" PRIu64 "\n", pid);
                             result.SetStatus (eReturnStatusFailed);
                         }
                     }
@@ -606,7 +608,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success = false;
 
             switch (short_option)
@@ -796,12 +798,12 @@ protected:
                             ProcessInstanceInfo proc_info;
                             if (platform_sp->GetProcessInfo (pid, proc_info))
                             {
-                                ostrm.Printf ("Process information for process %llu:\n", pid);
+                                ostrm.Printf ("Process information for process %" PRIu64 ":\n", pid);
                                 proc_info.Dump (ostrm, platform_sp.get());
                             }
                             else
                             {
-                                ostrm.Printf ("error: no process information is available for process %llu\n", pid);
+                                ostrm.Printf ("error: no process information is available for process %" PRIu64 "\n", pid);
                             }
                             ostrm.EOL();
                         }

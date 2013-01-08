@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/lldb-private.h"
 #include "lldb/lldb-private-log.h"
 #include "lldb/Core/ArchSpec.h"
@@ -23,7 +25,6 @@
 #include "llvm/ADT/StringRef.h"
 
 #include "Plugins/ABI/SysV-x86_64/ABISysV_x86_64.h"
-#include "Plugins/Disassembler/llvm/DisassemblerLLVM.h"
 #include "Plugins/Disassembler/llvm/DisassemblerLLVMC.h"
 #include "Plugins/Instruction/ARM/EmulateInstructionARM.h"
 #include "Plugins/SymbolVendor/MacOSX/SymbolVendorMacOSX.h"
@@ -36,6 +37,7 @@
 #include "Plugins/UnwindAssembly/InstEmulation/UnwindAssemblyInstEmulation.h"
 #include "Plugins/ObjectFile/PECOFF/ObjectFilePECOFF.h"
 #include "Plugins/DynamicLoader/POSIX-DYLD/DynamicLoaderPOSIXDYLD.h"
+#include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
 #ifndef LLDB_DISABLE_PYTHON
 #include "Plugins/OperatingSystem/Python/OperatingSystemPython.h"
 #endif
@@ -45,7 +47,6 @@
 #include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
 
 #include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
-#include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV1.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV2.h"
 #include "Plugins/ABI/MacOSX-i386/ABIMacOSX_i386.h"
@@ -107,7 +108,6 @@ lldb_private::Initialize ()
         ABIMacOSX_arm::Initialize();
         ABISysV_x86_64::Initialize();
         DisassemblerLLVMC::Initialize();
-        DisassemblerLLVM::Initialize();
         ObjectContainerBSDArchive::Initialize();
         EmulateInstructionARM::Initialize ();
         ObjectFilePECOFF::Initialize ();
@@ -118,6 +118,8 @@ lldb_private::Initialize ()
         UnwindAssembly_x86::Initialize();
         DynamicLoaderPOSIXDYLD::Initialize ();
         DynamicLoaderMacOSXDYLD::Initialize();
+        SymbolFileDWARFDebugMap::Initialize();
+        ItaniumABILanguageRuntime::Initialize();
 #ifndef LLDB_DISABLE_PYTHON
         OperatingSystemPython::Initialize();
 #endif
@@ -190,7 +192,6 @@ lldb_private::Terminate ()
     ABIMacOSX_arm::Terminate();
     ABISysV_x86_64::Terminate();
     DisassemblerLLVMC::Terminate();
-    DisassemblerLLVM::Terminate();
     ObjectContainerBSDArchive::Terminate();
     ObjectFileELF::Terminate();
     UnwindAssembly_x86::Terminate();
@@ -200,13 +201,14 @@ lldb_private::Terminate ()
     SymbolFileSymtab::Terminate();
     ObjectFilePECOFF::Terminate ();
     DynamicLoaderPOSIXDYLD::Terminate ();
+    SymbolFileDWARFDebugMap::Terminate();
+    ItaniumABILanguageRuntime::Terminate();
 #ifndef LLDB_DISABLE_PYTHON
     OperatingSystemPython::Terminate();
 #endif
 
     DynamicLoaderMacOSXDYLD::Terminate();
     DynamicLoaderDarwinKernel::Terminate();
-    ItaniumABILanguageRuntime::Terminate();
     AppleObjCRuntimeV2::Terminate();
     AppleObjCRuntimeV1::Terminate();
 #if defined (__APPLE__)
@@ -266,8 +268,6 @@ lldb_private::GetVoteAsCString (Vote vote)
     case eVoteNo:           return "no";
     case eVoteNoOpinion:    return "no opinion";
     case eVoteYes:          return "yes";
-    default:
-        break;
     }
     return "invalid";
 }
@@ -343,9 +343,6 @@ lldb_private::NameMatches (const char *name,
                 RegularExpression regex (match);
                 return regex.Execute (name);
             }
-            break;
-        default:
-            assert (!"unhandled NameMatchType in lldb_private::NameMatches()");
             break;
         }
     }

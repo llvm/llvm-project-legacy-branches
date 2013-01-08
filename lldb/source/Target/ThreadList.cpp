@@ -202,7 +202,7 @@ ThreadList::ShouldStop (Event *event_ptr)
     if (log)
     {
         log->PutCString("");
-        log->Printf ("ThreadList::%s: %llu threads", __FUNCTION__, (uint64_t)m_threads.size());
+        log->Printf ("ThreadList::%s: %" PRIu64 " threads", __FUNCTION__, (uint64_t)m_threads.size());
     }
 
     for (pos = threads_copy.begin(); pos != end; ++pos)
@@ -241,7 +241,7 @@ ThreadList::ShouldReportStop (Event *event_ptr)
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     if (log)
-        log->Printf ("ThreadList::%s %llu threads", __FUNCTION__, (uint64_t)m_threads.size());
+        log->Printf ("ThreadList::%s %" PRIu64 " threads", __FUNCTION__, (uint64_t)m_threads.size());
 
     // Run through the threads and ask whether we should report this event.
     // For stopping, a YES vote wins over everything.  A NO vote wins over NO opinion.
@@ -266,7 +266,7 @@ ThreadList::ShouldReportStop (Event *event_ptr)
             else
             {
                 if (log)
-                    log->Printf ("ThreadList::%s thread 0x%4.4llx: voted %s, but lost out because result was %s", 
+                    log->Printf ("ThreadList::%s thread 0x%4.4" PRIx64 ": voted %s, but lost out because result was %s",
                                  __FUNCTION__,
                                  thread_sp->GetID (), 
                                  GetVoteAsCString (vote),
@@ -309,7 +309,7 @@ ThreadList::ShouldReportRun (Event *event_ptr)
                     break;
                 case eVoteNo:
                     if (log)
-                        log->Printf ("ThreadList::ShouldReportRun() thread %d (0x%4.4llx) says don't report.", 
+                        log->Printf ("ThreadList::ShouldReportRun() thread %d (0x%4.4" PRIx64 ") says don't report.",
                                      (*pos)->GetIndexID(), 
                                      (*pos)->GetID());
                     result = eVoteNo;
@@ -555,7 +555,7 @@ ThreadList::GetSelectedThread ()
 }
 
 bool
-ThreadList::SetSelectedThreadByID (lldb::tid_t tid)
+ThreadList::SetSelectedThreadByID (lldb::tid_t tid, bool notify)
 {
     Mutex::Locker locker(m_threads_mutex);
     ThreadSP selected_thread_sp(FindThreadByID(tid));
@@ -567,11 +567,14 @@ ThreadList::SetSelectedThreadByID (lldb::tid_t tid)
     else
         m_selected_tid = LLDB_INVALID_THREAD_ID;
 
+    if (notify)
+        NotifySelectedThreadChanged(m_selected_tid);
+    
     return m_selected_tid != LLDB_INVALID_THREAD_ID;
 }
 
 bool
-ThreadList::SetSelectedThreadByIndexID (uint32_t index_id)
+ThreadList::SetSelectedThreadByIndexID (uint32_t index_id, bool notify)
 {
     Mutex::Locker locker(m_threads_mutex);
     ThreadSP selected_thread_sp (FindThreadByIndexID(index_id));
@@ -583,7 +586,19 @@ ThreadList::SetSelectedThreadByIndexID (uint32_t index_id)
     else
         m_selected_tid = LLDB_INVALID_THREAD_ID;
 
+    if (notify)
+        NotifySelectedThreadChanged(m_selected_tid);
+    
     return m_selected_tid != LLDB_INVALID_THREAD_ID;
+}
+
+void
+ThreadList::NotifySelectedThreadChanged (lldb::tid_t tid)
+{
+    ThreadSP selected_thread_sp (FindThreadByID(tid));
+    if (selected_thread_sp->EventTypeHasListeners(Thread::eBroadcastBitThreadSelected))
+        selected_thread_sp->BroadcastEvent(Thread::eBroadcastBitThreadSelected,
+                                           new Thread::ThreadEventData(selected_thread_sp));
 }
 
 void

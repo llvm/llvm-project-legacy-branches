@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Core/CXXFormatterFunctions.h"
 
 // needed to get ConvertUTF16/32ToUTF8
@@ -37,10 +39,8 @@ lldb_private::formatters::ExtractValueFromObjCExpression (ValueObject &valobj,
         return false;
     if (!selector || !*selector)
         return false;
-    StreamString expr_path_stream;
-    valobj.GetExpressionPath(expr_path_stream, false);
     StreamString expr;
-    expr.Printf("(%s)[%s %s]",target_type,expr_path_stream.GetData(),selector);
+    expr.Printf("(%s)[(id)0x%" PRIx64 " %s]",target_type,valobj.GetPointerValue(),selector);
     ExecutionContext exe_ctx (valobj.GetExecutionContextRef());
     lldb::ValueObjectSP result_sp;
     Target* target = exe_ctx.GetTargetPtr();
@@ -51,8 +51,7 @@ lldb_private::formatters::ExtractValueFromObjCExpression (ValueObject &valobj,
     EvaluateExpressionOptions options;
     options.SetCoerceToId(false)
     .SetUnwindOnError(true)
-    .SetKeepInMemory(true)
-    .SetUseDynamic(lldb::eDynamicCanRunTarget);
+    .SetKeepInMemory(true);
     
     target->EvaluateExpression(expr.GetData(),
                                stack_frame,
@@ -78,7 +77,7 @@ lldb_private::formatters::CallSelectorOnObject (ValueObject &valobj,
     StreamString expr_path_stream;
     valobj.GetExpressionPath(expr_path_stream, false);
     StreamString expr;
-    expr.Printf("(%s)[%s %s:%lld]",return_type,expr_path_stream.GetData(),selector,index);
+    expr.Printf("(%s)[%s %s:%" PRId64 "]",return_type,expr_path_stream.GetData(),selector,index);
     ExecutionContext exe_ctx (valobj.GetExecutionContextRef());
     lldb::ValueObjectSP result_sp;
     Target* target = exe_ctx.GetTargetPtr();
@@ -200,7 +199,7 @@ lldb_private::formatters::NSDictionarySummaryProvider (ValueObject& valobj, Stre
             return false;
     }
     
-    stream.Printf("%s%llu %s%s",
+    stream.Printf("%s%" PRIu64 " %s%s",
                   (name_entries ? "@\"" : ""),
                   value,
                   (name_entries ? (value == 1 ? "entry" : "entries") : (value == 1 ? "key/value pair" : "key/value pairs")),
@@ -266,7 +265,7 @@ lldb_private::formatters::NSArraySummaryProvider (ValueObject& valobj, Stream& s
             return false;
     }
     
-    stream.Printf("@\"%llu object%s\"",
+    stream.Printf("@\"%" PRIu64 " object%s\"",
                   value,
                   value == 1 ? "" : "s");
     return true;
@@ -319,7 +318,7 @@ lldb_private::formatters::NSDataSummaryProvider (ValueObject& valobj, Stream& st
             return false;
     }
     
-    stream.Printf("%s%llu byte%s%s",
+    stream.Printf("%s%" PRIu64 " byte%s%s",
                   (needs_at ? "@\"" : ""),
                   value,
                   (value > 1 ? "s" : ""),
@@ -377,10 +376,10 @@ lldb_private::formatters::NSNumberSummaryProvider (ValueObject& valobj, Stream& 
                     stream.Printf("(int)%d",(int)value);
                     break;
                 case 12:
-                    stream.Printf("(long)%lld",value);
+                    stream.Printf("(long)%" PRId64,value);
                     break;
                 default:
-                    stream.Printf("absurd value:(info=%llu, value=%llu",i_bits,value);
+                    stream.Printf("unexpected value:(info=%" PRIu64 ", value=%" PRIu64,i_bits,value);
                     break;
             }
             return true;
@@ -419,7 +418,7 @@ lldb_private::formatters::NSNumberSummaryProvider (ValueObject& valobj, Stream& 
                     value = process_sp->ReadUnsignedIntegerFromMemory(data_location, 8, 0, error);
                     if (error.Fail())
                         return false;
-                    stream.Printf("(long)%lld",value);
+                    stream.Printf("(long)%" PRId64,value);
                     break;
                 case 5: // 0B0101
                 {
@@ -833,9 +832,7 @@ lldb_private::formatters::NSArrayMSyntheticFrontEnd::Update()
 bool
 lldb_private::formatters::NSArrayMSyntheticFrontEnd::MightHaveChildren ()
 {
-    if (!m_data_32 && !m_data_64)
-        Update ();
-    return CalculateNumChildren();
+    return true;
 }
 
 static uint32_t
@@ -950,9 +947,7 @@ lldb_private::formatters::NSArrayISyntheticFrontEnd::Update()
 bool
 lldb_private::formatters::NSArrayISyntheticFrontEnd::MightHaveChildren ()
 {
-    if (!m_data_ptr)
-        Update ();
-    return CalculateNumChildren();
+    return true;
 }
 
 lldb::ValueObjectSP
@@ -970,7 +965,7 @@ lldb_private::formatters::NSArrayISyntheticFrontEnd::GetChildAtIndex (uint32_t i
     if (error.Fail())
         return lldb::ValueObjectSP();
     StreamString expr;
-    expr.Printf("(id)%llu",object_at_idx);
+    expr.Printf("(id)%" PRIu64,object_at_idx);
     StreamString idx_name;
     idx_name.Printf("[%d]",idx);
     lldb::ValueObjectSP retval_sp = ValueObject::CreateValueObjectFromExpression(idx_name.GetData(), expr.GetData(), m_exe_ctx_ref);
@@ -1052,7 +1047,7 @@ lldb_private::formatters::NSArrayCodeRunningSyntheticFrontEnd::Update()
 bool
 lldb_private::formatters::NSArrayCodeRunningSyntheticFrontEnd::MightHaveChildren ()
 {
-    return CalculateNumChildren() > 0;
+    return true;
 }
 
 uint32_t
@@ -1149,7 +1144,7 @@ lldb_private::formatters::NSDictionaryCodeRunningSyntheticFrontEnd::Update()
 bool
 lldb_private::formatters::NSDictionaryCodeRunningSyntheticFrontEnd::MightHaveChildren ()
 {
-    return CalculateNumChildren() > 0;
+    return true;
 }
 
 uint32_t
@@ -1247,9 +1242,7 @@ lldb_private::formatters::NSDictionaryISyntheticFrontEnd::Update()
 bool
 lldb_private::formatters::NSDictionaryISyntheticFrontEnd::MightHaveChildren ()
 {
-    if (!m_data_32 && !m_data_64)
-        Update ();
-    return CalculateNumChildren();
+    return true;
 }
 
 lldb::ValueObjectSP
@@ -1303,7 +1296,7 @@ lldb_private::formatters::NSDictionaryISyntheticFrontEnd::GetChildAtIndex (uint3
     {
         // make the new ValueObject
         StreamString expr;
-        expr.Printf("struct __lldb_autogen_nspair { id key; id value; } _lldb_valgen_item; _lldb_valgen_item.key = (id)%llu ; _lldb_valgen_item.value = (id)%llu; _lldb_valgen_item;",dict_item.key_ptr,dict_item.val_ptr);
+        expr.Printf("struct __lldb_autogen_nspair { id key; id value; } _lldb_valgen_item; _lldb_valgen_item.key = (id)%" PRIu64 " ; _lldb_valgen_item.value = (id)%" PRIu64 "; _lldb_valgen_item;",dict_item.key_ptr,dict_item.val_ptr);
         StreamString idx_name;
         idx_name.Printf("[%d]",idx);
         dict_item.valobj_sp = ValueObject::CreateValueObjectFromExpression(idx_name.GetData(), expr.GetData(), m_exe_ctx_ref);
@@ -1396,9 +1389,7 @@ lldb_private::formatters::NSDictionaryMSyntheticFrontEnd::Update()
 bool
 lldb_private::formatters::NSDictionaryMSyntheticFrontEnd::MightHaveChildren ()
 {
-    if (!m_data_32 && !m_data_64)
-        Update ();
-    return CalculateNumChildren();
+    return true;
 }
 
 lldb::ValueObjectSP
@@ -1455,7 +1446,7 @@ lldb_private::formatters::NSDictionaryMSyntheticFrontEnd::GetChildAtIndex (uint3
     {
         // make the new ValueObject
         StreamString expr;
-        expr.Printf("struct __lldb_autogen_nspair { id key; id value; } _lldb_valgen_item; _lldb_valgen_item.key = (id)%llu ; _lldb_valgen_item.value = (id)%llu; _lldb_valgen_item;",dict_item.key_ptr,dict_item.val_ptr);
+        expr.Printf("struct __lldb_autogen_nspair { id key; id value; } _lldb_valgen_item; _lldb_valgen_item.key = (id)%" PRIu64 " ; _lldb_valgen_item.value = (id)%" PRIu64 "; _lldb_valgen_item;",dict_item.key_ptr,dict_item.val_ptr);
         StreamString idx_name;
         idx_name.Printf("[%d]",idx);
         dict_item.valobj_sp = ValueObject::CreateValueObjectFromExpression(idx_name.GetData(), expr.GetData(), m_exe_ctx_ref);

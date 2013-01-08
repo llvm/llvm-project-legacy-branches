@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Core/ValueObject.h"
 
 // C Includes
@@ -418,9 +420,6 @@ ValueObject::GetLocationAsCString ()
 
             switch (m_value.GetValueType())
             {
-            default:
-                break;
-
             case Value::eValueTypeScalar:
             case Value::eValueTypeVector:
                 if (m_value.GetContextType() == Value::eContextTypeRegisterInfo)
@@ -673,7 +672,7 @@ ValueObject::CreateChildAtIndex (uint32_t idx, bool synthetic_array_member, int3
                                                                   child_bitfield_bit_offset,
                                                                   child_is_base_class,
                                                                   child_is_deref_of_parent);
-    if (child_clang_type && child_byte_size)
+    if (child_clang_type)
     {
         if (synthetic_index)
             child_byte_offset += child_byte_size * synthetic_index;
@@ -924,7 +923,6 @@ ValueObject::GetPointeeData (DataExtractor& data,
                 }
                 break;
             case eAddressTypeInvalid:
-            default:
                 break;
         }
     }
@@ -1244,7 +1242,7 @@ ValueObject::GetValueAsCString ()
     if (UpdateValueIfNeeded(true) && m_value_str.empty())
     {
         lldb::Format my_format = GetFormat();
-        if (m_format == lldb::eFormatDefault)
+        if (my_format == lldb::eFormatDefault)
         {
             if (m_type_format_sp)
                 my_format = m_type_format_sp->GetFormat();
@@ -1522,9 +1520,6 @@ ValueObject::DumpPrintableRepresentation(Stream& s,
             case eValueObjectRepresentationStyleType:
                 return_value = GetTypeName().AsCString();
                 break;
-                
-            default:
-                break;
         }
         
         if (!return_value)
@@ -1796,7 +1791,7 @@ ValueObject::IsPointerType ()
 bool
 ValueObject::IsArrayType ()
 {
-    return ClangASTContext::IsArrayType (GetClangType());
+    return ClangASTContext::IsArrayType (GetClangType(), NULL, NULL, NULL);
 }
 
 bool
@@ -1826,6 +1821,15 @@ ValueObject::IsPossibleDynamicType ()
         return process->IsPossibleDynamicValue(*this);
     else
         return ClangASTContext::IsPossibleDynamicType (GetClangAST (), GetClangType(), NULL, true, true);
+}
+
+bool
+ValueObject::IsObjCNil ()
+{
+    bool isObjCpointer = ClangASTContext::IsObjCObjectPointerType(GetClangType(), NULL);
+    bool canReadValue = true;
+    bool isZero = GetValueAsUnsigned(0,&canReadValue) == 0;
+    return canReadValue && isZero && isObjCpointer;
 }
 
 ValueObjectSP
@@ -2532,7 +2536,7 @@ ValueObject::GetValueForExpressionPath_Impl(const char* expression_cstr,
                     
                     if (child_valobj_sp.get()) // we know we are done, so just return
                     {
-                        *first_unparsed = '\0';
+                        *first_unparsed = "";
                         *reason_to_stop = ValueObject::eExpressionPathScanEndReasonEndOfString;
                         *final_result = ValueObject::eExpressionPathEndResultTypePlain;
                         return child_valobj_sp;
@@ -2556,7 +2560,7 @@ ValueObject::GetValueForExpressionPath_Impl(const char* expression_cstr,
                     // so we hit the "else" branch, and return an error
                     if(child_valobj_sp.get()) // if it worked, just return
                     {
-                        *first_unparsed = '\0';
+                        *first_unparsed = "";
                         *reason_to_stop = ValueObject::eExpressionPathScanEndReasonEndOfString;
                         *final_result = ValueObject::eExpressionPathEndResultTypePlain;
                         return child_valobj_sp;
@@ -3313,6 +3317,8 @@ DumpValueObject_Impl (Stream &s,
         if (options.m_omit_summary_depth > 0)
             entry = NULL;
         
+        bool is_nil = valobj->IsObjCNil();
+        
         if (err_cstr == NULL)
         {
             if (options.m_format != eFormatDefault && options.m_format != valobj->GetFormat())
@@ -3338,7 +3344,9 @@ DumpValueObject_Impl (Stream &s,
             const bool is_ref = type_flags.Test (ClangASTContext::eTypeIsReference);
             if (print_valobj)
             {
-                if (options.m_omit_summary_depth == 0)
+                if (is_nil)
+                    sum_cstr = "nil";
+                else if (options.m_omit_summary_depth == 0)
                 {
                     if (options.m_summary_sp)
                     {
@@ -3350,14 +3358,16 @@ DumpValueObject_Impl (Stream &s,
                 }
 
                 // Make sure we have a value and make sure the summary didn't
-                // specify that the value should not be printed
-                if (!value_str.empty() && (entry == NULL || entry->DoesPrintValue() || sum_cstr == NULL))
+                // specify that the value should not be printed - and do not print
+                // the value if this thing is nil
+                if (!is_nil && !value_str.empty() && (entry == NULL || entry->DoesPrintValue() || sum_cstr == NULL))
                     s.Printf(" %s", value_str.c_str());
 
                 if (sum_cstr)
                     s.Printf(" %s", sum_cstr);
                 
-                if (options.m_use_objc)
+                // let's avoid the overly verbose no description error for a nil thing
+                if (options.m_use_objc && !is_nil)
                 {
                     const char *object_desc = valobj->GetObjectDescription();
                     if (object_desc)
@@ -3433,7 +3443,7 @@ DumpValueObject_Impl (Stream &s,
                         }
 
                         ValueObject::DumpValueObjectOptions child_options(options);
-                        child_options.SetFormat().SetSummary().SetRootValueObjectName();
+                        child_options.SetFormat(options.m_format).SetSummary().SetRootValueObjectName();
                         child_options.SetScopeChecked(true)
                         .SetOmitSummaryDepth(child_options.m_omit_summary_depth > 1 ? child_options.m_omit_summary_depth - 1 : 0);
                         for (uint32_t idx=0; idx<num_children; ++idx)
@@ -3672,7 +3682,6 @@ ValueObject::AddressOf (Error &error)
     {
         switch (address_type)
         {
-        default:
         case eAddressTypeInvalid:
             {
                 StreamString expr_path_strm;

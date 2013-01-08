@@ -6,6 +6,9 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+
+#include "lldb/lldb-python.h"
+
 #ifndef LLDB_DISABLE_PYTHON
 
 #include "OperatingSystemPython.h"
@@ -133,7 +136,7 @@ OperatingSystemPython::GetDynamicRegisterInfo ()
         LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
         
         if (log)
-            log->Printf ("OperatingSystemPython::GetDynamicRegisterInfo() fetching thread register definitions from python for pid %llu", m_process->GetID());
+            log->Printf ("OperatingSystemPython::GetDynamicRegisterInfo() fetching thread register definitions from python for pid %" PRIu64, m_process->GetID());
         
         auto object_sp = m_interpreter->OSPlugin_QueryForRegisterInfo(m_interpreter->MakeScriptObject(m_python_object));
         if (!object_sp)
@@ -175,16 +178,22 @@ bool
 OperatingSystemPython::UpdateThreadList (ThreadList &old_thread_list, ThreadList &new_thread_list)
 {
     if (!m_interpreter || !m_python_object)
-        return NULL;
+        return false;
     
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     
+    // First thing we have to do is get the API lock, and the run lock.  We're going to change the thread
+    // content of the process, and we're going to use python, which requires the API lock to do it.
+    // So get & hold that.  This is a recursive lock so we can grant it to any Python code called on the stack below us.
+    Target &target = m_process->GetTarget();
+    Mutex::Locker api_locker (target.GetAPIMutex());
+    
     if (log)
-        log->Printf ("OperatingSystemPython::UpdateThreadList() fetching thread data from python for pid %llu", m_process->GetID());
+        log->Printf ("OperatingSystemPython::UpdateThreadList() fetching thread data from python for pid %" PRIu64, m_process->GetID());
 
     auto object_sp = m_interpreter->OSPlugin_QueryForThreadsInfo(m_interpreter->MakeScriptObject(m_python_object));
     if (!object_sp)
-        return NULL;
+        return false;
     PythonDataObject pyobj((PyObject*)object_sp->GetObject());
     PythonDataArray threads_array (pyobj.GetArrayObject());
     if (threads_array)
@@ -248,6 +257,12 @@ OperatingSystemPython::CreateRegisterContextForThread (Thread *thread, lldb::add
     if (!m_interpreter || !m_python_object || !thread)
         return RegisterContextSP();
     
+    // First thing we have to do is get the API lock, and the run lock.  We're going to change the thread
+    // content of the process, and we're going to use python, which requires the API lock to do it.
+    // So get & hold that.  This is a recursive lock so we can grant it to any Python code called on the stack below us.
+    Target &target = m_process->GetTarget();
+    Mutex::Locker api_locker (target.GetAPIMutex());
+
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
 
     if (reg_data_addr != LLDB_INVALID_ADDRESS)
@@ -255,7 +270,7 @@ OperatingSystemPython::CreateRegisterContextForThread (Thread *thread, lldb::add
         // The registers data is in contiguous memory, just create the register
         // context using the address provided
         if (log)
-            log->Printf ("OperatingSystemPython::CreateRegisterContextForThread (tid = 0x%llx, reg_data_addr = 0x%llx) creating memory register context", thread->GetID(), reg_data_addr);
+            log->Printf ("OperatingSystemPython::CreateRegisterContextForThread (tid = 0x%" PRIx64 ", reg_data_addr = 0x%" PRIx64 ") creating memory register context", thread->GetID(), reg_data_addr);
         reg_ctx_sp.reset (new RegisterContextMemory (*thread, 0, *GetDynamicRegisterInfo (), reg_data_addr));
     }
     else
@@ -263,7 +278,7 @@ OperatingSystemPython::CreateRegisterContextForThread (Thread *thread, lldb::add
         // No register data address is provided, query the python plug-in to let
         // it make up the data as it sees fit
         if (log)
-            log->Printf ("OperatingSystemPython::CreateRegisterContextForThread (tid = 0x%llx) fetching register data from python", thread->GetID());
+            log->Printf ("OperatingSystemPython::CreateRegisterContextForThread (tid = 0x%" PRIx64 ") fetching register data from python", thread->GetID());
 
         auto object_sp = m_interpreter->OSPlugin_QueryForRegisterContextData (m_interpreter->MakeScriptObject(m_python_object),
                                                                               thread->GetID());

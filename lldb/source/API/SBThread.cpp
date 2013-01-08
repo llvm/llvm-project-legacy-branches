@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/API/SBThread.h"
 
 #include "lldb/API/SBSymbolContext.h"
@@ -147,7 +149,9 @@ SBThread::GetStopReasonDataCount ()
                 case eStopReasonInvalid:
                 case eStopReasonNone:
                 case eStopReasonTrace:
+                case eStopReasonExec:
                 case eStopReasonPlanComplete:
+                case eStopReasonThreadExiting:
                     // There is no data for these stop reasons.
                     return 0;
 
@@ -204,7 +208,9 @@ SBThread::GetStopReasonDataAtIndex (uint32_t idx)
                 case eStopReasonInvalid:
                 case eStopReasonNone:
                 case eStopReasonTrace:
+                case eStopReasonExec:
                 case eStopReasonPlanComplete:
+                case eStopReasonThreadExiting:
                     // There is no data for these stop reasons.
                     return 0;
 
@@ -336,6 +342,21 @@ SBThread::GetStopDescription (char *dst, size_t dst_len)
                         }
                         break;          
 
+                    case eStopReasonExec:
+                        {
+                            char exc_desc[] = "exec";
+                            stop_desc = exc_desc;
+                            stop_desc_len = sizeof(exc_desc); // Include the NULL byte for size
+                        }
+                        break;
+
+                    case eStopReasonThreadExiting:
+                        {
+                            char limbo_desc[] = "thread exiting";
+                            stop_desc = limbo_desc;
+                            stop_desc_len = sizeof(limbo_desc);
+                        }
+                        break;
                     default:
                         break;
                     }
@@ -552,13 +573,10 @@ SBThread::StepOver (lldb::RunMode stop_other_threads)
             if (frame_sp->HasDebugInformation ())
             {
                 SymbolContext sc(frame_sp->GetSymbolContext(eSymbolContextEverything));
-                new_plan = thread->QueueThreadPlanForStepRange (abort_other_plans,
-                                                                eStepTypeOver,
-                                                                sc.line_entry.range,
-                                                                sc,
-                                                                stop_other_threads,
-                                                                false);
-                
+                new_plan = thread->QueueThreadPlanForStepOverRange (abort_other_plans,
+                                                                    sc.line_entry.range,
+                                                                    sc,
+                                                                    stop_other_threads);
             }
             else
             {
@@ -576,14 +594,23 @@ SBThread::StepOver (lldb::RunMode stop_other_threads)
 void
 SBThread::StepInto (lldb::RunMode stop_other_threads)
 {
+    StepInto (NULL, stop_other_threads);
+}
+
+void
+SBThread::StepInto (const char *target_name, lldb::RunMode stop_other_threads)
+{
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
 
     if (log)
-        log->Printf ("SBThread(%p)::StepInto (stop_other_threads='%s')", exe_ctx.GetThreadPtr(),
+        log->Printf ("SBThread(%p)::StepInto (target_name='%s', stop_other_threads='%s')",
+                     exe_ctx.GetThreadPtr(),
+                     target_name? target_name: "<NULL>",
                      Thread::RunModeAsCString (stop_other_threads));
+    
     if (exe_ctx.HasThreadScope())
     {
         bool abort_other_plans = false;
@@ -596,12 +623,12 @@ SBThread::StepInto (lldb::RunMode stop_other_threads)
         {
             bool avoid_code_without_debug_info = true;
             SymbolContext sc(frame_sp->GetSymbolContext(eSymbolContextEverything));
-            new_plan = thread->QueueThreadPlanForStepRange (abort_other_plans,
-                                                            eStepTypeInto,
-                                                            sc.line_entry.range,
-                                                            sc,
-                                                            stop_other_threads,
-                                                            avoid_code_without_debug_info);
+            new_plan = thread->QueueThreadPlanForStepInRange (abort_other_plans,
+                                                              sc.line_entry.range,
+                                                              sc,
+                                                              target_name,
+                                                              stop_other_threads,
+                                                              avoid_code_without_debug_info);
         }
         else
         {
@@ -715,7 +742,7 @@ SBThread::RunToAddress (lldb::addr_t addr)
 
 
     if (log)
-        log->Printf ("SBThread(%p)::RunToAddress (addr=0x%llx)", exe_ctx.GetThreadPtr(), addr);
+        log->Printf ("SBThread(%p)::RunToAddress (addr=0x%" PRIx64 ")", exe_ctx.GetThreadPtr(), addr);
     
     if (exe_ctx.HasThreadScope())
     {
@@ -1185,7 +1212,7 @@ SBThread::GetDescription (SBStream &description) const
     ExecutionContext exe_ctx (m_opaque_sp.get());
     if (exe_ctx.HasThreadScope())
     {
-        strm.Printf("SBThread: tid = 0x%4.4llx", exe_ctx.GetThreadPtr()->GetID());
+        strm.Printf("SBThread: tid = 0x%4.4" PRIx64, exe_ctx.GetThreadPtr()->GetID());
     }
     else
         strm.PutCString ("No value");

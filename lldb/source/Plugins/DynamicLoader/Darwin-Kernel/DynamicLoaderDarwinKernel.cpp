@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Core/DataBuffer.h"
 #include "lldb/Core/DataBufferHeap.h"
@@ -321,25 +323,36 @@ DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::LoadImageUsingMemoryModule (
                 {
                     module_sp = target.GetSharedModule (module_spec);
                 }
+
+                // If we managed to find a module, append it to the target's list of images
+                if (module_sp && module_sp->GetUUID() == memory_module_sp->GetUUID())
+                {
+                    target.GetImages().Append(module_sp);
+                    if (memory_module_is_kernel && target.GetExecutableModulePointer() != module_sp.get())
+                    {
+                        target.SetExecutableModule (module_sp, false);
+                    }
+                }
             }
         }
     }
     
 
+    static ConstString g_section_name_LINKEDIT ("__LINKEDIT");
+
     if (memory_module_sp && module_sp)
     {
         if (module_sp->GetUUID() == memory_module_sp->GetUUID())
         {
-            target.GetImages().Append(module_sp);
-            if (memory_module_is_kernel && target.GetExecutableModulePointer() != module_sp.get())
-            {
-                target.SetExecutableModule (module_sp, false);
-            }
-
             ObjectFile *ondisk_object_file = module_sp->GetObjectFile();
             ObjectFile *memory_object_file = memory_module_sp->GetObjectFile();
+            
             if (memory_object_file && ondisk_object_file)
             {
+                // Kexts are classified with a type of ObjectFile::eTypeSharedLibrary and
+                // a strata of ObjectFile::eStrataKernel. Ignore __LINKEDIT for kexts
+                const bool ignore_linkedit = ondisk_object_file->GetType() == ObjectFile::eTypeSharedLibrary;
+                
                 SectionList *ondisk_section_list = ondisk_object_file->GetSectionList ();
                 SectionList *memory_section_list = memory_object_file->GetSectionList ();
                 if (memory_section_list && ondisk_section_list)
@@ -361,6 +374,14 @@ DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::LoadImageUsingMemoryModule (
                         SectionSP ondisk_section_sp(ondisk_section_list->GetSectionAtIndex(sect_idx));
                         if (ondisk_section_sp)
                         {
+                            // Don't ever load __LINKEDIT as it may or may not be actually
+                            // mapped into memory and there is no current way to tell.
+                            // I filed rdar://problem/12851706 to track being able to tell
+                            // if the __LINKEDIT is actually mapped, but until then, we need
+                            // to not load the __LINKEDIT
+                            if (ignore_linkedit && ondisk_section_sp->GetName() == g_section_name_LINKEDIT)
+                                continue;
+
                             const Section *memory_section = memory_section_list->FindSectionByName(ondisk_section_sp->GetName()).get();
                             if (memory_section)
                             {
@@ -402,7 +423,7 @@ DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::LoadImageUsingMemoryModule (
         {
             char uuidbuf[64];
             s->Printf ("Kernel UUID: %s\n", module_sp->GetUUID().GetAsCString(uuidbuf, sizeof (uuidbuf)));
-            s->Printf ("Load Address: 0x%llx\n", address);
+            s->Printf ("Load Address: 0x%" PRIx64 "\n", address);
             if (module_sp->GetFileSpec().GetDirectory().IsEmpty())
             {
                 s->Printf ("Loaded kernel file %s\n", module_sp->GetFileSpec().GetFilename().AsCString());
@@ -723,14 +744,6 @@ DynamicLoaderDarwinKernel::ReadKextSummaries (const Address &kext_summary_addr,
             {
                 image_infos[i].reference_list = 0;
             }
-//            printf ("[%3u] %*.*s: address=0x%16.16llx, size=0x%16.16llx, version=0x%16.16llx, load_tag=0x%8.8x, flags=0x%8.8x\n", 
-//                    i,
-//                    KERNEL_MODULE_MAX_NAME, KERNEL_MODULE_MAX_NAME,  (char *)name_data, 
-//                    image_infos[i].address, 
-//                    image_infos[i].size,
-//                    image_infos[i].version,
-//                    image_infos[i].load_tag,
-//                    image_infos[i].flags);
         }
         if (i < image_infos.size())
             image_infos.resize(i);
@@ -793,7 +806,7 @@ DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::PutToLog (Log *log) const
     {
         if (u)
         {
-            log->Printf("\taddr=0x%16.16llx size=0x%16.16llx version=0x%16.16llx load-tag=0x%8.8x flags=0x%8.8x ref-list=0x%16.16llx uuid=%2.2X%2.2X%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X%2.2X%2.2X%2.2X%2.2X name=\"%s\"",
+            log->Printf("\taddr=0x%16.16" PRIx64 " size=0x%16.16" PRIx64 " version=0x%16.16" PRIx64 " load-tag=0x%8.8x flags=0x%8.8x ref-list=0x%16.16" PRIx64 " uuid=%2.2X%2.2X%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X%2.2X%2.2X%2.2X%2.2X name=\"%s\"",
                         address, size, version, load_tag, flags, reference_list,
                         u[ 0], u[ 1], u[ 2], u[ 3], u[ 4], u[ 5], u[ 6], u[ 7],
                         u[ 8], u[ 9], u[10], u[11], u[12], u[13], u[14], u[15],
@@ -801,7 +814,7 @@ DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::PutToLog (Log *log) const
         }
         else
         {
-            log->Printf("\t[0x%16.16llx - 0x%16.16llx) version=0x%16.16llx load-tag=0x%8.8x flags=0x%8.8x ref-list=0x%16.16llx name=\"%s\"",
+            log->Printf("\t[0x%16.16" PRIx64 " - 0x%16.16" PRIx64 ") version=0x%16.16" PRIx64 " load-tag=0x%8.8x flags=0x%8.8x ref-list=0x%16.16" PRIx64 " name=\"%s\"",
                         address, address+size, version, load_tag, flags, reference_list,
                         name);
         }
@@ -819,7 +832,7 @@ DynamicLoaderDarwinKernel::PutToLog(Log *log) const
         return;
 
     Mutex::Locker locker(m_mutex);
-    log->Printf("gLoadedKextSummaries = 0x%16.16llx { version=%u, entry_size=%u, entry_count=%u }",
+    log->Printf("gLoadedKextSummaries = 0x%16.16" PRIx64 " { version=%u, entry_size=%u, entry_count=%u }",
                 m_kext_summary_header_addr.GetFileAddress(),
                 m_kext_summary_header.version,
                 m_kext_summary_header.entry_size,
@@ -894,9 +907,6 @@ DynamicLoaderDarwinKernel::PrivateProcessStateChanged (Process *process, StateTy
     case eStateStepping:
     case eStateCrashed:
     case eStateSuspended:
-        break;
-
-    default:
         break;
     }
 }

@@ -295,6 +295,15 @@ class ObjCDataFormatterTestCase(TestBase):
                     '(NSURL *) nsurl2 =','@"page.html -- http://www.foo.bar',
                     '(NSURL *) nsurl3 = ','@"?whatever -- http://www.foo.bar/page.html"'])
 
+        self.expect('frame variable nserror',
+                    substrs = ['domain: @"Foobar" - code: 12'])
+
+        self.expect('frame variable nserror->_userInfo',
+                    substrs = ['2 key/value pairs'])
+
+        self.expect('frame variable nserror->_userInfo --ptr-depth 1 -d run-target',
+                    substrs = ['@"a"','@"b"',"1","2"])
+
         self.expect('frame variable bundle_string bundle_url main_bundle',
                     substrs = ['(NSBundle *) bundle_string = ',' @"/System/Library/Frameworks/Accelerate.framework"',
                     '(NSBundle *) bundle_url = ',' @"/System/Library/Frameworks/Cocoa.framework"',
@@ -371,7 +380,7 @@ class ObjCDataFormatterTestCase(TestBase):
         self.expect('frame variable myclass4',
                     substrs = ['(Class) myclass4 = NSMutableArray'])
         self.expect('frame variable myclass5',
-                    substrs = ['(Class) myclass5 = <error: unknown Class>'])
+                    substrs = ['(Class) myclass5 = nil'])
 
 
     def expr_objc_data_formatter_commands(self):
@@ -411,9 +420,9 @@ class ObjCDataFormatterTestCase(TestBase):
         self.expect('expr -d true -- @"Hello"',
             substrs = ['Hello'])
 
-        self.expect('expr -d true -o -- @"Hello"',
+        self.expect('expr -d true --object-description -- @"Hello"',
             substrs = ['Hello'])
-        self.expect('expr -d true -o -- @"Hello"', matching=False,
+        self.expect('expr -d true --object-description -- @"Hello"', matching=False,
             substrs = ['@"Hello" Hello'])
 
 

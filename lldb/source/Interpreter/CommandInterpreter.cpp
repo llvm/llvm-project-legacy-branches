@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include <string>
 #include <vector>
 
@@ -279,7 +281,7 @@ CommandInterpreter::Initialize ()
         AddOrReplaceAliasOptions ("call", alias_arguments_vector_sp);
 
         alias_arguments_vector_sp.reset (new OptionArgVector);
-        ProcessAliasOptionsArgs (cmd_obj_sp, "-o --", alias_arguments_vector_sp);
+        ProcessAliasOptionsArgs (cmd_obj_sp, "-O --", alias_arguments_vector_sp);
         AddAlias ("po", cmd_obj_sp);
         AddOrReplaceAliasOptions ("po", alias_arguments_vector_sp);
     }
@@ -455,8 +457,10 @@ CommandInterpreter::LoadCommandDictionary ()
                                                        "_regexp-attach [<pid>]\n_regexp-attach [<process-name>]", 2));
     if (attach_regex_cmd_ap.get())
     {
-        if (attach_regex_cmd_ap->AddRegexCommand("^([0-9]+)$", "process attach --pid %1") &&
-            attach_regex_cmd_ap->AddRegexCommand("^(.*[^[:space:]])[[:space:]]*$", "process attach --name '%1'"))
+        if (attach_regex_cmd_ap->AddRegexCommand("^([0-9]+)[[:space:]]*$", "process attach --pid %1") &&
+            attach_regex_cmd_ap->AddRegexCommand("^(-.*|.* -.*)$", "process attach %1") && // Any options that are specified get passed to 'process attach'
+            attach_regex_cmd_ap->AddRegexCommand("^(.+)$", "process attach --name '%1'") &&
+            attach_regex_cmd_ap->AddRegexCommand("^$", "process attach"))
         {
             CommandObjectSP attach_regex_cmd_sp(attach_regex_cmd_ap.release());
             m_command_dict[attach_regex_cmd_sp->GetCommandName ()] = attach_regex_cmd_sp;
@@ -2588,8 +2592,6 @@ CommandInterpreter::GetScriptInterpreter (bool can_create)
 #endif
         case eScriptLanguageNone:
             m_script_interpreter_ap.reset (new ScriptInterpreterNone (*this));
-            break;
-        default:
             break;
     };
     

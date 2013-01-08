@@ -126,14 +126,14 @@ public:
     {
         StreamString log_strm;
         const size_t n = m_dies.size();
-        log_strm.Printf("DIEStack[%llu]:\n", (uint64_t)n);
+        log_strm.Printf("DIEStack[%" PRIu64 "]:\n", (uint64_t)n);
         for (size_t i=0; i<n; i++)
         {
             DWARFCompileUnit *cu = m_dies[i].cu;
             const DWARFDebugInfoEntry *die = m_dies[i].die;
             std::string qualified_name;
             die->GetQualifiedName(dwarf, cu, qualified_name);
-            log_strm.Printf ("[%llu] 0x%8.8x: %s name='%s'\n", 
+            log_strm.Printf ("[%" PRIu64 "] 0x%8.8x: %s name='%s'\n",
                              (uint64_t)i,
                              die->GetOffset(), 
                              DW_TAG_value_to_name(die->Tag()), 
@@ -991,6 +991,7 @@ struct ParseDWARFLineTableCallbackInfo
     DWARFDebugLine::Row prev_row;
     SectionSP prev_section_sp;
     SectionSP curr_section_sp;
+    llvm::OwningPtr<LineSequence> curr_sequence_ap;
 };
 
 //----------------------------------------------------------------------
@@ -1137,20 +1138,36 @@ ParseDWARFLineTableCallback(dw_offset_t offset, const DWARFDebugLine::State& sta
                 // We are not in an object file that contains DWARF for an
                 // N_OSO, this is just a normal DWARF file. The DWARF spec
                 // guarantees that the addresses will be in increasing order
-                // so, since we store line tables in file address order, we
-                // can always just append the line entry without needing to
-                // search for the correct insertion point (we don't need to
-                // use LineEntry::InsertLineEntry()).
-                line_table->AppendLineEntry (info->curr_section_sp,
-                                             curr_line_section_offset,
-                                             state.line,
-                                             state.column,
-                                             state.file,
-                                             state.is_stmt,
-                                             state.basic_block,
-                                             state.prologue_end,
-                                             state.epilogue_begin,
-                                             state.end_sequence);
+                // for a sequence, but the line table for a single compile unit
+                // may contain multiple sequences so we append entries to the
+                // current sequence until we find its end, then we merge the
+                // sequence into the main line table collection.
+
+                // If this is our first time here, we need to create a 
+                // sequence container.
+                if (!info->curr_sequence_ap)
+                {
+                    info->curr_sequence_ap.reset(line_table->CreateLineSequenceContainer());
+                    assert(info->curr_sequence_ap);
+                }
+                line_table->AppendLineEntryToSequence(info->curr_sequence_ap.get(),
+                                                      info->curr_section_sp,
+                                                      curr_line_section_offset,
+                                                      state.line,
+                                                      state.column,
+                                                      state.file,
+                                                      state.is_stmt,
+                                                      state.basic_block,
+                                                      state.prologue_end,
+                                                      state.epilogue_begin,
+                                                      state.end_sequence);
+                if (state.end_sequence)
+                {
+                    // First, put the current sequence into the line table.
+                    line_table->InsertSequence(info->curr_sequence_ap.get());
+                    // Then, empty it to prepare for the next sequence.
+                    info->curr_sequence_ap->Clear();
+                }
             }
         }
 
@@ -1186,7 +1203,8 @@ SymbolFileDWARF::ParseCompileUnitLineTable (const SymbolContext &sc)
                         false, 
                         DWARFDebugLine::Row(), 
                         SectionSP(), 
-                        SectionSP()
+                        SectionSP(),
+                        llvm::OwningPtr<LineSequence>()
                     };
                     uint32_t offset = cu_line_offset;
                     DWARFDebugLine::ParseStatementTable(get_debug_line_data(), &offset, ParseDWARFLineTableCallback, &info);
@@ -1550,6 +1568,24 @@ private:
     std::auto_ptr<ClangASTMetadata>        m_metadata_ap;
 };
 
+struct BitfieldInfo
+{
+    uint64_t bit_size;
+    uint64_t bit_offset;
+    
+    BitfieldInfo () :
+        bit_size (LLDB_INVALID_ADDRESS),
+        bit_offset (LLDB_INVALID_ADDRESS)
+    {
+    }
+    
+    bool IsValid ()
+    {
+        return (bit_size != LLDB_INVALID_ADDRESS) &&
+               (bit_offset != LLDB_INVALID_ADDRESS);
+    }
+};
+
 size_t
 SymbolFileDWARF::ParseChildMembers
 (
@@ -1561,7 +1597,6 @@ SymbolFileDWARF::ParseChildMembers
     std::vector<clang::CXXBaseSpecifier *>& base_classes,
     std::vector<int>& member_accessibilities,
     DWARFDIECollection& member_function_dies,
-    BitfieldMap &bitfield_map,
     DelayedPropertyList& delayed_properties,
     AccessType& default_accessibility,
     bool &is_a_class,
@@ -1575,6 +1610,7 @@ SymbolFileDWARF::ParseChildMembers
     const DWARFDebugInfoEntry *die;
     const uint8_t *fixed_form_sizes = DWARFFormValue::GetFixedFormSizesForAddressSize (dwarf_cu->GetAddressByteSize());
     uint32_t member_idx = 0;
+    BitfieldInfo last_field_info;
 
     for (die = parent_die->GetFirstChild(); die != NULL; die = die->GetSibling())
     {
@@ -1756,6 +1792,7 @@ SymbolFileDWARF::ParseChildMembers
                     if (is_artificial == false)
                     {
                         Type *member_type = ResolveTypeUID(encoding_uid);
+                        
                         clang::FieldDecl *field_decl = NULL;
                         if (tag == DW_TAG_member)
                         {
@@ -1764,137 +1801,174 @@ SymbolFileDWARF::ParseChildMembers
                                 if (accessibility == eAccessNone)
                                     accessibility = default_accessibility;
                                 member_accessibilities.push_back(accessibility);
-
-                                // Code to detect unnamed bitifields
-                                if (bit_size > 0 && member_byte_offset != UINT32_MAX)
+                                
+                                BitfieldInfo this_field_info;
+                        
+                                this_field_info.bit_size = bit_size;
+                                
+                                if (member_byte_offset != UINT32_MAX || bit_size != 0)
                                 {
-                                    // Objective C has invalid DW_AT_bit_offset values so we can't use them to detect
-                                    // unnamed bitfields. Once clang is fixed we will enable unnamed bitfields
-                                    // in ObjC classes (<rdar://problem/12636970>)
+                                    /////////////////////////////////////////////////////////////
+                                    // How to locate a field given the DWARF debug information
+                                    //
+                                    // AT_byte_size indicates the size of the word in which the
+                                    // bit offset must be interpreted.
+                                    //
+                                    // AT_data_member_location indicates the byte offset of the
+                                    // word from the base address of the structure.
+                                    //
+                                    // AT_bit_offset indicates how many bits into the word
+                                    // (according to the host endianness) the low-order bit of
+                                    // the field starts.  AT_bit_offset can be negative.
+                                    //
+                                    // AT_bit_size indicates the size of the field in bits.
+                                    /////////////////////////////////////////////////////////////
                                     
-                                    if (!(class_language == eLanguageTypeObjC || class_language == eLanguageTypeObjC_plus_plus))
+                                    this_field_info.bit_offset = 0;
+                                    
+                                    this_field_info.bit_offset += (member_byte_offset == UINT32_MAX ? 0 : (member_byte_offset * 8));
+                                    
+                                    if (GetObjectFile()->GetByteOrder() == eByteOrderLittle)
                                     {
-                                        // We have a bitfield, we need to watch out for
-                                        // unnamed bitfields that we need to insert if
-                                        // there is a gap in the bytes as many compilers
-                                        // doesn't emit DWARF DW_TAG_member tags for
-                                        // unnammed bitfields.
-                                        BitfieldMap::iterator bit_pos = bitfield_map.find(member_byte_offset);
-                                        uint32_t unnamed_bit_size = 0;
-                                        uint32_t unnamed_bit_offset = 0;
-                                        if (bit_pos == bitfield_map.end())
-                                        {
-                                            // First bitfield in an integral type.
-                                            
-                                            // We might need to insert a leading unnamed bitfield
-                                            if (bit_offset < byte_size * 8)
-                                            {
-                                                unnamed_bit_size = byte_size * 8 - (bit_size + bit_offset);
-                                                unnamed_bit_offset = byte_size * 8 - unnamed_bit_size;
-                                            }
-                                            
-                                            // Now put the current bitfield info into the map
-                                            bitfield_map[member_byte_offset].bit_size = bit_size;
-                                            bitfield_map[member_byte_offset].bit_offset = bit_offset;
-                                        }
-                                        else
-                                        {
-                                            // Subsequent bitfield in an integral type.
+                                        this_field_info.bit_offset += byte_size * 8;
+                                        this_field_info.bit_offset -= (bit_offset + bit_size);
+                                    }
+                                    else
+                                    {
+                                        this_field_info.bit_offset += bit_offset;
+                                    }
+                                }
 
-                                            // We have a bitfield that isn't the first for this
-                                            // integral type, check to make sure there aren't any
-                                            // gaps.
-                                            assert (bit_pos->second.bit_size > 0);
-                                            if (bit_offset < bit_pos->second.bit_offset)
-                                            {
-                                                unnamed_bit_size = bit_pos->second.bit_offset - (bit_size + bit_offset);
-                                                unnamed_bit_offset = bit_pos->second.bit_offset - unnamed_bit_size;
+                                // If the member to be emitted did not start on a character boundary and there is
+                                // empty space between the last field and this one, then we need to emit an
+                                // anonymous member filling up the space up to its start.  There are three cases
+                                // here:
+                                //
+                                // 1 If the previous member ended on a character boundary, then we can emit an
+                                //   anonymous member starting at the most recent character boundary.
+                                //
+                                // 2 If the previous member did not end on a character boundary and the distance
+                                //   from the end of the previous member to the current member is less than a
+                                //   word width, then we can emit an anonymous member starting right after the
+                                //   previous member and right before this member.
+                                //
+                                // 3 If the previous member did not end on a character boundary and the distance
+                                //   from the end of the previous member to the current member is greater than
+                                //   or equal a word width, then we act as in Case 1.
+                                
+                                const uint64_t character_width = 8;
+                                const uint64_t word_width = 32;
+                                
+                                if (this_field_info.IsValid())
+                                {
+                                    // Objective-C has invalid DW_AT_bit_offset values in older versions
+                                    // of clang, so we have to be careful and only insert unnammed bitfields
+                                    // if we have a new enough clang.
+                                    bool detect_unnamed_bitfields = true;
+                                    
+                                    if (class_language == eLanguageTypeObjC || class_language == eLanguageTypeObjC_plus_plus)
+                                        detect_unnamed_bitfields = dwarf_cu->Supports_unnamed_objc_bitfields ();
+                                    
+                                    if (detect_unnamed_bitfields)
+                                    {
+                                        BitfieldInfo anon_field_info;
+                                        
+                                        if ((this_field_info.bit_offset % character_width) != 0) // not char aligned
+                                        {
+                                            uint64_t last_field_end = 0;
+                                            
+                                            if (last_field_info.IsValid())
+                                                last_field_end = last_field_info.bit_offset + last_field_info.bit_size;
+                                            
+                                            if (this_field_info.bit_offset != last_field_end)
+                                            {                                                
+                                                if (((last_field_end % character_width) == 0) ||                    // case 1
+                                                    (this_field_info.bit_offset - last_field_end >= word_width))    // case 3
+                                                {
+                                                    anon_field_info.bit_size = this_field_info.bit_offset % character_width;
+                                                    anon_field_info.bit_offset = this_field_info.bit_offset - anon_field_info.bit_size;
+                                                }
+                                                else                                                                // case 2
+                                                {
+                                                    anon_field_info.bit_size = this_field_info.bit_offset - last_field_end;
+                                                    anon_field_info.bit_offset = last_field_end;
+                                                }
                                             }
-
-                                            // Now put the current bitfield info into the map
-                                            bit_pos->second.bit_size = bit_size;
-                                            bit_pos->second.bit_offset = bit_offset;
                                         }
                                         
-                                        if (unnamed_bit_size > 0)
+                                        if (anon_field_info.IsValid())
                                         {
                                             clang::FieldDecl *unnamed_bitfield_decl = GetClangASTContext().AddFieldToRecordType (class_clang_type,
                                                                                                                                  NULL,
-                                                                                                                                 member_type->GetClangLayoutType(),
+                                                                                                                                 GetClangASTContext().GetBuiltinTypeForEncodingAndBitSize(eEncodingSint, word_width),
                                                                                                                                  accessibility,
-                                                                                                                                 unnamed_bit_size);
-                                            uint64_t total_bit_offset = 0;
+                                                                                                                                 anon_field_info.bit_size);
                                             
-                                            total_bit_offset += (member_byte_offset == UINT32_MAX ? 0 : (member_byte_offset * 8));
-                                            
-                                            if (GetObjectFile()->GetByteOrder() == eByteOrderLittle)
-                                            {
-                                                total_bit_offset += byte_size * 8;
-                                                total_bit_offset -= (unnamed_bit_offset + unnamed_bit_size);
-                                            }
-                                            else
-                                            {
-                                                total_bit_offset += unnamed_bit_size;
-                                            }
-                                            
-                                            layout_info.field_offsets.insert(std::make_pair(unnamed_bitfield_decl, total_bit_offset));
+                                            layout_info.field_offsets.insert(std::make_pair(unnamed_bitfield_decl, anon_field_info.bit_offset));
                                         }
                                     }
                                 }
+                                
+                                clang_type_t member_clang_type = member_type->GetClangLayoutType();
+                                
+                                {
+                                    // Older versions of clang emit array[0] and array[1] in the same way (<rdar://problem/12566646>).
+                                    // If the current field is at the end of the structure, then there is definitely no room for extra
+                                    // elements and we override the type to array[0].
+                                    
+                                    clang_type_t member_array_element_type;
+                                    uint64_t member_array_size;
+                                    bool member_array_is_incomplete;
+                                    
+                                    if (GetClangASTContext().IsArrayType(member_clang_type,
+                                                                         &member_array_element_type,
+                                                                         &member_array_size,
+                                                                         &member_array_is_incomplete) &&
+                                        !member_array_is_incomplete)
+                                    {
+                                        uint64_t parent_byte_size = parent_die->GetAttributeValueAsUnsigned(this, dwarf_cu, DW_AT_byte_size, UINT64_MAX);
+                                    
+                                        if (member_byte_offset >= parent_byte_size)
+                                        {
+                                            if (member_array_size != 1)
+                                            {
+                                                GetObjectFile()->GetModule()->ReportError ("0x%8.8" PRIx64 ": DW_TAG_member '%s' refers to type 0x%8.8" PRIx64 " which extends beyond the bounds of 0x%8.8" PRIx64,
+                                                                                           MakeUserID(die->GetOffset()),
+                                                                                           name,
+                                                                                           encoding_uid,
+                                                                                           MakeUserID(parent_die->GetOffset()));
+                                            }
+                                            
+                                            member_clang_type = GetClangASTContext().CreateArrayType(member_array_element_type, 0);
+                                        }
+                                    }
+                                }
+                                
                                 field_decl = GetClangASTContext().AddFieldToRecordType (class_clang_type,
                                                                                         name, 
-                                                                                        member_type->GetClangLayoutType(), 
+                                                                                        member_clang_type,
                                                                                         accessibility, 
                                                                                         bit_size);
                                 
                                 GetClangASTContext().SetMetadataAsUserID ((uintptr_t)field_decl, MakeUserID(die->GetOffset()));
+                                
+                                if (this_field_info.IsValid())
+                                {
+                                    layout_info.field_offsets.insert(std::make_pair(field_decl, this_field_info.bit_offset));
+                                    last_field_info = this_field_info;
+                                }
                             }
                             else
                             {
                                 if (name)
-                                    GetObjectFile()->GetModule()->ReportError ("0x%8.8llx: DW_TAG_member '%s' refers to type 0x%8.8llx which was unable to be parsed",
+                                    GetObjectFile()->GetModule()->ReportError ("0x%8.8" PRIx64 ": DW_TAG_member '%s' refers to type 0x%8.8" PRIx64 " which was unable to be parsed",
                                                                                MakeUserID(die->GetOffset()),
                                                                                name,
                                                                                encoding_uid);
                                 else
-                                    GetObjectFile()->GetModule()->ReportError ("0x%8.8llx: DW_TAG_member refers to type 0x%8.8llx which was unable to be parsed",
+                                    GetObjectFile()->GetModule()->ReportError ("0x%8.8" PRIx64 ": DW_TAG_member refers to type 0x%8.8" PRIx64 " which was unable to be parsed",
                                                                                MakeUserID(die->GetOffset()),
                                                                                encoding_uid);
-                            }
-
-                            if (member_byte_offset != UINT32_MAX || bit_size != 0)
-                            {
-                                /////////////////////////////////////////////////////////////
-                                // How to locate a field given the DWARF debug information
-                                //
-                                // AT_byte_size indicates the size of the word in which the
-                                // bit offset must be interpreted.
-                                //
-                                // AT_data_member_location indicates the byte offset of the
-                                // word from the base address of the structure.
-                                //
-                                // AT_bit_offset indicates how many bits into the word
-                                // (according to the host endianness) the low-order bit of
-                                // the field starts.  AT_bit_offset can be negative.
-                                //
-                                // AT_bit_size indicates the size of the field in bits.
-                                /////////////////////////////////////////////////////////////
-                                                        
-                                uint64_t total_bit_offset = 0;
-                                
-                                total_bit_offset += (member_byte_offset == UINT32_MAX ? 0 : (member_byte_offset * 8));
-                                
-                                if (GetObjectFile()->GetByteOrder() == eByteOrderLittle)
-                                {  
-                                    total_bit_offset += byte_size * 8;
-                                    total_bit_offset -= (bit_offset + bit_size);
-                                }
-                                else
-                                {
-                                    total_bit_offset += bit_offset;
-                                }
-                                                            
-                                layout_info.field_offsets.insert(std::make_pair(field_decl, total_bit_offset));
                             }
                         }
                         
@@ -2188,7 +2262,7 @@ SymbolFileDWARF::ResolveClangOpaqueTypeDefinition (lldb::clang_type_t clang_type
     if (log)
     {
         GetObjectFile()->GetModule()->LogMessageVerboseBacktrace (log.get(),
-                                                                  "0x%8.8llx: %s '%s' resolving forward declaration...",
+                                                                  "0x%8.8" PRIx64 ": %s '%s' resolving forward declaration...",
                                                                   MakeUserID(die->GetOffset()),
                                                                   DW_TAG_value_to_name(tag),
                                                                   type->GetName().AsCString());
@@ -2247,7 +2321,6 @@ SymbolFileDWARF::ResolveClangOpaqueTypeDefinition (lldb::clang_type_t clang_type
                     DWARFDIECollection member_function_dies;
                                         
                     DelayedPropertyList delayed_properties;
-                    BitfieldMap bitfield_map;
                     ParseChildMembers (sc,
                                        dwarf_cu,
                                        die, 
@@ -2256,7 +2329,6 @@ SymbolFileDWARF::ResolveClangOpaqueTypeDefinition (lldb::clang_type_t clang_type
                                        base_classes, 
                                        member_accessibilities,
                                        member_function_dies,
-                                       bitfield_map,
                                        delayed_properties,
                                        default_accessibility, 
                                        is_a_class,
@@ -2385,7 +2457,7 @@ SymbolFileDWARF::ResolveClangOpaqueTypeDefinition (lldb::clang_type_t clang_type
                     if (log)
                     {
                         GetObjectFile()->GetModule()->LogMessage (log.get(), 
-                                                                  "SymbolFileDWARF::ResolveClangOpaqueTypeDefinition (clang_type = %p) caching layout info for record_decl = %p, bit_size = %llu, alignment = %llu, field_offsets[%u], base_offsets[%u], vbase_offsets[%u])",
+                                                                  "SymbolFileDWARF::ResolveClangOpaqueTypeDefinition (clang_type = %p) caching layout info for record_decl = %p, bit_size = %" PRIu64 ", alignment = %" PRIu64 ", field_offsets[%u], base_offsets[%u], vbase_offsets[%u])",
                                                                   clang_type,
                                                                   record_decl,
                                                                   layout_info.bit_size,
@@ -2521,7 +2593,7 @@ uint32_t
 SymbolFileDWARF::ResolveSymbolContext (const Address& so_addr, uint32_t resolve_scope, SymbolContext& sc)
 {
     Timer scoped_timer(__PRETTY_FUNCTION__,
-                       "SymbolFileDWARF::ResolveSymbolContext (so_addr = { section = %p, offset = 0x%llx }, resolve_scope = 0x%8.8x)",
+                       "SymbolFileDWARF::ResolveSymbolContext (so_addr = { section = %p, offset = 0x%" PRIx64 " }, resolve_scope = 0x%8.8x)",
                        so_addr.GetSection().get(),
                        so_addr.GetOffset(),
                        resolve_scope);
@@ -2548,27 +2620,7 @@ SymbolFileDWARF::ResolveSymbolContext (const Address& so_addr, uint32_t resolve_
                     {
                         resolved |= eSymbolContextCompUnit;
 
-                        if (resolve_scope & eSymbolContextLineEntry)
-                        {
-                            LineTable *line_table = sc.comp_unit->GetLineTable();
-                            if (line_table != NULL)
-                            {
-                                if (so_addr.IsLinkedAddress())
-                                {
-                                    Address linked_addr (so_addr);
-                                    linked_addr.ResolveLinkedAddress();
-                                    if (line_table->FindLineEntryByAddress (linked_addr, sc.line_entry))
-                                    {
-                                        resolved |= eSymbolContextLineEntry;
-                                    }
-                                }
-                                else if (line_table->FindLineEntryByAddress (so_addr, sc.line_entry))
-                                {
-                                    resolved |= eSymbolContextLineEntry;
-                                }
-                            }
-                        }
-
+                        bool force_check_line_table = false;
                         if (resolve_scope & (eSymbolContextFunction | eSymbolContextBlock))
                         {
                             DWARFDebugInfoEntry *function_die = NULL;
@@ -2596,8 +2648,7 @@ SymbolFileDWARF::ResolveSymbolContext (const Address& so_addr, uint32_t resolve_
                                 // should only happen when there aren't other functions from
                                 // other compile units in these gaps. This helps keep the size
                                 // of the aranges down.
-                                sc.comp_unit = NULL;
-                                resolved &= ~eSymbolContextCompUnit;
+                                force_check_line_table = true;
                             }
 
                             if (sc.function != NULL)
@@ -2616,6 +2667,39 @@ SymbolFileDWARF::ResolveSymbolContext (const Address& so_addr, uint32_t resolve_
                                         resolved |= eSymbolContextBlock;
                                 }
                             }
+                        }
+                        
+                        if ((resolve_scope & eSymbolContextLineEntry) || force_check_line_table)
+                        {
+                            LineTable *line_table = sc.comp_unit->GetLineTable();
+                            if (line_table != NULL)
+                            {
+                                if (so_addr.IsLinkedAddress())
+                                {
+                                    Address linked_addr (so_addr);
+                                    linked_addr.ResolveLinkedAddress();
+                                    if (line_table->FindLineEntryByAddress (linked_addr, sc.line_entry))
+                                    {
+                                        resolved |= eSymbolContextLineEntry;
+                                    }
+                                }
+                                else if (line_table->FindLineEntryByAddress (so_addr, sc.line_entry))
+                                {
+                                    resolved |= eSymbolContextLineEntry;
+                                }
+                            }
+                        }
+                        
+                        if (force_check_line_table && !(resolved & eSymbolContextLineEntry))
+                        {
+                            // We might have had a compile unit that had discontiguous
+                            // address ranges where the gaps are symbols that don't have
+                            // any debug info. Discontiguous compile unit address ranges
+                            // should only happen when there aren't other functions from
+                            // other compile units in these gaps. This helps keep the size
+                            // of the aranges down.
+                            sc.comp_unit = NULL;
+                            resolved &= ~eSymbolContextCompUnit;
                         }
                     }
                     else
@@ -3256,6 +3340,8 @@ SymbolFileDWARF::FunctionDieMatchesPartialName (const DWARFDebugInfoEntry* die,
         DWARFFormValue form_value;
         die->GetAttributes(this, dwarf_cu, NULL, attributes);
         uint32_t idx = attributes.FindAttributeIndex(DW_AT_MIPS_linkage_name);
+        if (idx == UINT32_MAX)
+            idx = attributes.FindAttributeIndex(DW_AT_linkage_name);
         if (idx != UINT32_MAX)
         {
             if (attributes.ExtractFormValueAtIndex(this, idx, form_value))
@@ -4200,6 +4286,7 @@ SymbolFileDWARF::ParseChildArrayInfo
                     uint64_t num_elements = 0;
                     uint64_t lower_bound = 0;
                     uint64_t upper_bound = 0;
+                    bool upper_bound_valid = false;
                     uint32_t i;
                     for (i=0; i<num_child_attributes; ++i)
                     {
@@ -4229,6 +4316,7 @@ SymbolFileDWARF::ParseChildArrayInfo
                                 break;
 
                             case DW_AT_upper_bound:
+                                upper_bound_valid = true;
                                 upper_bound = form_value.Unsigned();
                                 break;
 
@@ -4249,8 +4337,11 @@ SymbolFileDWARF::ParseChildArrayInfo
                         }
                     }
 
-                    if (upper_bound > lower_bound)
-                        num_elements = upper_bound - lower_bound + 1;
+                    if (num_elements == 0)
+                    {
+                        if (upper_bound_valid && upper_bound >= lower_bound)
+                            num_elements = upper_bound - lower_bound + 1;
+                    }
 
                     element_orders.push_back (num_elements);
                 }
@@ -4335,7 +4426,7 @@ SymbolFileDWARF::ResolveNamespaceDIE (DWARFCompileUnit *dwarf_cu, const DWARFDeb
                 if (namespace_name)
                 {
                     GetObjectFile()->GetModule()->LogMessage (log.get(), 
-                                                              "ASTContext => %p: 0x%8.8llx: DW_TAG_namespace with DW_AT_name(\"%s\") => clang::NamespaceDecl *%p (original = %p)", 
+                                                              "ASTContext => %p: 0x%8.8" PRIx64 ": DW_TAG_namespace with DW_AT_name(\"%s\") => clang::NamespaceDecl *%p (original = %p)",
                                                               GetClangASTContext().getASTContext(),
                                                               MakeUserID(die->GetOffset()),
                                                               namespace_name,
@@ -4345,7 +4436,7 @@ SymbolFileDWARF::ResolveNamespaceDIE (DWARFCompileUnit *dwarf_cu, const DWARFDeb
                 else
                 {
                     GetObjectFile()->GetModule()->LogMessage (log.get(),
-                                                              "ASTContext => %p: 0x%8.8llx: DW_TAG_namespace (anonymous) => clang::NamespaceDecl *%p (original = %p)", 
+                                                              "ASTContext => %p: 0x%8.8" PRIx64 ": DW_TAG_namespace (anonymous) => clang::NamespaceDecl *%p (original = %p)",
                                                               GetClangASTContext().getASTContext(),
                                                               MakeUserID(die->GetOffset()),
                                                               namespace_decl,
@@ -4619,7 +4710,7 @@ SymbolFileDWARF::FindCompleteObjCDefinitionTypeForDIE (const DWARFDebugInfoEntry
                         Type *resolved_type = ResolveType (type_cu, type_die, false);
                         if (resolved_type && resolved_type != DIE_IS_BEING_PARSED)
                         {
-                            DEBUG_PRINTF ("resolved 0x%8.8llx (cu 0x%8.8llx) from %s to 0x%8.8llx (cu 0x%8.8llx)\n",
+                            DEBUG_PRINTF ("resolved 0x%8.8" PRIx64 " (cu 0x%8.8" PRIx64 ") from %s to 0x%8.8" PRIx64 " (cu 0x%8.8" PRIx64 ")\n",
                                           MakeUserID(die->GetOffset()), 
                                           MakeUserID(dwarf_cu->GetOffset()),
                                           m_obj_file->GetFileSpec().GetFilename().AsCString(),
@@ -4880,7 +4971,7 @@ SymbolFileDWARF::FindDefinitionTypeForDIE (DWARFCompileUnit* cu,
                         Type *resolved_type = ResolveType (type_cu, type_die, false);
                         if (resolved_type && resolved_type != DIE_IS_BEING_PARSED)
                         {
-                            DEBUG_PRINTF ("resolved 0x%8.8llx (cu 0x%8.8llx) from %s to 0x%8.8llx (cu 0x%8.8llx)\n",
+                            DEBUG_PRINTF ("resolved 0x%8.8" PRIx64 " (cu 0x%8.8" PRIx64 ") from %s to 0x%8.8" PRIx64 " (cu 0x%8.8" PRIx64 ")\n",
                                           MakeUserID(die->GetOffset()), 
                                           MakeUserID(dwarf_cu->GetOffset()),
                                           m_obj_file->GetFileSpec().GetFilename().AsCString(),
@@ -5206,7 +5297,7 @@ SymbolFileDWARF::CopyUniqueClassMethodTypes (Type *class_type,
             if (src_child_type)
             {
                 if (log)
-                    log->Printf ("uniquing type %p (uid=0x%llx) from 0x%8.8x for 0x%8.8x", src_child_type, src_child_type->GetID(), src_die->GetOffset(), dst_die->GetOffset());
+                    log->Printf ("uniquing type %p (uid=0x%" PRIx64 ") from 0x%8.8x for 0x%8.8x", src_child_type, src_child_type->GetID(), src_die->GetOffset(), dst_die->GetOffset());
                 m_die_to_type[dst_die] = src_child_type;
             }
             else
@@ -5228,9 +5319,6 @@ SymbolFileDWARF::CopyUniqueClassMethodTypes (Type *class_type,
             
             if (dst_die)
             {
-                // Erase this entry from the map
-                const size_t num_removed = dst_name_to_die_artificial.Erase (src_name_artificial);
-                assert (num_removed == 0 || num_removed == 1); // REMOVE THIS
                 // Both classes have the artificial types, link them
                 clang::DeclContext *src_decl_ctx = m_die_to_decl_ctx[src_die];
                 if (src_decl_ctx)
@@ -5249,7 +5337,7 @@ SymbolFileDWARF::CopyUniqueClassMethodTypes (Type *class_type,
                 if (src_child_type)
                 {
                     if (log)
-                        log->Printf ("uniquing type %p (uid=0x%llx) from 0x%8.8x for 0x%8.8x", src_child_type, src_child_type->GetID(), src_die->GetOffset(), dst_die->GetOffset());
+                        log->Printf ("uniquing type %p (uid=0x%" PRIx64 ") from 0x%8.8x for 0x%8.8x", src_child_type, src_child_type->GetID(), src_die->GetOffset(), dst_die->GetOffset());
                     m_die_to_type[dst_die] = src_child_type;
                 }
                 else
@@ -5409,7 +5497,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                         }
                     }
 
-                    DEBUG_PRINTF ("0x%8.8llx: %s (\"%s\") type => 0x%8.8x\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr, encoding_uid);
+                    DEBUG_PRINTF ("0x%8.8" PRIx64 ": %s (\"%s\") type => 0x%8.8x\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr, encoding_uid);
 
                     switch (tag)
                     {
@@ -5441,51 +5529,80 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                     case DW_TAG_volatile_type:          encoding_data_type = Type::eEncodingIsVolatileUID;          break;
                     }
 
-                    if (clang_type == NULL && (encoding_data_type == Type::eEncodingIsPointerUID || encoding_data_type == Type::eEncodingIsTypedefUID))
+                    if (clang_type == NULL && (encoding_data_type == Type::eEncodingIsPointerUID || encoding_data_type == Type::eEncodingIsTypedefUID) && sc.comp_unit != NULL)
                     {
-                        if (type_name_cstr != NULL && sc.comp_unit != NULL && 
-                            (sc.comp_unit->GetLanguage() == eLanguageTypeObjC || sc.comp_unit->GetLanguage() == eLanguageTypeObjC_plus_plus))
+                        bool translation_unit_is_objc = (sc.comp_unit->GetLanguage() == eLanguageTypeObjC || sc.comp_unit->GetLanguage() == eLanguageTypeObjC_plus_plus);
+                        
+                        if (translation_unit_is_objc)
                         {
-                            static ConstString g_objc_type_name_id("id");
-                            static ConstString g_objc_type_name_Class("Class");
-                            static ConstString g_objc_type_name_selector("SEL");
-                            
-                            if (type_name_const_str == g_objc_type_name_id)
+                            if (type_name_cstr != NULL)
                             {
-                                if (log)
-                                    GetObjectFile()->GetModule()->LogMessage (log.get(), "SymbolFileDWARF::ParseType (die = 0x%8.8x) %s '%s' is Objective C 'id' built-in type.", 
-                                                                              die->GetOffset(), 
-                                                                              DW_TAG_value_to_name(die->Tag()), 
-                                                                              die->GetName(this, dwarf_cu));
-                                clang_type = ast.GetBuiltInType_objc_id();
-                                encoding_data_type = Type::eEncodingIsUID;
-                                encoding_uid = LLDB_INVALID_UID;
-                                resolve_state = Type::eResolveStateFull;
+                                static ConstString g_objc_type_name_id("id");
+                                static ConstString g_objc_type_name_Class("Class");
+                                static ConstString g_objc_type_name_selector("SEL");
+                                
+                                if (type_name_const_str == g_objc_type_name_id)
+                                {
+                                    if (log)
+                                        GetObjectFile()->GetModule()->LogMessage (log.get(), "SymbolFileDWARF::ParseType (die = 0x%8.8x) %s '%s' is Objective C 'id' built-in type.", 
+                                                                                  die->GetOffset(), 
+                                                                                  DW_TAG_value_to_name(die->Tag()), 
+                                                                                  die->GetName(this, dwarf_cu));
+                                    clang_type = ast.GetBuiltInType_objc_id();
+                                    encoding_data_type = Type::eEncodingIsUID;
+                                    encoding_uid = LLDB_INVALID_UID;
+                                    resolve_state = Type::eResolveStateFull;
 
+                                }
+                                else if (type_name_const_str == g_objc_type_name_Class)
+                                {
+                                    if (log)
+                                        GetObjectFile()->GetModule()->LogMessage (log.get(), "SymbolFileDWARF::ParseType (die = 0x%8.8x) %s '%s' is Objective C 'Class' built-in type.", 
+                                                                                  die->GetOffset(), 
+                                                                                  DW_TAG_value_to_name(die->Tag()), 
+                                                                                  die->GetName(this, dwarf_cu));
+                                    clang_type = ast.GetBuiltInType_objc_Class();
+                                    encoding_data_type = Type::eEncodingIsUID;
+                                    encoding_uid = LLDB_INVALID_UID;
+                                    resolve_state = Type::eResolveStateFull;
+                                }
+                                else if (type_name_const_str == g_objc_type_name_selector)
+                                {
+                                    if (log)
+                                        GetObjectFile()->GetModule()->LogMessage (log.get(), "SymbolFileDWARF::ParseType (die = 0x%8.8x) %s '%s' is Objective C 'selector' built-in type.", 
+                                                                                  die->GetOffset(), 
+                                                                                  DW_TAG_value_to_name(die->Tag()), 
+                                                                                  die->GetName(this, dwarf_cu));
+                                    clang_type = ast.GetBuiltInType_objc_selector();
+                                    encoding_data_type = Type::eEncodingIsUID;
+                                    encoding_uid = LLDB_INVALID_UID;
+                                    resolve_state = Type::eResolveStateFull;
+                                }
                             }
-                            else if (type_name_const_str == g_objc_type_name_Class)
+                            else if (encoding_data_type == Type::eEncodingIsPointerUID && encoding_uid != LLDB_INVALID_UID)
                             {
-                                if (log)
-                                    GetObjectFile()->GetModule()->LogMessage (log.get(), "SymbolFileDWARF::ParseType (die = 0x%8.8x) %s '%s' is Objective C 'Class' built-in type.", 
-                                                                              die->GetOffset(), 
-                                                                              DW_TAG_value_to_name(die->Tag()), 
-                                                                              die->GetName(this, dwarf_cu));
-                                clang_type = ast.GetBuiltInType_objc_Class();
-                                encoding_data_type = Type::eEncodingIsUID;
-                                encoding_uid = LLDB_INVALID_UID;
-                                resolve_state = Type::eResolveStateFull;
-                            }
-                            else if (type_name_const_str == g_objc_type_name_selector)
-                            {
-                                if (log)
-                                    GetObjectFile()->GetModule()->LogMessage (log.get(), "SymbolFileDWARF::ParseType (die = 0x%8.8x) %s '%s' is Objective C 'selector' built-in type.", 
-                                                                              die->GetOffset(), 
-                                                                              DW_TAG_value_to_name(die->Tag()), 
-                                                                              die->GetName(this, dwarf_cu));
-                                clang_type = ast.GetBuiltInType_objc_selector();
-                                encoding_data_type = Type::eEncodingIsUID;
-                                encoding_uid = LLDB_INVALID_UID;
-                                resolve_state = Type::eResolveStateFull;
+                                // Clang sometimes erroneously emits id as objc_object*.  In that case we fix up the type to "id".
+                            
+                                DWARFDebugInfoEntry* encoding_die = dwarf_cu->GetDIEPtr(encoding_uid);
+                                
+                                if (encoding_die && encoding_die->Tag() == DW_TAG_structure_type)
+                                {                                    
+                                    if (const char *struct_name = encoding_die->GetAttributeValueAsString(this, dwarf_cu, DW_AT_name, NULL))
+                                    {
+                                        if (!strcmp(struct_name, "objc_object"))
+                                        {
+                                            if (log)
+                                                GetObjectFile()->GetModule()->LogMessage (log.get(), "SymbolFileDWARF::ParseType (die = 0x%8.8x) %s '%s' is 'objc_object*', which we overrode to 'id'.",
+                                                                                          die->GetOffset(),
+                                                                                          DW_TAG_value_to_name(die->Tag()),
+                                                                                          die->GetName(this, dwarf_cu));
+                                            clang_type = ast.GetBuiltInType_objc_id();
+                                            encoding_data_type = Type::eEncodingIsUID;
+                                            encoding_uid = LLDB_INVALID_UID;
+                                            resolve_state = Type::eResolveStateFull;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -5622,7 +5739,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                         }
                     }
                     
-                    DEBUG_PRINTF ("0x%8.8llx: %s (\"%s\")\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr);
+                    DEBUG_PRINTF ("0x%8.8" PRIx64 ": %s (\"%s\")\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr);
 
                     int tag_decl_kind = -1;
                     AccessType default_accessibility = eAccessNone;
@@ -5685,7 +5802,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                 if (log)
                                 {
                                     GetObjectFile()->GetModule()->LogMessage (log.get(),
-                                                                              "SymbolFileDWARF(%p) - 0x%8.8x: %s type \"%s\" is an incomplete objc type, complete type is 0x%8.8llx", 
+                                                                              "SymbolFileDWARF(%p) - 0x%8.8x: %s type \"%s\" is an incomplete objc type, complete type is 0x%8.8" PRIx64,
                                                                               this,
                                                                               die->GetOffset(), 
                                                                               DW_TAG_value_to_name(tag),
@@ -5739,7 +5856,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                             if (log)
                             {
                                 GetObjectFile()->GetModule()->LogMessage (log.get(),
-                                                                          "SymbolFileDWARF(%p) - 0x%8.8x: %s type \"%s\" is a forward declaration, complete type is 0x%8.8llx", 
+                                                                          "SymbolFileDWARF(%p) - 0x%8.8x: %s type \"%s\" is a forward declaration, complete type is 0x%8.8" PRIx64,
                                                                           this,
                                                                           die->GetOffset(), 
                                                                           DW_TAG_value_to_name(tag),
@@ -5946,7 +6063,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                             }
                         }
 
-                        DEBUG_PRINTF ("0x%8.8llx: %s (\"%s\")\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr);
+                        DEBUG_PRINTF ("0x%8.8" PRIx64 ": %s (\"%s\")\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr);
 
                         clang_type_t enumerator_clang_type = NULL;
                         clang_type = m_forward_decl_die_to_clang_type.lookup (die);
@@ -6033,6 +6150,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                     type_name_const_str.SetCString(type_name_cstr);
                                     break;
 
+                                case DW_AT_linkage_name:
                                 case DW_AT_MIPS_linkage_name:   break; // mangled = form_value.AsCString(&get_debug_str_data()); break;
                                 case DW_AT_type:                type_die_offset = form_value.Reference(dwarf_cu); break;
                                 case DW_AT_accessibility:       accessibility = DW_ACCESS_to_AccessType(form_value.Unsigned()); break;
@@ -6105,7 +6223,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                         }
                     }
                     
-                    DEBUG_PRINTF ("0x%8.8llx: %s (\"%s\")\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr);
+                    DEBUG_PRINTF ("0x%8.8" PRIx64 ": %s (\"%s\")\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr);
 
                     clang_type_t return_clang_type = NULL;
                     Type *func_type = NULL;
@@ -6256,7 +6374,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                         }
                                         else
                                         {
-                                            GetObjectFile()->GetModule()->ReportWarning ("0x%8.8llx: DW_AT_specification(0x%8.8x) has no decl\n", 
+                                            GetObjectFile()->GetModule()->ReportWarning ("0x%8.8" PRIx64 ": DW_AT_specification(0x%8.8x) has no decl\n",
                                                                                          MakeUserID(die->GetOffset()), 
                                                                                          specification_die_offset);
                                         }
@@ -6279,7 +6397,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                         }
                                         else
                                         {
-                                            GetObjectFile()->GetModule()->ReportWarning ("0x%8.8llx: DW_AT_abstract_origin(0x%8.8x) has no decl\n", 
+                                            GetObjectFile()->GetModule()->ReportWarning ("0x%8.8" PRIx64 ": DW_AT_abstract_origin(0x%8.8x) has no decl\n",
                                                                                          MakeUserID(die->GetOffset()), 
                                                                                          abstract_origin_die_offset);
                                         }
@@ -6308,7 +6426,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                                 {
                                                     clang::CXXMethodDecl *cxx_method_decl;
                                                     // REMOVE THE CRASH DESCRIPTION BELOW
-                                                    Host::SetCrashDescriptionWithFormat ("SymbolFileDWARF::ParseType() is adding a method %s to class %s in DIE 0x%8.8llx from %s/%s", 
+                                                    Host::SetCrashDescriptionWithFormat ("SymbolFileDWARF::ParseType() is adding a method %s to class %s in DIE 0x%8.8" PRIx64 " from %s/%s",
                                                                                          type_name_cstr, 
                                                                                          class_type->GetName().GetCString(),
                                                                                          MakeUserID(die->GetOffset()),
@@ -6494,7 +6612,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                             }
                         }
 
-                        DEBUG_PRINTF ("0x%8.8llx: %s (\"%s\")\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr);
+                        DEBUG_PRINTF ("0x%8.8" PRIx64 ": %s (\"%s\")\n", MakeUserID(die->GetOffset()), DW_TAG_value_to_name(tag), type_name_cstr);
 
                         Type *element_type = ResolveTypeUID(type_die_offset);
 
@@ -6513,10 +6631,9 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                             {
                                 num_elements = *pos;
                                 clang_type = ast.CreateArrayType (array_element_type, 
-                                                                  num_elements, 
-                                                                  num_elements * array_element_bit_stride);
+                                                                  num_elements);
                                 array_element_type = clang_type;
-                                array_element_bit_stride = array_element_bit_stride * num_elements;
+                                array_element_bit_stride = num_elements ? array_element_bit_stride * num_elements : array_element_bit_stride;
                             }
                             ConstString empty_name;
                             type_sp.reset( new Type (MakeUserID(die->GetOffset()), 
@@ -6871,6 +6988,7 @@ SymbolFileDWARF::ParseVariableDIE
                     case DW_AT_decl_line:   decl.SetLine(form_value.Unsigned()); break;
                     case DW_AT_decl_column: decl.SetColumn(form_value.Unsigned()); break;
                     case DW_AT_name:        name = form_value.AsCString(&get_debug_str_data()); break;
+                    case DW_AT_linkage_name:
                     case DW_AT_MIPS_linkage_name: mangled = form_value.AsCString(&get_debug_str_data()); break;
                     case DW_AT_type:        type_uid = form_value.Reference(dwarf_cu); break;
                     case DW_AT_external:    is_external = form_value.Unsigned() != 0; break;
@@ -7212,7 +7330,7 @@ SymbolFileDWARF::ParseVariables
                             }
                             else
                             {
-                                GetObjectFile()->GetModule()->ReportError ("parent 0x%8.8llx %s with no valid compile unit in symbol context for 0x%8.8llx %s.\n",
+                                GetObjectFile()->GetModule()->ReportError ("parent 0x%8.8" PRIx64 " %s with no valid compile unit in symbol context for 0x%8.8" PRIx64 " %s.\n",
                                                                            MakeUserID(sc_parent_die->GetOffset()),
                                                                            DW_TAG_value_to_name (parent_tag),
                                                                            MakeUserID(orig_die->GetOffset()),
@@ -7256,7 +7374,7 @@ SymbolFileDWARF::ParseVariables
                             break;
                             
                         default:
-                             GetObjectFile()->GetModule()->ReportError ("didn't find appropriate parent DIE for variable list for 0x%8.8llx %s.\n",
+                             GetObjectFile()->GetModule()->ReportError ("didn't find appropriate parent DIE for variable list for 0x%8.8" PRIx64 " %s.\n",
                                                                         MakeUserID(orig_die->GetOffset()),
                                                                         DW_TAG_value_to_name (orig_die->Tag()));
                             break;
@@ -7486,7 +7604,7 @@ SymbolFileDWARF::LayoutRecordType (const clang::RecordDecl *record_decl,
     
     if (log)
         GetObjectFile()->GetModule()->LogMessage (log.get(), 
-                                                  "SymbolFileDWARF::LayoutRecordType (record_decl = %p, bit_size = %llu, alignment = %llu, field_offsets[%u],base_offsets[%u], vbase_offsets[%u]) success = %i",
+                                                  "SymbolFileDWARF::LayoutRecordType (record_decl = %p, bit_size = %" PRIu64 ", alignment = %" PRIu64 ", field_offsets[%u],base_offsets[%u], vbase_offsets[%u]) success = %i",
                                                   record_decl,
                                                   bit_size,
                                                   alignment,
