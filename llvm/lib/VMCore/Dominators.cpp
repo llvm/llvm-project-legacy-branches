@@ -39,20 +39,17 @@ static cl::opt<bool,true>
 VerifyDomInfoX("verify-dom-info", cl::location(VerifyDomInfo),
                cl::desc("Verify dominator info (time consuming)"));
 
-namespace llvm {
-  class BasicBlockEdge {
-    const BasicBlock *Start;
-    const BasicBlock *End;
-  public:
-    BasicBlockEdge(const BasicBlock *Start_, const BasicBlock *End_) :
-      Start(Start_), End(End_) { }
-    const BasicBlock *getStart() const {
-      return Start;
-    }
-    const BasicBlock *getEnd() const {
-      return End;
-    }
-  };
+bool BasicBlockEdge::isSingleEdge() const {
+  const TerminatorInst *TI = Start->getTerminator();
+  unsigned NumEdgesToEnd = 0;
+  for (unsigned int i = 0, n = TI->getNumSuccessors(); i < n; ++i) {
+    if (TI->getSuccessor(i) == End)
+      ++NumEdgesToEnd;
+    if (NumEdgesToEnd >= 2)
+      return false;
+  }
+  assert(NumEdgesToEnd == 1);
+  return true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -164,6 +161,11 @@ bool DominatorTree::dominates(const Instruction *Def,
 
 bool DominatorTree::dominates(const BasicBlockEdge &BBE,
                               const BasicBlock *UseBB) const {
+  // Assert that we have a single edge. We could handle them by simply
+  // returning false, but since isSingleEdge is linear on the number of
+  // edges, the callers can normally handle them more efficiently.
+  assert(BBE.isSingleEdge());
+
   // If the BB the edge ends in doesn't dominate the use BB, then the
   // edge also doesn't.
   const BasicBlock *Start = BBE.getStart();
@@ -210,6 +212,11 @@ bool DominatorTree::dominates(const BasicBlockEdge &BBE,
 
 bool DominatorTree::dominates(const BasicBlockEdge &BBE,
                               const Use &U) const {
+  // Assert that we have a single edge. We could handle them by simply
+  // returning false, but since isSingleEdge is linear on the number of
+  // edges, the callers can normally handle them more efficiently.
+  assert(BBE.isSingleEdge());
+
   Instruction *UserInst = cast<Instruction>(U.getUser());
   // A PHI in the end of the edge is dominated by it.
   PHINode *PN = dyn_cast<PHINode>(UserInst);

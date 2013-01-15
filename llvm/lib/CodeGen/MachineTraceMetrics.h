@@ -50,6 +50,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/TargetSchedule.h"
 
 namespace llvm {
 
@@ -67,9 +68,9 @@ class MachineTraceMetrics : public MachineFunctionPass {
   const MachineFunction *MF;
   const TargetInstrInfo *TII;
   const TargetRegisterInfo *TRI;
-  const InstrItineraryData *ItinData;
   const MachineRegisterInfo *MRI;
   const MachineLoopInfo *Loops;
+  TargetSchedModel SchedModel;
 
 public:
   class Ensemble;
@@ -164,6 +165,14 @@ public:
     /// Invalidate height resources when a block below this one has changed.
     void invalidateHeight() { InstrHeight = ~0u; HasValidInstrHeights = false; }
 
+    /// Determine if this block belongs to the same trace as TBI and comes
+    /// before it in the trace.
+    /// Also returns true when TBI == this.
+    bool isEarlierInSameTrace(const TraceBlockInfo &TBI) const {
+      return hasValidDepth() && TBI.hasValidDepth() &&
+        Head == TBI.Head && InstrDepth <= TBI.InstrDepth;
+    }
+
     // Data-dependency-related information. Per-instruction depth and height
     // are computed from data dependencies in the current trace, using
     // itinerary data.
@@ -226,6 +235,15 @@ public:
     /// When Bottom is set, instructions in the trace center block are included.
     unsigned getResourceDepth(bool Bottom) const;
 
+    /// Return the resource length of the trace. This is the number of cycles
+    /// required to execute the instructions in the trace if they were all
+    /// independent, exposing the maximum instruction-level parallelism.
+    ///
+    /// Any blocks in Extrablocks are included as if they were part of the
+    /// trace.
+    unsigned getResourceLength(ArrayRef<const MachineBasicBlock*> Extrablocks =
+                               ArrayRef<const MachineBasicBlock*>()) const;
+
     /// Return the length of the (data dependency) critical path through the
     /// trace.
     unsigned getCriticalPath() const { return TBI.CriticalPath; }
@@ -241,6 +259,10 @@ public:
     /// before the critical path becomes longer.
     /// MI must be an instruction in the trace center block.
     unsigned getInstrSlack(const MachineInstr *MI) const;
+
+    /// Return the Depth of a PHI instruction in a trace center block successor.
+    /// The PHI does not have to be part of the trace.
+    unsigned getPHIDepth(const MachineInstr *PHI) const;
   };
 
   /// A trace ensemble is a collection of traces selected using the same
@@ -257,7 +279,7 @@ public:
     unsigned computeCrossBlockCriticalPath(const TraceBlockInfo&);
     void computeInstrDepths(const MachineBasicBlock*);
     void computeInstrHeights(const MachineBasicBlock*);
-    void addLiveIns(const MachineInstr *DefMI,
+    void addLiveIns(const MachineInstr *DefMI, unsigned DefOp,
                     ArrayRef<const MachineBasicBlock*> Trace);
 
   protected:
