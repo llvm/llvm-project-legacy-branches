@@ -464,13 +464,28 @@ ConnectionFileDescriptor::Read (void *dst,
         uint32_t error_value = error.GetError();
         switch (error_value)
         {
+#ifdef _WIN32
+        case WSAEWOULDBLOCK:
+#else
         case EAGAIN:    // The file was marked for non-blocking I/O, and no data were ready to be read.
+#endif
             if (m_fd_recv_type == eFDTypeSocket || m_fd_recv_type == eFDTypeSocketUDP)
                 status = eConnectionStatusTimedOut;
             else
                 status = eConnectionStatusSuccess;
             return 0;
+#ifdef _WIN32
+        case WSAEFAULT:
+        case WSAEINTR:
+        case WSAEINVAL:
+        case WSANO_ADDRESS:
+        case WSAEINPROGRESS:
+        case WSAENOTSOCK:
+        case WSAEOPNOTSUPP:
+        case WSAEMSGSIZE:
 
+            
+#else
         case EFAULT:    // Buf points outside the allocated address space.
         case EINTR:     // A read from a slow device was interrupted before any data arrived by the delivery of a signal.
         case EINVAL:    // The pointer associated with fildes was negative.
@@ -484,19 +499,32 @@ ConnectionFileDescriptor::Read (void *dst,
         case EISDIR:    // An attempt is made to read a directory.
         case ENOBUFS:   // An attempt to allocate a memory buffer fails.
         case ENOMEM:    // Insufficient memory is available.
+#endif
+        default:
             status = eConnectionStatusError;
             break;  // Break to close....
-
+#ifdef _WIN32
+        case WSAENETDOWN:
+        case WSAENETRESET:
+        case WSAESHUTDOWN:
+        case WSAECONNABORTED:
+        case WSAECONNRESET:
+#else
         case ENOENT:    // no such file or directory
         case EBADF:     // fildes is not a valid file or socket descriptor open for reading.
         case ENXIO:     // An action is requested of a device that does not exist..
                         // A requested action cannot be performed by the device.
         case ECONNRESET:// The connection is closed by the peer during a read attempt on a socket.
         case ENOTCONN:  // A read is attempted on an unconnected socket.
+#endif
             status = eConnectionStatusLostConnection;
             break;  // Break to close....
 
+#ifdef _WIN32
+        case WSAETIMEDOUT:
+#else
         case ETIMEDOUT: // A transmission timeout occurs during a read attempt on a socket.
+#endif
             status = eConnectionStatusTimedOut;
             return 0;
         }
@@ -608,13 +636,23 @@ ConnectionFileDescriptor::Write (const void *src, size_t src_len, ConnectionStat
     {
         switch (error.GetError())
         {
+#ifdef _WIN32
+        case WSAEWOULDBLOCK:
+        case WSAEINTR:
+#else
         case EAGAIN:
         case EINTR:
+#endif
             status = eConnectionStatusSuccess;
             return 0;
 
+#ifdef _WIN32
+        case WSAECONNRESET:
+        case WSAENOTCONN:
+#else
         case ECONNRESET:// The connection is closed by the peer during a read attempt on a socket.
         case ENOTCONN:  // A read is attempted on an unconnected socket.
+#endif
             status = eConnectionStatusLostConnection;
             break;  // Break to close....
 
@@ -687,19 +725,28 @@ ConnectionFileDescriptor::BytesAvailable (uint32_t timeout_usec, Error *error_pt
         {
             switch (error.GetError())
             {
+#ifdef _WIN32
+            case WSAEBADF:
+#else
             case EBADF:     // One of the descriptor sets specified an invalid descriptor.
+#endif
                 return eConnectionStatusLostConnection;
 
             case EINVAL:    // The specified time limit is invalid. One of its components is negative or too large.
             default:        // Other unknown error
                 return eConnectionStatusError;
 
+#ifdef _WIN32
+        case WSAEWOULDBLOCK:
+        case WSAEINTR:
+#else
             case EAGAIN:    // The kernel was (perhaps temporarily) unable to
                             // allocate the requested number of file descriptors,
                             // or we have non-blocking IO
             case EINTR:     // A signal was delivered before the time limit
                             // expired and before any of the selected events
                             // occurred.
+#endif
                 break;      // Lets keep reading to until we timeout
             }
         }
