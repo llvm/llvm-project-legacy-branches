@@ -325,9 +325,11 @@ IRForTarget::RegisterFunctionMetadata(LLVMContext &context,
                 
         if (Instruction *user_inst = dyn_cast<Instruction>(user))
         {
-            Constant *name_array = ConstantDataArray::getString(context, StringRef(name));
+            Value *name_array[] = {
+                ConstantDataArray::getString(context, StringRef(name))
+            };
             
-            ArrayRef<Value *> md_values(name_array);
+            ArrayRef<Value *> md_values(name_array, 1);
             
             MDNode *metadata = MDNode::get(context, md_values);
             
