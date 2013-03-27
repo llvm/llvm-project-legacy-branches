@@ -130,6 +130,14 @@ TimeValue::Now()
     struct timeval tv;
 #ifdef _POSIX_SOURCE
     gettimeofday(&tv, NULL);
+#else
+    SYSTEMTIME st;
+    GetSystemTime(&st);
+    tv.tv_usec = st.wMilliseconds * 1000;
+    FILETIME ft;
+    SystemTimeToFileTime(&st, &ft);
+
+    tv.tv_sec = ((((uint64_t)ft.dwHighDateTime) << 32 | ft.dwLowDateTime) / 10000000) - 11644473600ULL;
 #endif
     TimeValue now(tv);
     return now;
