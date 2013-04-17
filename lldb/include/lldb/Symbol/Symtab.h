@@ -41,8 +41,8 @@ public:
                         Symtab(ObjectFile *objfile);
                         ~Symtab();
 
-            void        Reserve (uint32_t count);
-            Symbol *    Resize (uint32_t count);
+            void        Reserve (size_t count);
+            Symbol *    Resize (size_t count);
             uint32_t    AddSymbol(const Symbol& symbol);
             size_t      GetNumSymbols() const;
             void        Dump(Stream *s, Target *target, SortOrder sort_type);
@@ -53,8 +53,8 @@ public:
                             return m_mutex;
                         }
             Symbol *    FindSymbolByID (lldb::user_id_t uid) const;
-            Symbol *    SymbolAtIndex (uint32_t idx);
-    const   Symbol *    SymbolAtIndex (uint32_t idx) const;
+            Symbol *    SymbolAtIndex (size_t idx);
+    const   Symbol *    SymbolAtIndex (size_t idx) const;
             Symbol *    FindSymbolWithType (lldb::SymbolType symbol_type, Debug symbol_debug_type, Visibility symbol_visibility, uint32_t &start_idx);
             uint32_t    AppendSymbolIndexesWithType (lldb::SymbolType symbol_type, std::vector<uint32_t>& indexes, uint32_t start_idx = 0, uint32_t end_index = UINT32_MAX) const;
             uint32_t    AppendSymbolIndexesWithTypeAndFlagsValue (lldb::SymbolType symbol_type, uint32_t flags_value, std::vector<uint32_t>& indexes, uint32_t start_idx = 0, uint32_t end_index = UINT32_MAX) const;
@@ -69,7 +69,6 @@ public:
             size_t      FindAllSymbolsWithNameAndType (const ConstString &name, lldb::SymbolType symbol_type, Debug symbol_debug_type, Visibility symbol_visibility, std::vector<uint32_t>& symbol_indexes);
             size_t      FindAllSymbolsMatchingRexExAndType (const RegularExpression &regex, lldb::SymbolType symbol_type, Debug symbol_debug_type, Visibility symbol_visibility, std::vector<uint32_t>& symbol_indexes);
             Symbol *    FindFirstSymbolWithNameAndType (const ConstString &name, lldb::SymbolType symbol_type, Debug symbol_debug_type, Visibility symbol_visibility);
-            Symbol *    FindSymbolWithFileAddress (lldb::addr_t file_addr);
             Symbol *    FindSymbolContainingFileAddress (lldb::addr_t file_addr, const uint32_t* indexes, uint32_t num_indexes);
             Symbol *    FindSymbolContainingFileAddress (lldb::addr_t file_addr);
             size_t      FindFunctionSymbols (const ConstString &name, uint32_t name_type_mask, SymbolContextList& sc_list);
@@ -107,6 +106,8 @@ protected:
     collection          m_symbols;
     std::vector<uint32_t> m_addr_indexes;
     UniqueCStringMap<uint32_t> m_name_to_index;
+    UniqueCStringMap<uint32_t> m_basename_to_index;
+    UniqueCStringMap<uint32_t> m_method_to_index;
     UniqueCStringMap<uint32_t> m_selector_to_index;
     mutable Mutex       m_mutex; // Provide thread safety for this symbol table
     bool                m_addr_indexes_computed:1,
@@ -114,7 +115,7 @@ protected:
 private:
 
     bool
-    CheckSymbolAtIndex (uint32_t idx, Debug symbol_debug_type, Visibility symbol_visibility) const
+    CheckSymbolAtIndex (size_t idx, Debug symbol_debug_type, Visibility symbol_visibility) const
     {
         switch (symbol_debug_type)
         {

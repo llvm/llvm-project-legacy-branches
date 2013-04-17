@@ -525,11 +525,11 @@ Scalar::GetValueTypeAsCString (Scalar::Type type)
 Scalar::Type
 Scalar::GetValueTypeForSignedIntegerWithByteSize (size_t byte_size)
 {
-    if (byte_size <= sizeof(int))
+    if (byte_size <= sizeof(sint_t))
         return e_sint;
-    if (byte_size <= sizeof(long))
+    if (byte_size <= sizeof(slong_t))
         return e_slong;
-    if (byte_size <= sizeof(long long))
+    if (byte_size <= sizeof(slonglong_t))
         return e_slonglong;
     return e_void;
 }
@@ -537,11 +537,11 @@ Scalar::GetValueTypeForSignedIntegerWithByteSize (size_t byte_size)
 Scalar::Type
 Scalar::GetValueTypeForUnsignedIntegerWithByteSize (size_t byte_size)
 {
-    if (byte_size <= sizeof(unsigned int))
+    if (byte_size <= sizeof(uint_t))
         return e_uint;
-    if (byte_size <= sizeof(unsigned long))
+    if (byte_size <= sizeof(ulong_t))
         return e_ulong;
-    if (byte_size <= sizeof(unsigned long long))
+    if (byte_size <= sizeof(ulonglong_t))
         return e_ulonglong;
     return e_void;
 }
@@ -549,11 +549,11 @@ Scalar::GetValueTypeForUnsignedIntegerWithByteSize (size_t byte_size)
 Scalar::Type
 Scalar::GetValueTypeForFloatWithByteSize (size_t byte_size)
 {
-    if (byte_size == sizeof(float))
+    if (byte_size == sizeof(float_t))
         return e_float;
-    if (byte_size == sizeof(double))
+    if (byte_size == sizeof(double_t))
         return e_double;
-    if (byte_size == sizeof(long double))
+    if (byte_size == sizeof(long_double_t))
         return e_long_double;
     return e_void;
 }
@@ -603,8 +603,8 @@ Scalar::Cast(Scalar::Type type)
         switch (type)
         {
         case e_void:
-        case e_sint:        m_data.sint         = m_data.slong;     success = true; break;
-        case e_uint:        m_data.uint         = m_data.slong;     success = true; break;
+        case e_sint:        m_data.sint         = (sint_t)m_data.slong;     success = true; break;
+        case e_uint:        m_data.uint         = (uint_t)m_data.slong;     success = true; break;
         case e_slong:       success = true; break;
         case e_ulong:       m_data.ulong        = m_data.slong;     success = true; break;
         case e_slonglong:   m_data.slonglong    = m_data.slong;     success = true; break;
@@ -619,8 +619,8 @@ Scalar::Cast(Scalar::Type type)
         switch (type)
         {
         case e_void:
-        case e_sint:        m_data.sint         = m_data.ulong;     success = true; break;
-        case e_uint:        m_data.uint         = m_data.ulong;     success = true; break;
+        case e_sint:        m_data.sint         = (sint_t)m_data.ulong;     success = true; break;
+        case e_uint:        m_data.uint         = (uint_t)m_data.ulong;     success = true; break;
         case e_slong:       m_data.slong        = m_data.ulong;     success = true; break;
         case e_ulong:       success = true; break;
         case e_slonglong:   m_data.slonglong    = m_data.ulong;     success = true; break;
@@ -635,8 +635,8 @@ Scalar::Cast(Scalar::Type type)
         switch (type)
         {
         case e_void:
-        case e_sint:        m_data.sint         = m_data.slonglong;     success = true; break;
-        case e_uint:        m_data.uint         = m_data.slonglong;     success = true; break;
+        case e_sint:        m_data.sint         = (sint_t)m_data.slonglong;     success = true; break;
+        case e_uint:        m_data.uint         = (uint_t)m_data.slonglong;     success = true; break;
         case e_slong:       m_data.slong        = m_data.slonglong;     success = true; break;
         case e_ulong:       m_data.ulong        = m_data.slonglong;     success = true; break;
         case e_slonglong:   success = true; break;
@@ -651,8 +651,8 @@ Scalar::Cast(Scalar::Type type)
         switch (type)
         {
         case e_void:
-        case e_sint:        m_data.sint         = m_data.ulonglong;     success = true; break;
-        case e_uint:        m_data.uint         = m_data.ulonglong;     success = true; break;
+        case e_sint:        m_data.sint         = (sint_t)m_data.ulonglong;     success = true; break;
+        case e_uint:        m_data.uint         = (uint_t)m_data.ulonglong;     success = true; break;
         case e_slong:       m_data.slong        = m_data.ulonglong;     success = true; break;
         case e_ulong:       m_data.ulong        = m_data.ulonglong;     success = true; break;
         case e_slonglong:   m_data.slonglong    = m_data.ulonglong;     success = true; break;
@@ -667,15 +667,15 @@ Scalar::Cast(Scalar::Type type)
         switch (type)
         {
         case e_void:
-        case e_sint:        m_data.sint         = m_data.flt;       success = true; break;
-        case e_uint:        m_data.uint         = m_data.flt;       success = true; break;
-        case e_slong:       m_data.slong        = m_data.flt;       success = true; break;
-        case e_ulong:       m_data.ulong        = m_data.flt;       success = true; break;
-        case e_slonglong:   m_data.slonglong    = m_data.flt;       success = true; break;
-        case e_ulonglong:   m_data.ulonglong    = m_data.flt;       success = true; break;
+        case e_sint:        m_data.sint         = (sint_t)m_data.flt;       success = true; break;
+        case e_uint:        m_data.uint         = (uint_t)m_data.flt;       success = true; break;
+        case e_slong:       m_data.slong        = (slong_t)m_data.flt;      success = true; break;
+        case e_ulong:       m_data.ulong        = (ulong_t)m_data.flt;      success = true; break;
+        case e_slonglong:   m_data.slonglong    = (slonglong_t)m_data.flt;  success = true; break;
+        case e_ulonglong:   m_data.ulonglong    = (ulonglong_t)m_data.flt;  success = true; break;
         case e_float:       success = true; break;
-        case e_double:      m_data.dbl          = m_data.flt;       success = true; break;
-        case e_long_double: m_data.ldbl         = m_data.flt;       success = true; break;
+        case e_double:      m_data.dbl          = m_data.flt;               success = true; break;
+        case e_long_double: m_data.ldbl         = m_data.flt;               success = true; break;
         }
         break;
 
@@ -683,15 +683,15 @@ Scalar::Cast(Scalar::Type type)
         switch (type)
         {
         case e_void:
-        case e_sint:        m_data.sint         = m_data.dbl;       success = true; break;
-        case e_uint:        m_data.uint         = m_data.dbl;       success = true; break;
-        case e_slong:       m_data.slong        = m_data.dbl;       success = true; break;
-        case e_ulong:       m_data.ulong        = m_data.dbl;       success = true; break;
-        case e_slonglong:   m_data.slonglong    = m_data.dbl;       success = true; break;
-        case e_ulonglong:   m_data.ulonglong    = m_data.dbl;       success = true; break;
-        case e_float:       m_data.flt          = m_data.dbl;       success = true; break;
+        case e_sint:        m_data.sint         = (sint_t)m_data.dbl;       success = true; break;
+        case e_uint:        m_data.uint         = (uint_t)m_data.dbl;       success = true; break;
+        case e_slong:       m_data.slong        = (slong_t)m_data.dbl;      success = true; break;
+        case e_ulong:       m_data.ulong        = (ulong_t)m_data.dbl;      success = true; break;
+        case e_slonglong:   m_data.slonglong    = (slonglong_t)m_data.dbl;  success = true; break;
+        case e_ulonglong:   m_data.ulonglong    = (ulonglong_t)m_data.dbl;  success = true; break;
+        case e_float:       m_data.flt          = (float_t)m_data.dbl;      success = true; break;
         case e_double:      success = true; break;
-        case e_long_double: m_data.ldbl         = m_data.dbl;       success = true; break;
+        case e_long_double: m_data.ldbl         = m_data.dbl;               success = true; break;
         }
         break;
 
@@ -699,14 +699,14 @@ Scalar::Cast(Scalar::Type type)
         switch (type)
         {
         case e_void:
-        case e_sint:        m_data.sint         = m_data.ldbl;      success = true; break;
-        case e_uint:        m_data.uint         = m_data.ldbl;      success = true; break;
-        case e_slong:       m_data.slong        = m_data.ldbl;      success = true; break;
-        case e_ulong:       m_data.ulong        = m_data.ldbl;      success = true; break;
-        case e_slonglong:   m_data.slonglong    = m_data.ldbl;      success = true; break;
-        case e_ulonglong:   m_data.ulonglong    = m_data.ldbl;      success = true; break;
-        case e_float:       m_data.flt          = m_data.ldbl;      success = true; break;
-        case e_double:      m_data.dbl          = m_data.ldbl;      success = true; break;
+        case e_sint:        m_data.sint         = (sint_t)m_data.ldbl;      success = true; break;
+        case e_uint:        m_data.uint         = (uint_t)m_data.ldbl;      success = true; break;
+        case e_slong:       m_data.slong        = (slong_t)m_data.ldbl;     success = true; break;
+        case e_ulong:       m_data.ulong        = (ulong_t)m_data.ldbl;     success = true; break;
+        case e_slonglong:   m_data.slonglong    = (slonglong_t)m_data.ldbl; success = true; break;
+        case e_ulonglong:   m_data.ulonglong    = (ulonglong_t)m_data.ldbl; success = true; break;
+        case e_float:       m_data.flt          = (float_t)m_data.ldbl;     success = true; break;
+        case e_double:      m_data.dbl          = (double_t)m_data.ldbl;    success = true; break;
         case e_long_double: success = true; break;
         }
         break;
@@ -817,29 +817,29 @@ Scalar::GetRawBits64(uint64_t fail_value) const
         return m_data.ulonglong;
 
     case e_float:
-        if (sizeof(m_data.flt) == sizeof(int))
+        if (sizeof(m_data.flt) == sizeof(m_data.uint))
             return m_data.uint;
-        else if (sizeof(m_data.flt) == sizeof(unsigned long))
+        else if (sizeof(m_data.flt) == sizeof(m_data.ulong))
             return m_data.ulong;
-        else if (sizeof(m_data.flt) == sizeof(unsigned long long))
+        else if (sizeof(m_data.flt) == sizeof(m_data.ulonglong))
             return m_data.ulonglong;
         break;
 
     case e_double:
-        if (sizeof(m_data.dbl) == sizeof(int))
+        if (sizeof(m_data.dbl) == sizeof(m_data.uint))
             return m_data.uint;
-        else if (sizeof(m_data.dbl) == sizeof(unsigned long))
+        else if (sizeof(m_data.dbl) == sizeof(m_data.ulong))
             return m_data.ulong;
-        else if (sizeof(m_data.dbl) == sizeof(unsigned long long))
+        else if (sizeof(m_data.dbl) == sizeof(m_data.ulonglong))
             return m_data.ulonglong;
         break;
 
     case e_long_double:
-        if (sizeof(m_data.ldbl) == sizeof(int))
+        if (sizeof(m_data.ldbl) == sizeof(m_data.uint))
             return m_data.uint;
-        else if (sizeof(m_data.ldbl) == sizeof(unsigned long))
+        else if (sizeof(m_data.ldbl) == sizeof(m_data.ulong))
             return m_data.ulong;
-        else if (sizeof(m_data.ldbl) == sizeof(unsigned long long))
+        else if (sizeof(m_data.ldbl) == sizeof(m_data.ulonglong))
             return m_data.ulonglong;
         break;
     }
@@ -1719,6 +1719,22 @@ lldb_private::operator^ (const Scalar& lhs, const Scalar& rhs)
     return result;
 }
 
+const Scalar
+lldb_private::operator<< (const Scalar& lhs, const Scalar &rhs)
+{
+    Scalar result = lhs;
+    result <<= rhs;
+    return result;
+}
+
+const Scalar
+lldb_private::operator>> (const Scalar& lhs, const Scalar &rhs)
+{
+    Scalar result = lhs;
+    result >>= rhs;
+    return result;
+}
+
 // Return the raw unsigned integer without any casting or conversion
 unsigned int
 Scalar::RawUInt () const
@@ -1742,7 +1758,7 @@ Scalar::RawULongLong () const
 
 
 Error
-Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t byte_size)
+Scalar::SetValueFromCString (const char *value_str, Encoding encoding, size_t byte_size)
 {
     Error error;
     if (value_str == NULL || value_str[0] == '\0')
@@ -1764,28 +1780,24 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
             if (!success)
                 error.SetErrorStringWithFormat ("'%s' is not a valid unsigned integer string value", value_str);
             else if (!UIntValueIsValidForSize (uval64, byte_size))
-#ifdef _WIN32
-                error.SetErrorStringWithFormat ("value 0x%llu is too large to fit in a %u byte unsigned integer value", uval64, byte_size);
-#else
-                error.SetErrorStringWithFormat ("value 0x%" PRIx64 " is too large to fit in a %u byte unsigned integer value", uval64, byte_size);
-#endif
+                error.SetErrorStringWithFormat ("value 0x%" PRIx64 " is too large to fit in a %zu byte unsigned integer value", uval64, byte_size);
             else
             {
                 m_type = Scalar::GetValueTypeForUnsignedIntegerWithByteSize (byte_size);
                 switch (m_type)
                 {
-                case e_uint:        m_data.uint = uval64;       break;
-                case e_ulong:       m_data.ulong = uval64;      break;
-                case e_ulonglong:   m_data.ulonglong = uval64;  break;
+                case e_uint:        m_data.uint = (uint_t)uval64;           break;
+                case e_ulong:       m_data.ulong = (ulong_t)uval64;         break;
+                case e_ulonglong:   m_data.ulonglong = (ulonglong_t)uval64; break;
                 default:
-                    error.SetErrorStringWithFormat ("unsupported unsigned integer byte size: %u", byte_size);
+                    error.SetErrorStringWithFormat ("unsupported unsigned integer byte size: %zu", byte_size);
                     break;
                 }
             }
         }
         else
         {
-            error.SetErrorStringWithFormat ("unsupported unsigned integer byte size: %u", byte_size);
+            error.SetErrorStringWithFormat ("unsupported unsigned integer byte size: %zu", byte_size);
             return error;
         }
         break;
@@ -1797,28 +1809,24 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
             if (!success)
                 error.SetErrorStringWithFormat ("'%s' is not a valid signed integer string value", value_str);
             else if (!SIntValueIsValidForSize (sval64, byte_size))
-#ifdef _WIN32
-                error.SetErrorStringWithFormat ("value 0x%llu is too large to fit in a %u byte signed integer value", sval64, byte_size);
-#else
-                error.SetErrorStringWithFormat ("value 0x%" PRIx64 " is too large to fit in a %u byte signed integer value", sval64, byte_size);
-#endif
+                error.SetErrorStringWithFormat ("value 0x%" PRIx64 " is too large to fit in a %zu byte signed integer value", sval64, byte_size);
             else
             {
                 m_type = Scalar::GetValueTypeForSignedIntegerWithByteSize (byte_size);
                 switch (m_type)
                 {
-                case e_sint:        m_data.sint = sval64;       break;
-                case e_slong:       m_data.slong = sval64;      break;
-                case e_slonglong:   m_data.slonglong = sval64;  break;
+                case e_sint:        m_data.sint = (sint_t)sval64;           break;
+                case e_slong:       m_data.slong = (slong_t)sval64;         break;
+                case e_slonglong:   m_data.slonglong = (slonglong_t)sval64; break;
                 default:
-                    error.SetErrorStringWithFormat ("unsupported signed integer byte size: %u", byte_size);
+                    error.SetErrorStringWithFormat ("unsupported signed integer byte size: %zu", byte_size);
                     break;
                 }
             }
         }
         else
         {
-            error.SetErrorStringWithFormat ("unsupported signed integer byte size: %u", byte_size);
+            error.SetErrorStringWithFormat ("unsupported signed integer byte size: %zu", byte_size);
             return error;
         }
         break;
@@ -1847,7 +1855,7 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
         }
         else
         {
-            error.SetErrorStringWithFormat ("unsupported float byte size: %u", byte_size);
+            error.SetErrorStringWithFormat ("unsupported float byte size: %zu", byte_size);
             return error;
         }
         break;
@@ -1859,6 +1867,70 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
     if (error.Fail())
         m_type = e_void;
 
+    return error;
+}
+
+Error
+Scalar::SetValueFromData (DataExtractor &data, lldb::Encoding encoding, size_t byte_size)
+{
+    Error error;
+    
+    switch (encoding)
+    {
+    case lldb::eEncodingInvalid:
+        error.SetErrorString ("invalid encoding");
+        break;
+    case lldb::eEncodingVector:
+        error.SetErrorString ("vector encoding unsupported");
+        break;
+    case lldb::eEncodingUint:
+        {
+            lldb::offset_t offset;
+            
+            switch (byte_size)
+            {
+            case 1: operator=((uint8_t)data.GetU8(&offset)); break;
+            case 2: operator=((uint16_t)data.GetU16(&offset)); break;
+            case 4: operator=((uint32_t)data.GetU32(&offset)); break;
+            case 8: operator=((uint64_t)data.GetU64(&offset)); break;
+            default:
+                error.SetErrorStringWithFormat ("unsupported unsigned integer byte size: %zu", byte_size);
+                break;
+            }
+        }
+        break;
+    case lldb::eEncodingSint:
+        {
+            lldb::offset_t offset;
+            
+            switch (byte_size)
+            {
+            case 1: operator=((int8_t)data.GetU8(&offset)); break;
+            case 2: operator=((int16_t)data.GetU16(&offset)); break;
+            case 4: operator=((int32_t)data.GetU32(&offset)); break;
+            case 8: operator=((int64_t)data.GetU64(&offset)); break;
+            default:
+                error.SetErrorStringWithFormat ("unsupported signed integer byte size: %zu", byte_size);
+                break;
+            }
+        }
+        break;
+    case lldb::eEncodingIEEE754:
+        {
+            lldb::offset_t offset;
+            
+            if (byte_size == sizeof (float))
+                operator=((float)data.GetFloat(&offset));
+            else if (byte_size == sizeof (double))
+                operator=((double)data.GetDouble(&offset));
+            else if (byte_size == sizeof (long double))
+                operator=((long double)data.GetLongDouble(&offset));
+            else
+                error.SetErrorStringWithFormat ("unsupported float byte size: %zu", byte_size);
+        }
+        break;
+    }
+    
     return error;
 }
 
@@ -1929,9 +2001,9 @@ Scalar::SignExtend (uint32_t sign_bit_pos)
     return false;
 }
 
-uint32_t
+size_t
 Scalar::GetAsMemoryData (void *dst,
-                         uint32_t dst_len, 
+                         size_t dst_len, 
                          lldb::ByteOrder dst_byte_order,
                          Error &error) const
 {
@@ -1946,7 +2018,7 @@ Scalar::GetAsMemoryData (void *dst,
     const size_t src_len = data.GetByteSize();
 
     // Prepare a memory buffer that contains some or all of the register value
-    const uint32_t bytes_copied = data.CopyByteOrderedData (0,                  // src offset
+    const size_t bytes_copied = data.CopyByteOrderedData (0,                  // src offset
                                                             src_len,            // src length
                                                             dst,                // dst buffer
                                                             dst_len,            // dst length
@@ -1984,60 +2056,60 @@ Scalar::ExtractBitfield (uint32_t bit_size,
             break;
             
         case e_float:
-            if (sizeof(m_data.flt) == sizeof(int))
-                m_data.sint = SignedBits (m_data.sint, msbit, lsbit);
-            else if (sizeof(m_data.flt) == sizeof(unsigned long))
-                m_data.slong = SignedBits (m_data.slong, msbit, lsbit);
-            else if (sizeof(m_data.flt) == sizeof(unsigned long long))
-                m_data.slonglong = SignedBits (m_data.slonglong, msbit, lsbit);
+            if (sizeof(m_data.flt) == sizeof(sint_t))
+                m_data.sint = (sint_t)SignedBits (m_data.sint, msbit, lsbit);
+            else if (sizeof(m_data.flt) == sizeof(ulong_t))
+                m_data.slong = (slong_t)SignedBits (m_data.slong, msbit, lsbit);
+            else if (sizeof(m_data.flt) == sizeof(ulonglong_t))
+                m_data.slonglong = (slonglong_t)SignedBits (m_data.slonglong, msbit, lsbit);
             else
                 return false;
             return true;
             
         case e_double:
-            if (sizeof(m_data.dbl) == sizeof(int))
+            if (sizeof(m_data.dbl) == sizeof(sint_t))
                 m_data.sint = SignedBits (m_data.sint, msbit, lsbit);
-            else if (sizeof(m_data.dbl) == sizeof(unsigned long))
+            else if (sizeof(m_data.dbl) == sizeof(ulong_t))
                 m_data.slong = SignedBits (m_data.slong, msbit, lsbit);
-            else if (sizeof(m_data.dbl) == sizeof(unsigned long long))
+            else if (sizeof(m_data.dbl) == sizeof(ulonglong_t))
                 m_data.slonglong = SignedBits (m_data.slonglong, msbit, lsbit);
             else
                 return false;
             return true;
             
         case e_long_double:
-            if (sizeof(m_data.ldbl) == sizeof(int))
+            if (sizeof(m_data.ldbl) == sizeof(sint_t))
                 m_data.sint = SignedBits (m_data.sint, msbit, lsbit);
-            else if (sizeof(m_data.ldbl) == sizeof(unsigned long))
+            else if (sizeof(m_data.ldbl) == sizeof(ulong_t))
                 m_data.slong = SignedBits (m_data.slong, msbit, lsbit);
-            else if (sizeof(m_data.ldbl) == sizeof(unsigned long long))
+            else if (sizeof(m_data.ldbl) == sizeof(ulonglong_t))
                 m_data.slonglong = SignedBits (m_data.slonglong, msbit, lsbit);
             else
                 return false;
             return true;
             
         case Scalar::e_sint:
-            m_data.sint = SignedBits (m_data.sint, msbit, lsbit);
+            m_data.sint = (sint_t)SignedBits (m_data.sint, msbit, lsbit);
             return true;
 
         case Scalar::e_uint:
-            m_data.uint = UnsignedBits (m_data.uint, msbit, lsbit);
+            m_data.uint = (uint_t)UnsignedBits (m_data.uint, msbit, lsbit);
             return true;
             
         case Scalar::e_slong:
-            m_data.slong = SignedBits (m_data.slong, msbit, lsbit);
+            m_data.slong = (slong_t)SignedBits (m_data.slong, msbit, lsbit);
             return true;
 
         case Scalar::e_ulong:
-            m_data.ulong = SignedBits (m_data.ulong, msbit, lsbit);
+            m_data.ulong = (ulong_t)UnsignedBits (m_data.ulong, msbit, lsbit);
             return true;
             
         case Scalar::e_slonglong:
-            m_data.slonglong = SignedBits (m_data.slonglong, msbit, lsbit);
+            m_data.slonglong = (slonglong_t)SignedBits (m_data.slonglong, msbit, lsbit);
             return true;
 
         case Scalar::e_ulonglong:
-            m_data.ulonglong = SignedBits (m_data.ulonglong, msbit, lsbit);
+            m_data.ulonglong = (ulonglong_t)UnsignedBits (m_data.ulonglong, msbit, lsbit);
             return true;
     }
     return false;

@@ -16,29 +16,11 @@
 #if defined(__FreeBSD__)
 #include <readline/readline.h>
 #else
-#ifndef _WIN32
 #include <editline/readline.h>
 #endif
-#endif
-
-#ifndef _WIN32
 #include <histedit.h>
-#else
-struct EditLine;
-struct History;
-struct HistEvent {};
-#include <Winsock2.h>
-#undef GetUserName
-#endif
-
-#include "llvm/Support/Mutex.h"
-
-#ifdef _POSIX_SOURCE
 #include <pthread.h>
 #include <sys/time.h>
-#else
-#include <ctime>
-#endif
 
 #include "Driver.h"
 
@@ -72,7 +54,7 @@ public:
     bool
     Stop ();
 
-    static lldb::thread_result_t
+    static void *
     IOReadThread (void *);
 
     void
@@ -122,6 +104,9 @@ public:
 
     static unsigned char 
     ElCompletionFn (EditLine *e, int ch);
+    
+    void
+    ElResize();
 
 protected:
 
@@ -133,7 +118,7 @@ protected:
 
 private:
 
-    llvm::sys::Mutex m_output_mutex;
+    pthread_mutex_t m_output_mutex;
     struct timeval m_enter_elgets_time;
 
     Driver *m_driver;
@@ -149,7 +134,7 @@ private:
     HistEvent m_history_event;
     bool m_getting_command;
     bool m_expecting_prompt;
-    std::string m_prompt_str;  // for accumlating the prompt as it gets written out by editline
+	std::string m_prompt_str;  // for accumlating the prompt as it gets written out by editline
     bool m_refresh_request_pending;
 
     void
@@ -163,13 +148,13 @@ class IOLocker
 {
 public:
 
-    IOLocker (llvm::sys::Mutex &mutex);
+    IOLocker (pthread_mutex_t &mutex);
 
     ~IOLocker ();
 
 protected:
 
-    llvm::sys::Mutex *m_mutex_ptr;
+    pthread_mutex_t *m_mutex_ptr;
 
 private:
 

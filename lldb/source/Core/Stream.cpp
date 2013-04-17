@@ -66,10 +66,10 @@ Stream::Offset (uint32_t uval, const char *format)
 // Put an SLEB128 "uval" out to the stream using the printf format
 // in "format".
 //------------------------------------------------------------------
-int
+size_t
 Stream::PutSLEB128 (int64_t sval)
 {
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     if (m_flags.Test(eBinary))
     {
         bool more = true;
@@ -89,11 +89,7 @@ Stream::PutSLEB128 (int64_t sval)
     }
     else
     {
-#ifdef _WIN32
-        bytes_written = Printf ("0x%llu", sval);
-#else
         bytes_written = Printf ("0x%" PRIi64, sval);
-#endif
     }
 
     return bytes_written;
@@ -104,10 +100,10 @@ Stream::PutSLEB128 (int64_t sval)
 // Put an ULEB128 "uval" out to the stream using the printf format
 // in "format".
 //------------------------------------------------------------------
-int
+size_t
 Stream::PutULEB128 (uint64_t uval)
 {
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     if (m_flags.Test(eBinary))
     {
         do
@@ -125,11 +121,7 @@ Stream::PutULEB128 (uint64_t uval)
     }
     else
     {
-#ifdef _WIN32
-        bytes_written = Printf ("0x%llu", uval);
-#else
         bytes_written = Printf ("0x%" PRIi64, uval);
-#endif
     }
     return bytes_written;
 }
@@ -137,10 +129,10 @@ Stream::PutULEB128 (uint64_t uval)
 //------------------------------------------------------------------
 // Print a raw NULL terminated C string to the stream.
 //------------------------------------------------------------------
-int
+size_t
 Stream::PutCString (const char *cstr)
 {
-    int cstr_len = strlen(cstr);
+    size_t cstr_len = strlen(cstr);
     // when in binary mode, emit the NULL terminator
     if (m_flags.Test(eBinary))
         ++cstr_len;
@@ -162,7 +154,7 @@ Stream::QuotedCString (const char *cstr, const char *format)
 // and suffix strings.
 //------------------------------------------------------------------
 void
-Stream::Address (uint64_t addr, int addr_size, const char *prefix, const char *suffix)
+Stream::Address (uint64_t addr, uint32_t addr_size, const char *prefix, const char *suffix)
 {
     if (prefix == NULL)
         prefix = "";
@@ -170,11 +162,7 @@ Stream::Address (uint64_t addr, int addr_size, const char *prefix, const char *s
         suffix = "";
 //    int addr_width = m_addr_size << 1;
 //    Printf ("%s0x%0*" PRIx64 "%s", prefix, addr_width, addr, suffix);
-#if _WIN32
-    Printf ("%s0x%d*%llu%s", prefix, addr_size * 2, (uint64_t)addr, suffix);
-#else
     Printf ("%s0x%0*" PRIx64 "%s", prefix, addr_size * 2, (uint64_t)addr, suffix);
-#endif
 }
 
 //------------------------------------------------------------------
@@ -182,7 +170,7 @@ Stream::Address (uint64_t addr, int addr_size, const char *prefix, const char *s
 // and suffix strings.
 //------------------------------------------------------------------
 void
-Stream::AddressRange(uint64_t lo_addr, uint64_t hi_addr, int addr_size, const char *prefix, const char *suffix)
+Stream::AddressRange(uint64_t lo_addr, uint64_t hi_addr, uint32_t addr_size, const char *prefix, const char *suffix)
 {
     if (prefix && prefix[0])
         PutCString (prefix);
@@ -193,7 +181,7 @@ Stream::AddressRange(uint64_t lo_addr, uint64_t hi_addr, int addr_size, const ch
 }
 
 
-int
+size_t
 Stream::PutChar (char ch)
 {
     return Write (&ch, 1);
@@ -203,7 +191,7 @@ Stream::PutChar (char ch)
 //------------------------------------------------------------------
 // Print some formatted output to the stream.
 //------------------------------------------------------------------
-int
+size_t
 Stream::Printf (const char *format, ...)
 {
     va_list args;
@@ -216,7 +204,7 @@ Stream::Printf (const char *format, ...)
 //------------------------------------------------------------------
 // Print some formatted output to the stream.
 //------------------------------------------------------------------
-int
+size_t
 Stream::PrintfVarArg (const char *format, va_list args)
 {
     char str[1024];
@@ -224,7 +212,7 @@ Stream::PrintfVarArg (const char *format, va_list args)
 
     va_copy (args_copy, args);
 
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     // Try and format our string into a fixed buffer first and see if it fits
     size_t length = ::vsnprintf (str, sizeof(str), format, args);
     if (length < sizeof(str))
@@ -258,7 +246,7 @@ Stream::PrintfVarArg (const char *format, va_list args)
 //------------------------------------------------------------------
 // Print and End of Line character to the stream
 //------------------------------------------------------------------
-int
+size_t
 Stream::EOL()
 {
     return PutChar ('\n');
@@ -268,7 +256,7 @@ Stream::EOL()
 // Indent the current line using the current indentation level and
 // print an optional string following the idenatation spaces.
 //------------------------------------------------------------------
-int
+size_t
 Stream::Indent(const char *s)
 {
     return Printf ("%*.*s%s", m_indent_level, m_indent_level, "", s ? s : "");
@@ -380,11 +368,7 @@ Stream::operator<< (int32_t sval)
 Stream&
 Stream::operator<< (int64_t sval)
 {
-#if _WIN32
-    Printf ("%llu", sval);
-#else
     Printf ("%" PRIi64, sval);
-#endif
     return *this;
 }
 
@@ -430,7 +414,7 @@ Stream::IndentLess (int amount)
 //------------------------------------------------------------------
 // Get the address size in bytes
 //------------------------------------------------------------------
-uint8_t
+uint32_t
 Stream::GetAddressByteSize() const
 {
     return m_addr_size;
@@ -440,7 +424,7 @@ Stream::GetAddressByteSize() const
 // Set the address size in bytes
 //------------------------------------------------------------------
 void
-Stream::SetAddressByteSize(uint8_t addr_size)
+Stream::SetAddressByteSize(uint32_t addr_size)
 {
     m_addr_size = addr_size;
 }
@@ -491,7 +475,7 @@ Stream::GetByteOrder() const
     return m_byte_order;
 }
 
-int
+size_t
 Stream::PrintfAsRawHex8 (const char *format, ...)
 {
     va_list args;
@@ -500,7 +484,7 @@ Stream::PrintfAsRawHex8 (const char *format, ...)
     va_copy (args, args_copy); // Copy this so we
 
     char str[1024];
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     // Try and format our string into a fixed buffer first and see if it fits
     size_t length = ::vsnprintf (str, sizeof(str), format, args);
     if (length < sizeof(str))
@@ -529,19 +513,19 @@ Stream::PrintfAsRawHex8 (const char *format, ...)
     return bytes_written;
 }
 
-int
+size_t
 Stream::PutNHex8 (size_t n, uint8_t uvalue)
 {
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     for (size_t i=0; i<n; ++i)
         bytes_written += _PutHex8 (uvalue, m_flags.Test(eAddPrefix));
     return bytes_written;
 }
 
-int
+size_t
 Stream::_PutHex8 (uint8_t uvalue, bool add_prefix)
 {
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     if (m_flags.Test(eBinary))
     {
         bytes_written = Write (&uvalue, 1);
@@ -560,76 +544,76 @@ Stream::_PutHex8 (uint8_t uvalue, bool add_prefix)
     return bytes_written;
 }
 
-int
+size_t
 Stream::PutHex8 (uint8_t uvalue)
 {
     return _PutHex8 (uvalue, m_flags.Test(eAddPrefix));
 }
 
-int
+size_t
 Stream::PutHex16 (uint16_t uvalue, ByteOrder byte_order)
 {
     if (byte_order == eByteOrderInvalid)
         byte_order = m_byte_order;
 
     bool add_prefix = m_flags.Test(eAddPrefix);
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     if (byte_order == eByteOrderLittle)
     {
         for (size_t byte = 0; byte < sizeof(uvalue); ++byte, add_prefix = false)
-            bytes_written += _PutHex8 (uvalue >> (byte * 8), add_prefix);
+            bytes_written += _PutHex8 ((uint8_t)(uvalue >> (byte * 8)), add_prefix);
     }
     else
     {
         for (size_t byte = sizeof(uvalue)-1; byte < sizeof(uvalue); --byte, add_prefix = false)
-            bytes_written += _PutHex8 (uvalue >> (byte * 8), add_prefix);
+            bytes_written += _PutHex8 ((uint8_t)(uvalue >> (byte * 8)), add_prefix);
     }
     return bytes_written;
 }
 
-int
+size_t
 Stream::PutHex32(uint32_t uvalue, ByteOrder byte_order)
 {
     if (byte_order == eByteOrderInvalid)
         byte_order = m_byte_order;
 
     bool add_prefix = m_flags.Test(eAddPrefix);
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     if (byte_order == eByteOrderLittle)
     {
         for (size_t byte = 0; byte < sizeof(uvalue); ++byte, add_prefix = false)
-            bytes_written += _PutHex8 (uvalue >> (byte * 8), add_prefix);
+            bytes_written += _PutHex8 ((uint8_t)(uvalue >> (byte * 8)), add_prefix);
     }
     else
     {
         for (size_t byte = sizeof(uvalue)-1; byte < sizeof(uvalue); --byte, add_prefix = false)
-            bytes_written += _PutHex8 (uvalue >> (byte * 8), add_prefix);
+            bytes_written += _PutHex8 ((uint8_t)(uvalue >> (byte * 8)), add_prefix);
     }
     return bytes_written;
 }
 
-int
+size_t
 Stream::PutHex64(uint64_t uvalue, ByteOrder byte_order)
 {
     if (byte_order == eByteOrderInvalid)
         byte_order = m_byte_order;
 
     bool add_prefix = m_flags.Test(eAddPrefix);
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     if (byte_order == eByteOrderLittle)
     {
         for (size_t byte = 0; byte < sizeof(uvalue); ++byte, add_prefix = false)
-            bytes_written += _PutHex8 (uvalue >> (byte * 8), add_prefix);
+            bytes_written += _PutHex8 ((uint8_t)(uvalue >> (byte * 8)), add_prefix);
     }
     else
     {
         for (size_t byte = sizeof(uvalue)-1; byte < sizeof(uvalue); --byte, add_prefix = false)
-            bytes_written += _PutHex8 (uvalue >> (byte * 8), add_prefix);
+            bytes_written += _PutHex8 ((uint8_t)(uvalue >> (byte * 8)), add_prefix);
     }
     return bytes_written;
 }
 
-int
+size_t
 Stream::PutMaxHex64
 (
     uint64_t uvalue,
@@ -639,21 +623,21 @@ Stream::PutMaxHex64
 {
     switch (byte_size)
     {
-    case 1: return PutHex8 (uvalue);
-    case 2: return PutHex16 (uvalue);
-    case 4: return PutHex32 (uvalue);
+    case 1: return PutHex8  ((uint8_t)uvalue);
+    case 2: return PutHex16 ((uint16_t)uvalue);
+    case 4: return PutHex32 ((uint32_t)uvalue);
     case 8: return PutHex64 (uvalue);
     }
     return 0;
 }
 
-int
+size_t
 Stream::PutPointer (void *ptr)
 {
     return PutRawBytes (&ptr, sizeof(ptr), lldb::endian::InlHostByteOrder(), lldb::endian::InlHostByteOrder());
 }
 
-int
+size_t
 Stream::PutFloat(float f, ByteOrder byte_order)
 {
     if (byte_order == eByteOrderInvalid)
@@ -662,7 +646,7 @@ Stream::PutFloat(float f, ByteOrder byte_order)
     return PutRawBytes (&f, sizeof(f), lldb::endian::InlHostByteOrder(), byte_order);
 }
 
-int
+size_t
 Stream::PutDouble(double d, ByteOrder byte_order)
 {
     if (byte_order == eByteOrderInvalid)
@@ -671,7 +655,7 @@ Stream::PutDouble(double d, ByteOrder byte_order)
     return PutRawBytes (&d, sizeof(d), lldb::endian::InlHostByteOrder(), byte_order);
 }
 
-int
+size_t
 Stream::PutLongDouble(long double ld, ByteOrder byte_order)
 {
     if (byte_order == eByteOrderInvalid)
@@ -680,7 +664,7 @@ Stream::PutLongDouble(long double ld, ByteOrder byte_order)
     return PutRawBytes (&ld, sizeof(ld), lldb::endian::InlHostByteOrder(), byte_order);
 }
 
-int
+size_t
 Stream::PutRawBytes (const void *s, size_t src_len, ByteOrder src_byte_order, ByteOrder dst_byte_order)
 {
     if (src_byte_order == eByteOrderInvalid)
@@ -689,7 +673,7 @@ Stream::PutRawBytes (const void *s, size_t src_len, ByteOrder src_byte_order, By
     if (dst_byte_order == eByteOrderInvalid)
         dst_byte_order = m_byte_order;
 
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     const uint8_t *src = (const uint8_t *)s;
     bool binary_was_set = m_flags.Test (eBinary);
     if (!binary_was_set)
@@ -710,7 +694,7 @@ Stream::PutRawBytes (const void *s, size_t src_len, ByteOrder src_byte_order, By
     return bytes_written;
 }
 
-int
+size_t
 Stream::PutBytesAsRawHex8 (const void *s, size_t src_len, ByteOrder src_byte_order, ByteOrder dst_byte_order)
 {
     if (src_byte_order == eByteOrderInvalid)
@@ -719,7 +703,7 @@ Stream::PutBytesAsRawHex8 (const void *s, size_t src_len, ByteOrder src_byte_ord
     if (dst_byte_order == eByteOrderInvalid)
         dst_byte_order = m_byte_order;
 
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     const uint8_t *src = (const uint8_t *)s;
     bool binary_is_set = m_flags.Test(eBinary);
     m_flags.Clear(eBinary);
@@ -739,10 +723,10 @@ Stream::PutBytesAsRawHex8 (const void *s, size_t src_len, ByteOrder src_byte_ord
     return bytes_written;
 }
 
-int
+size_t
 Stream::PutCStringAsRawHex8 (const char *s)
 {
-    int bytes_written = 0;
+    size_t bytes_written = 0;
     bool binary_is_set = m_flags.Test(eBinary);
     m_flags.Clear(eBinary);
     do

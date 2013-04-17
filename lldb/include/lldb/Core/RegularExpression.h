@@ -11,13 +11,37 @@
 #define liblldb_DBRegex_h_
 #if defined(__cplusplus)
 
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Regex.h"
+#ifdef _POSIX_SOURCE
+#include <regex.h>
+#else
+#include "../lib/Support/regex_impl.h"
+typedef llvm_regmatch_t regmatch_t;
+typedef llvm_regex_t regex_t;
+inline int	regcomp(llvm_regex_t * a, const char *b, int c) { 
+    return llvm_regcomp(a, b, c); 
+}
+inline size_t	regerror(int a, const llvm_regex_t *b, char *c, size_t d) {
+    return llvm_regerror(a, b, c, d);
+}
+inline int	regexec(const llvm_regex_t * a, const char * b, size_t c, 
+                     llvm_regmatch_t d[], int e) {
+    return llvm_regexec(a,b,c,d,e);
+}
+inline void	regfree(llvm_regex_t * a) {
+    llvm_regfree(a);
+}
+
+
+#endif
 #include <stdint.h>
 
 #include <string>
 #include <vector>
+
+namespace llvm
+{
+    class StringRef;
+}
 
 namespace lldb_private {
 
@@ -32,6 +56,52 @@ namespace lldb_private {
 class RegularExpression
 {
 public:
+    class Match
+    {
+    public:
+        Match (uint32_t max_matches) :
+            m_matches ()
+        {
+            if (max_matches > 0)
+                m_matches.resize(max_matches + 1);
+        }
+
+        void
+        Clear()
+        {
+            const size_t num_matches = m_matches.size();
+            regmatch_t invalid_match = { -1, -1 };
+            for (size_t i=0; i<num_matches; ++i)
+                m_matches[i] = invalid_match;
+        }
+
+        size_t
+        GetSize () const
+        {
+            return m_matches.size();
+        }
+        
+        regmatch_t *
+        GetData ()
+        {
+            if (m_matches.empty())
+                return NULL;
+            return m_matches.data();
+        }
+        
+        bool
+        GetMatchAtIndex (const char* s, uint32_t idx, std::string& match_str) const;
+        
+        bool
+        GetMatchAtIndex (const char* s, uint32_t idx, llvm::StringRef& match_str) const;
+        
+        bool
+        GetMatchSpanningIndices (const char* s, uint32_t idx1, uint32_t idx2, llvm::StringRef& match_str) const;
+
+    protected:
+        
+        std::vector<regmatch_t> m_matches; ///< Where parenthesized subexpressions results are stored
+    };
     //------------------------------------------------------------------
     /// Default constructor.
     ///
@@ -112,8 +182,10 @@ public:
     /// @param[in] string
     ///     The string to match against the compile regular expression.
     ///
-    /// @param[in] match_count
-    ///     The number of regmatch_t objects in \a match_ptr
+    /// @param[in] match
+    ///     A pointer to a RegularExpression::Match structure that was
+    ///     properly initialized with the desired number of maximum
+    ///     matches, or NULL if no parenthesized matching is needed.
     ///
     /// @param[in] execute_flags
     ///     Flags to pass to the \c regexec() function.
@@ -123,13 +195,13 @@ public:
     ///     expression, \b false otherwise.
     //------------------------------------------------------------------
     bool
-    Execute (const char* string, size_t match_count = 0, int execute_flags = 0) const;
+    Execute (const char* string, Match *match = NULL, int execute_flags = 0) const;
 
-    std::string
-    GetErrorAsCString () const;
+    size_t
+    GetErrorAsCString (char *err_str, size_t err_str_max_len) const;
 
-    bool
-    GetMatchAtIndex (const char* s, uint32_t idx, std::string& match_str) const;
+	std::string GetErrorAsCString () const;
+
     //------------------------------------------------------------------
     /// Free the compiled regular expression.
     ///
@@ -170,6 +242,21 @@ public:
     bool
     IsValid () const;
     
+    void
+    Clear ()
+    {
+        Free();
+        m_re.clear();
+        m_compile_flags = 0;
+        m_comp_err = 1;
+    }
+    
+    int
+    GetErrorCode() const
+    {
+        return m_comp_err;
+    }
+
     bool
     operator < (const RegularExpression& rhs) const;
 
@@ -177,14 +264,10 @@ private:
     //------------------------------------------------------------------
     // Member variables
     //------------------------------------------------------------------
-    mutable std::string m_re;   ///< A copy of the original regular expression text
-    mutable llvm::Regex* m_regex;     ///< The compiled regular expression
+    std::string m_re;   ///< A copy of the original regular expression text
+    int m_comp_err;     ///< Error code for the regular expression compilation
+    regex_t m_preg;     ///< The compiled regular expression
     int     m_compile_flags; ///< Stores the flags from the last compile.
-
-    typedef llvm::SmallVectorImpl<llvm::StringRef> MatchVectorImpl;
-    typedef llvm::SmallVector<llvm::StringRef, 1>  MatchVector;
-    mutable MatchVector m_matches;
-
 };
 
 } // namespace lldb_private

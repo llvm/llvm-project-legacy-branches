@@ -68,7 +68,7 @@ ThreadPlanStepOverRange::GetDescription (Stream *s, lldb::DescriptionLevel level
 bool
 ThreadPlanStepOverRange::ShouldStop (Event *event_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     if (log)
     {
@@ -290,7 +290,7 @@ ThreadPlanStepOverRange::ShouldStop (Event *event_ptr)
 }
 
 bool
-ThreadPlanStepOverRange::PlanExplainsStop ()
+ThreadPlanStepOverRange::PlanExplainsStop (Event *event_ptr)
 {
     // For crashes, breakpoint hits, signals, etc, let the base plan (or some plan above us)
     // handle the stop.  That way the user can see the stop, step around, and then when they
@@ -299,7 +299,7 @@ ThreadPlanStepOverRange::PlanExplainsStop ()
     // Note, unlike the step in range plan, we don't mark ourselves complete if we hit an
     // unexplained breakpoint/crash.
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     StopInfoSP stop_info_sp = GetPrivateStopReason();
     if (stop_info_sp)
     {
@@ -344,7 +344,7 @@ ThreadPlanStepOverRange::WillResume (lldb::StateType resume_state, bool current_
             bool in_inlined_stack = m_thread.DecrementCurrentInlinedDepth();
             if (in_inlined_stack)
             {
-                LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+                Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
                 if (log)
                     log->Printf ("ThreadPlanStepInRange::WillResume: adjusting range to the frame at inlined depth %d.",
                                  m_thread.GetCurrentInlinedDepth());

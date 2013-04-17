@@ -104,7 +104,7 @@ CommandObjectArgs::DoExecute (Args& args, CommandReturnObject &result)
     ConstString target_triple;
     
     
-    Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+    Process *process = m_exe_ctx.GetProcessPtr();
     if (!process)
     {
         result.AppendError ("Args found no process.");
@@ -120,7 +120,7 @@ CommandObjectArgs::DoExecute (Args& args, CommandReturnObject &result)
         return false;
     }
     
-    int num_args = args.GetArgumentCount ();
+    const size_t num_args = args.GetArgumentCount ();
     int arg_index;
     
     if (!num_args)
@@ -130,7 +130,7 @@ CommandObjectArgs::DoExecute (Args& args, CommandReturnObject &result)
         return false;
     }
     
-    Thread *thread = m_interpreter.GetExecutionContext ().GetThreadPtr();
+    Thread *thread = m_exe_ctx.GetThreadPtr();
     
     if (!thread)
     {

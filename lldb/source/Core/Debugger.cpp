@@ -20,8 +20,6 @@
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/ConnectionFileDescriptor.h"
-#include "lldb/Core/DataVisualization.h"
-#include "lldb/Core/FormatManager.h"
 #include "lldb/Core/InputReader.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
@@ -33,6 +31,8 @@
 #include "lldb/Core/Timer.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectVariable.h"
+#include "lldb/DataFormatters/DataVisualization.h"
+#include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/Host/DynamicLibrary.h"
 #include "lldb/Host/Terminal.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
@@ -102,6 +102,8 @@ g_language_enumerators[] =
     "{, ${frame.pc}}"\
     MODULE_WITH_FUNC\
     FILE_AND_LINE\
+    "{, name = '${thread.name}}"\
+    "{, queue = '${thread.queue}}"\
     "{, stop reason = ${thread.stop-reason}}"\
     "{\\nReturn value: ${thread.return-value}}"\
     "\\n"
@@ -554,7 +556,7 @@ Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
     m_target_list (*this),
     m_platform_list (),
     m_listener ("lldb.Debugger"),
-    m_source_manager(*this),
+    m_source_manager_ap(),
     m_source_file_cache(),
     m_command_interpreter_ap (new CommandInterpreter (*this, eScriptLanguageDefault, false)),
     m_input_reader_stack (),
@@ -607,10 +609,7 @@ Debugger::Clear()
         {
             ProcessSP process_sp (target_sp->GetProcessSP());
             if (process_sp)
-            {
-                if (process_sp->GetShouldDetach())
-                    process_sp->Detach();
-            }
+                process_sp->Finalize();
             target_sp->Destroy();
         }
     }
@@ -999,7 +998,7 @@ Debugger::GetAsyncErrorStream ()
                                                CommandInterpreter::eBroadcastBitAsynchronousErrorData));
 }    
 
-uint32_t
+size_t
 Debugger::GetNumDebuggers()
 {
     if (g_shared_debugger_refcount > 0)
@@ -1011,7 +1010,7 @@ Debugger::GetNumDebuggers()
 }
 
 lldb::DebuggerSP
-Debugger::GetDebuggerAtIndex (uint32_t index)
+Debugger::GetDebuggerAtIndex (size_t index)
 {
     DebuggerSP debugger_sp;
     
@@ -1120,7 +1119,7 @@ ScanFormatDescriptor (const char* var_name_begin,
                       Format* custom_format,
                       ValueObject::ValueObjectRepresentationStyle* val_obj_display)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     *percent_position = ::strchr(var_name_begin,'%');
     if (!*percent_position || *percent_position > var_name_end)
     {
@@ -1187,7 +1186,7 @@ ScanBracketedRange (const char* var_name_begin,
                     int64_t* index_lower,
                     int64_t* index_higher)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     *open_bracket_position = ::strchr(var_name_begin,'[');
     if (*open_bracket_position && *open_bracket_position < var_name_final)
     {
@@ -1228,7 +1227,7 @@ ScanBracketedRange (const char* var_name_begin,
         {
             if (log)
                 log->Printf("[ScanBracketedRange] swapping indices");
-            int temp = *index_lower;
+            int64_t temp = *index_lower;
             *index_lower = *index_higher;
             *index_higher = temp;
         }
@@ -1240,22 +1239,22 @@ ScanBracketedRange (const char* var_name_begin,
 
 static ValueObjectSP
 ExpandIndexedExpression (ValueObject* valobj,
-                         uint32_t index,
+                         size_t index,
                          StackFrame* frame,
                          bool deref_pointer)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     const char* ptr_deref_format = "[%d]";
-    std::auto_ptr<char> ptr_deref_buffer(new char[10]);
-    ::sprintf(ptr_deref_buffer.get(), ptr_deref_format, index);
+    std::string ptr_deref_buffer(10,0);
+    ::sprintf(&ptr_deref_buffer[0], ptr_deref_format, index);
     if (log)
-        log->Printf("[ExpandIndexedExpression] name to deref: %s",ptr_deref_buffer.get());
+        log->Printf("[ExpandIndexedExpression] name to deref: %s",ptr_deref_buffer.c_str());
     const char* first_unparsed;
     ValueObject::GetValueForExpressionPathOptions options;
     ValueObject::ExpressionPathEndResultType final_value_type;
     ValueObject::ExpressionPathScanEndReason reason_to_stop;
     ValueObject::ExpressionPathAftermath what_next = (deref_pointer ? ValueObject::eExpressionPathAftermathDereference : ValueObject::eExpressionPathAftermathNothing);
-    ValueObjectSP item = valobj->GetValueForExpressionPath (ptr_deref_buffer.get(),
+    ValueObjectSP item = valobj->GetValueForExpressionPath (ptr_deref_buffer.c_str(),
                                                           &first_unparsed,
                                                           &reason_to_stop,
                                                           &final_value_type,
@@ -1293,7 +1292,7 @@ Debugger::FormatPrompt
     ValueObject* realvalobj = NULL; // makes it super-easy to parse pointers
     bool success = true;
     const char *p;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     for (p = format; *p != '\0'; ++p)
     {
         if (realvalobj)
@@ -1481,15 +1480,14 @@ Debugger::FormatPrompt
                                                         &index_higher);
                                                                     
                                     Error error;
-                                                                        
-                                    std::auto_ptr<char> expr_path(new char[var_name_final-var_name_begin-1]);
-                                    ::memset(expr_path.get(), 0, var_name_final-var_name_begin-1);
-                                    memcpy(expr_path.get(), var_name_begin+3,var_name_final-var_name_begin-3);
-                                                                        
-                                    if (log)
-                                        log->Printf("[Debugger::FormatPrompt] symbol to expand: %s",expr_path.get());
                                     
-                                    target = valobj->GetValueForExpressionPath(expr_path.get(),
+                                    std::string expr_path(var_name_final-var_name_begin-1,0);
+                                    memcpy(&expr_path[0], var_name_begin+3,var_name_final-var_name_begin-3);
+
+                                    if (log)
+                                        log->Printf("[Debugger::FormatPrompt] symbol to expand: %s",expr_path.c_str());
+                                    
+                                    target = valobj->GetValueForExpressionPath(expr_path.c_str(),
                                                                              &first_unparsed,
                                                                              &reason_to_stop,
                                                                              &final_value_type,
@@ -1561,8 +1559,7 @@ Debugger::FormatPrompt
                                     if (log)
                                         log->Printf("[Debugger::FormatPrompt] I am into array || pointer && !range");
                                     
-                                    if (target->HasSpecialPrintableRepresentation(val_obj_display,
-                                                                                  custom_format))
+                                    if (target->HasSpecialPrintableRepresentation(val_obj_display, custom_format))
                                     {
                                         // try to use the special cases
                                         var_success = target->DumpPrintableRepresentation(str_temp,
@@ -1572,9 +1569,7 @@ Debugger::FormatPrompt
                                             log->Printf("[Debugger::FormatPrompt] special cases did%s match", var_success ? "" : "n't");
                                         
                                         // should not happen
-                                        if (!var_success)
-                                            s << "<invalid usage of pointer value as object>";
-                                        else
+                                        if (var_success)
                                             s << str_temp.GetData();
                                         var_success = true;
                                         break;
@@ -1591,10 +1586,6 @@ Debugger::FormatPrompt
                                                                                  val_obj_display,
                                                                                  custom_format,
                                                                                  ValueObject::ePrintableRepresentationSpecialCasesDisable);
-                                        }
-                                        else
-                                        {
-                                            s << "<invalid usage of pointer value as object>";
                                         }
                                         var_success = true;
                                         break;
@@ -2000,8 +1991,7 @@ Debugger::FormatPrompt
                                                 ValueObjectSP return_valobj_sp = StopInfo::GetReturnValueObject (stop_info_sp);
                                                 if (return_valobj_sp)
                                                 {
-                                                    ValueObject::DumpValueObjectOptions dump_options;
-                                                    ValueObject::DumpValueObject (s, return_valobj_sp.get(), dump_options);
+                                                    ValueObject::DumpValueObject (s, return_valobj_sp.get());
                                                     var_success = true;
                                                 }
                                             }
@@ -2253,7 +2243,16 @@ Debugger::FormatPrompt
                                                     const char *open_paren = strchr (cstr, '(');
                                                     const char *close_paren = NULL;
                                                     if (open_paren)
-                                                        close_paren = strchr (open_paren, ')');
+                                                    {
+                                                        if (strncmp(open_paren, "(anonymous namespace)", strlen("(anonymous namespace)")) == 0)
+                                                        {
+                                                            open_paren = strchr (open_paren + strlen("(anonymous namespace)"), '(');
+                                                            if (open_paren)
+                                                                close_paren = strchr (open_paren, ')');
+                                                        }
+                                                        else
+                                                            close_paren = strchr (open_paren, ')');
+                                                    }
                                                     
                                                     if (open_paren)
                                                         s.Write(cstr, open_paren - cstr + 1);
@@ -2539,8 +2538,7 @@ Debugger::FormatPrompt
                     unsigned long octal_value = ::strtoul (oct_str, NULL, 8);
                     if (octal_value <= UINT8_MAX)
                     {
-                        char octal_char = octal_value;
-                        s.Write (&octal_char, 1);
+                        s.PutChar((char)octal_value);
                     }
                 }
                 break;
@@ -2563,7 +2561,7 @@ Debugger::FormatPrompt
 
                     unsigned long hex_value = strtoul (hex_str, NULL, 16);                    
                     if (hex_value <= UINT8_MAX)
-                        s.PutChar (hex_value);
+                        s.PutChar ((char)hex_value);
                 }
                 else
                 {
@@ -2655,4 +2653,13 @@ Debugger::EnableLog (const char *channel, const char **categories, const char *l
     }
     return false;
 }
+
+SourceManager &
+Debugger::GetSourceManager ()
+{
+    if (m_source_manager_ap.get() == NULL)
+        m_source_manager_ap.reset (new SourceManager (shared_from_this()));
+    return *m_source_manager_ap;
+}
+
 

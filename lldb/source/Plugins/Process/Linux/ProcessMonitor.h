@@ -56,6 +56,7 @@ public:
                    const char *stdin_path,
                    const char *stdout_path,
                    const char *stderr_path,
+                   const char *working_dir,
                    lldb_private::Error &error);
 
     ProcessMonitor(ProcessPOSIX *process,
@@ -119,19 +120,29 @@ public:
 
     /// Reads all general purpose registers into the specified buffer.
     bool
-    ReadGPR(lldb::tid_t tid, void *buf);
+    ReadGPR(lldb::tid_t tid, void *buf, size_t buf_size);
 
-    /// Reads all floating point registers into the specified buffer.
+    /// Reads generic floating point registers into the specified buffer.
     bool
-    ReadFPR(lldb::tid_t tid, void *buf);
+    ReadFPR(lldb::tid_t tid, void *buf, size_t buf_size);
+
+    /// Reads the specified register set into the specified buffer.
+    /// For instance, the extended floating-point register set.
+    bool
+    ReadRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset);
 
     /// Writes all general purpose registers into the specified buffer.
     bool
-    WriteGPR(lldb::tid_t tid, void *buf);
+    WriteGPR(lldb::tid_t tid, void *buf, size_t buf_size);
 
-    /// Writes all floating point registers into the specified buffer.
+    /// Writes generic floating point registers into the specified buffer.
     bool
-    WriteFPR(lldb::tid_t tid, void *buf);
+    WriteFPR(lldb::tid_t tid, void *buf, size_t buf_size);
+
+    /// Writes the specified register set into the specified buffer.
+    /// For instance, the extended floating-point register set.
+    bool
+    WriteRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset);
 
     /// Writes a siginfo_t structure corresponding to the given thread ID to the
     /// memory region pointed to by @p siginfo.
@@ -168,10 +179,10 @@ private:
     ProcessLinux *m_process;
 
     lldb::thread_t m_operation_thread;
+    lldb::thread_t m_monitor_thread;
     lldb::pid_t m_pid;
     int m_terminal_fd;
 
-    lldb::thread_t m_monitor_thread;
 
     lldb_private::Mutex m_server_mutex;
     int m_client_fd;
@@ -200,7 +211,8 @@ private:
                    char const **envp,
                    const char *stdin_path,
                    const char *stdout_path,
-                   const char *stderr_path);
+                   const char *stderr_path,
+                   const char *working_dir);
 
         ~LaunchArgs();
 
@@ -210,6 +222,7 @@ private:
         const char *m_stdin_path;       // Redirect stdin or NULL.
         const char *m_stdout_path;      // Redirect stdout or NULL.
         const char *m_stderr_path;      // Redirect stderr or NULL.
+        const char *m_working_dir;      // Working directory or NULL.
     };
 
     void

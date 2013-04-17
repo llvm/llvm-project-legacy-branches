@@ -156,8 +156,7 @@ public:
     Dump (Stream *s) const;
 
     void
-    LogUUIDAndPaths (lldb::LogSP &log_sp, 
-                     const char *prefix_cstr);
+    LogUUIDAndPaths (Log *log, const char *prefix_cstr);
                      
     Mutex &
     GetMutex () const
@@ -165,7 +164,7 @@ public:
         return m_modules_mutex;
     }
     
-    uint32_t
+    size_t
     GetIndexForModule (const Module *module) const;
 
     //------------------------------------------------------------------
@@ -181,7 +180,7 @@ public:
     /// @see ModuleList::GetSize()
     //------------------------------------------------------------------
     lldb::ModuleSP
-    GetModuleAtIndex (uint32_t idx) const;
+    GetModuleAtIndex (size_t idx) const;
 
     //------------------------------------------------------------------
     /// Get the module shared pointer for the module at index \a idx without
@@ -198,7 +197,7 @@ public:
     /// @see ModuleList::GetSize()
     //------------------------------------------------------------------
     lldb::ModuleSP
-    GetModuleAtIndexUnlocked (uint32_t idx) const;
+    GetModuleAtIndexUnlocked (size_t idx) const;
 
     //------------------------------------------------------------------
     /// Get the module pointer for the module at index \a idx.
@@ -213,7 +212,7 @@ public:
     /// @see ModuleList::GetSize()
     //------------------------------------------------------------------
     Module*
-    GetModulePointerAtIndex (uint32_t idx) const;
+    GetModulePointerAtIndex (size_t idx) const;
 
     //------------------------------------------------------------------
     /// Get the module pointer for the module at index \a idx without
@@ -230,7 +229,7 @@ public:
     /// @see ModuleList::GetSize()
     //------------------------------------------------------------------
     Module*
-    GetModulePointerAtIndexUnlocked (uint32_t idx) const;
+    GetModulePointerAtIndexUnlocked (size_t idx) const;
 
     //------------------------------------------------------------------
     /// Find compile units by partial or full path.
@@ -253,7 +252,7 @@ public:
     /// @return
     ///     The number of matches added to \a sc_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindCompileUnits (const FileSpec &path,
                       bool append,
                       SymbolContextList &sc_list) const;
@@ -261,7 +260,7 @@ public:
     //------------------------------------------------------------------
     /// @see Module::FindFunctions ()
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindFunctions (const ConstString &name,
                    uint32_t name_type_mask,
                    bool include_symbols,
@@ -292,10 +291,10 @@ public:
     /// @return
     ///     The number of matches added to \a variable_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindGlobalVariables (const ConstString &name,
                          bool append,
-                         uint32_t max_matches,
+                         size_t max_matches,
                          VariableList& variable_list) const;
 
     //------------------------------------------------------------------
@@ -320,10 +319,10 @@ public:
     /// @return
     ///     The number of matches added to \a variable_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindGlobalVariables (const RegularExpression& regex,
                          bool append,
-                         uint32_t max_matches,
+                         size_t max_matches,
                          VariableList& variable_list) const;
 
     //------------------------------------------------------------------
@@ -422,11 +421,11 @@ public:
     /// @return
     ///     The number of matches added to \a type_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindTypes (const SymbolContext& sc,
                const ConstString &name,
                bool name_is_fully_qualified,
-               uint32_t max_matches,
+               size_t max_matches,
                TypeList& types) const;
     
     bool
@@ -503,7 +502,7 @@ public:
     FindSharedModules (const ModuleSpec &module_spec,
                        ModuleList &matching_module_list);
 
-    static uint32_t
+    static size_t
     RemoveOrphanSharedModules (bool mandatory);
     
     static bool

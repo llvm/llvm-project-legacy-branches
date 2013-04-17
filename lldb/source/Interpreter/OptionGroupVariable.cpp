@@ -15,10 +15,10 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Core/DataVisualization.h"
 #include "lldb/Core/Error.h"
-#include "lldb/Target/Target.h"
+#include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Target/Target.h"
 #include "lldb/Utility/Utils.h"
 
 using namespace lldb;
@@ -38,7 +38,8 @@ g_option_table[] =
     { LLDB_OPT_SET_2,                  false, "summary-string",  'z', required_argument, NULL, 0, eArgTypeName, "Specify a summary string to use to format the variable output."},
 };
 
-Error OptionGroupVariableNamedSummaryValidator (const char* str,void*) 
+static Error
+ValidateNamedSummary (const char* str, void*)
 {
     if (!str || !str[0])
         return Error("must specify a valid named summary");
@@ -48,7 +49,8 @@ Error OptionGroupVariableNamedSummaryValidator (const char* str,void*)
     return Error();
 }
 
-Error OptionGroupVariableNamedSummaryStringValidator (const char* str,void*) 
+static Error
+ValidateSummaryString (const char* str, void*)
 {
     if (!str || !str[0])
         return Error("must specify a non-empty summary string");
@@ -58,8 +60,8 @@ Error OptionGroupVariableNamedSummaryStringValidator (const char* str,void*)
 OptionGroupVariable::OptionGroupVariable (bool show_frame_options) :
     OptionGroup(),
     include_frame_options (show_frame_options),
-    summary(OptionGroupVariableNamedSummaryValidator),
-    summary_string(OptionGroupVariableNamedSummaryStringValidator)
+    summary(ValidateNamedSummary),
+    summary_string(ValidateSummaryString)
 {
 }
 

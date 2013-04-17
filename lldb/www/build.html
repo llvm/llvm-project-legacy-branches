@@ -17,6 +17,16 @@
   <!--#include virtual="sidebar.incl"-->
   
 		<div id="middle">
+                <h1 class ="postheader">Continuous Integraton</h1>
+                <div class="postcontent">
+                        <p> The following LLVM buildbots build and test LLDB trunk:
+                        <ul>
+                                <li> <a href="http://lab.llvm.org:8011/builders/lldb-x86_64-debian-clang">LLDB Linux x86_64 build with Clang (automake)</a>
+                                <li> <a href="http://lab.llvm.org:8011/builders/lldb-x86_64-linux">LLDB Linux x86_64 build with GCC 4.6 (automake)</a>
+                                <li> <a href="http://lab.llvm.org:8011/builders/lldb-x86_64-darwin11">LLDB Mac OS X x86_64 build with Clang (XCode)</a>
+                        </ul>
+                </div>
+                <div class="postfooter"></div>
     		<div class="post">
     			<h1 class ="postheader">Building LLDB on Mac OS X</h1>
     			<div class="postcontent">
@@ -108,21 +118,50 @@
                   <br>&gt; mkdir build
                   <br>&gt; cd build
                 </code>
-                <p>If you are using clang:</p>
+                <h2>To build with CMake</h2>
+                <p>Using CMake is documented on the <a href="http://llvm.org/docs/CMake.html">Building LLVM with CMake</a>
+                   page. Building LLDB is possible using one of the following generators:
+                </p>
+                <ul>
+                  <li> Ninja </li>
+                  <li> Unix Makefiles </li>
+                </ul>
+                <h3>Using CMake + Ninja</h3>
+                <p>Ninja is the fastest way to build LLDB! In order to use ninja, you need to have recent versions of CMake and
+                   ninja on your system. To build using ninja:
+                </p>
+                <code>
+                  <br>&gt; cmake -C .. -G Ninja
+                  <br>&gt; ninja lldb
+                  <br>&gt; ninja check-lldb
+                </code>
+                <h3>Using CMake + Unix Makefiles</h3>
+                <p>If you do not have Ninja, you can still use CMake to generate Unix Makefiles that build LLDB:</p>
+                <code>
+                  <br>&gt; cmake -C ..
+                  <br>&gt; make
+                  <br>&gt; make check-lldb
+                </code>
+                <h2>To build with autoconf</h2>
+                <p>If you do not have CMake, it is still possible to build LLDB using the autoconf build system. If you are using
+                   Clang or GCC 4.7+, run:</p>
                 <code>
                   <br>&gt; $llvm/configure --enable-cxx11
                   <br>&gt; make </code>
-                <p>If you are using GCC 4.6+:</p>
+                <p>Or, if you are using a version of GCC that does not support the <tt>-std=c++11</tt> option:</p>
                 <code>
                   <br>&gt; $llvm/configure
                   <br>&gt; make CXXFLAGS=-std=c++0x</code>
+                <p> To run the LLDB test suite, run:</p>
+                <code>
+                  <br>&gt; make -C tools/lldb/test</code>
                 <p>Note that once both LLVM and Clang have been configured and built it is not
                 necessary to perform a top-level <tt>make</tt> to rebuild changes made only to LLDB.
                 You can run <tt>make</tt> from the <tt>build/tools/lldb</tt> subdirectory as well.</p>
-                <p> If you wish to build with libc++ instead of libstdc++ (the default), you should run configure with the
+                <p> If you wish to build with libc++ instead of libstdc++ (the default), run configure with the
                 <tt>--enable-libcpp</tt> flag.</p>
                 <p> If you wish to build a release version of LLDB, run configure with the <tt>--enable-optimized</tt> flag.</p>
-                
+
                 <h2>Additional Notes</h2>
                 <p>LLDB has a Python scripting capability and supplies its own Python module named <tt>lldb</tt>.
                 If a script is run inside the command line <tt>lldb</tt> application, the Python module

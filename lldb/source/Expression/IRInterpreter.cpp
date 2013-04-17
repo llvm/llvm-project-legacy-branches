@@ -506,7 +506,7 @@ public:
             
             size_t value_size = m_target_data.getTypeStoreSize(value->getType());
                         
-            uint32_t offset = 0;
+            lldb::offset_t offset = 0;
             uint64_t u64value = value_extractor->GetMaxU64(&offset, value_size);
                     
             return AssignToMatchType(scalar, u64value, value->getType());
@@ -524,7 +524,7 @@ public:
         if (!AssignToMatchType(cast_scalar, scalar.GetRawBits64(0), value->getType()))
             return false;
         
-        lldb_private::DataBufferHeap buf(cast_scalar.GetByteSize(), 0);
+        lldb_private::DataBufferHeap buf(region.m_extent, 0);
         
         lldb_private::Error err;
         
@@ -532,6 +532,9 @@ public:
             return false;
         
         DataEncoderSP region_encoder = m_memory.GetEncoder(region);
+        
+        if (buf.GetByteSize() > region_encoder->GetByteSize())
+            return false; // This should not happen
         
         memcpy(region_encoder->GetDataStart(), buf.GetBytes(), buf.GetByteSize());
         
@@ -621,6 +624,11 @@ public:
         // "this", "self", and "_cmd" are direct.
         bool variable_is_this = false;
         
+        // If the variable is a function pointer, we do not need to
+        // build an extra layer of indirection for it because it is
+        // accessed directly.
+        bool variable_is_function_address = false;
+        
         // Attempt to resolve the value using the program's data.
         // If it is, the values to be created are:
         //
@@ -631,7 +639,7 @@ public:
         //   resides.  This is an IR-level variable.
         do
         {
-            lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+            lldb_private::Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
             lldb_private::Value resolved_value;
             lldb_private::ClangExpressionVariable::FlagType flags = 0;
@@ -644,13 +652,8 @@ public:
                     break;
                 
                 if (isa<clang::FunctionDecl>(decl))
-                {
-                    if (log)
-                        log->Printf("The interpreter does not handle function pointers at the moment");
+                    variable_is_function_address = true;
                     
-                    return Memory::Region();
-                }
-                
                 resolved_value = m_decl_map.LookupDecl(decl, flags);
             }
             else
@@ -662,9 +665,10 @@ public:
                 if (name_str == "this" ||
                     name_str == "self" ||
                     name_str == "_cmd")
+                {
                     resolved_value = m_decl_map.GetSpecialValue(lldb_private::ConstString(name_str.c_str()));
-                
                 variable_is_this = true;
+            }
             }
             
             if (resolved_value.GetScalar().GetType() != lldb_private::Scalar::e_void)
@@ -782,17 +786,19 @@ public:
                 }
                 else
                 {
+                    bool no_extra_redirect = (variable_is_this || variable_is_function_address);
+                    
                     Memory::Region data_region = m_memory.Place(value->getType(), resolved_value.GetScalar().ULongLong(), resolved_value);
                     Memory::Region ref_region = m_memory.Malloc(value->getType());
                     Memory::Region pointer_region;
                     
-                    if (!variable_is_this)
+                    if (!no_extra_redirect)
                         pointer_region = m_memory.Malloc(value->getType());
                            
                     if (ref_region.IsInvalid())
                         return Memory::Region();
                     
-                    if (pointer_region.IsInvalid() && !variable_is_this)
+                    if (pointer_region.IsInvalid() && !no_extra_redirect)
                         return Memory::Region();
                     
                     DataEncoderSP ref_encoder = m_memory.GetEncoder(ref_region);
@@ -800,7 +806,7 @@ public:
                     if (ref_encoder->PutAddress(0, data_region.m_base) == UINT32_MAX)
                         return Memory::Region();
                     
-                    if (!variable_is_this)
+                    if (!no_extra_redirect)
                     {
                         DataEncoderSP pointer_encoder = m_memory.GetEncoder(pointer_region);
                     
@@ -820,7 +826,7 @@ public:
                             log->Printf("  Pointer region : %llx", (unsigned long long)pointer_region.m_base);
                     }
                     
-                    if (variable_is_this)
+                    if (no_extra_redirect)
                         return ref_region;
                     else
                         return pointer_region;
@@ -833,8 +839,6 @@ public:
         
         Type *type = value->getType();
         
-        lldb::ValueSP backing_value(new lldb_private::Value);
-                
         Memory::Region data_region = m_memory.Malloc(type);
         data_region.m_allocation->m_origin.GetScalar() = (unsigned long long)data_region.m_allocation->m_data->GetBytes();
         data_region.m_allocation->m_origin.SetContext(lldb_private::Value::eContextTypeInvalid, NULL);
@@ -885,7 +889,7 @@ public:
             return false;
         Type *R_ty = pointer_ptr_ty->getElementType();
                 
-        uint32_t offset = 0;
+        lldb::offset_t offset = 0;
         lldb::addr_t pointer = P_extractor->GetAddress(&offset);
         
         Memory::Region R = m_memory.Lookup(pointer, R_ty);
@@ -980,7 +984,7 @@ bool
 IRInterpreter::supportsFunction (Function &llvm_function, 
                                  lldb_private::Error &err)
 {
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    lldb_private::Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     for (Function::iterator bbi = llvm_function.begin(), bbe = llvm_function.end();
          bbi != bbe;
@@ -1042,17 +1046,23 @@ IRInterpreter::supportsFunction (Function &llvm_function,
                     }
                 }
                 break;
+            case Instruction::And:
+            case Instruction::AShr:
             case Instruction::IntToPtr:
             case Instruction::PtrToInt:
             case Instruction::Load:
+            case Instruction::LShr:
             case Instruction::Mul:
+            case Instruction::Or:
             case Instruction::Ret:
             case Instruction::SDiv:
+            case Instruction::Shl:
             case Instruction::SRem:
             case Instruction::Store:
             case Instruction::Sub:
             case Instruction::UDiv:
             case Instruction::URem:
+            case Instruction::Xor:
             case Instruction::ZExt:
                 break;
             }
@@ -1076,7 +1086,7 @@ IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
                               Module &llvm_module,
                               lldb_private::Error &err)
 {
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    lldb_private::Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     lldb_private::ClangExpressionDeclMap::TargetInfo target_info = m_decl_map.GetTargetInfo();
     
@@ -1145,6 +1155,12 @@ IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
         case Instruction::UDiv:
         case Instruction::SRem:
         case Instruction::URem:
+        case Instruction::Shl:
+        case Instruction::LShr:
+        case Instruction::AShr:
+        case Instruction::And:
+        case Instruction::Or:
+        case Instruction::Xor:
             {
                 const BinaryOperator *bin_op = dyn_cast<BinaryOperator>(inst);
                 
@@ -1207,6 +1223,25 @@ IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
                     break;
                 case Instruction::URem:
                     result = L.GetRawBits64(0) % R.GetRawBits64(1);
+                    break;
+                case Instruction::Shl:
+                    result = L << R;
+                    break;
+                case Instruction::AShr:
+                    result = L >> R;
+                    break;
+                case Instruction::LShr:
+                    result = L;
+                    result.ShiftRightLogical(R);
+                    break;
+                case Instruction::And:
+                    result = L & R;
+                    break;
+                case Instruction::Or:
+                    result = L | R;
+                    break;
+                case Instruction::Xor:
+                    result = L ^ R;
                     break;
                 }
                                 
@@ -1668,7 +1703,7 @@ IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
                 DataExtractorSP P_extractor(memory.GetExtractor(P));
                 DataEncoderSP D_encoder(memory.GetEncoder(D));
 
-                uint32_t offset = 0;
+                lldb::offset_t offset = 0;
                 lldb::addr_t pointer = P_extractor->GetAddress(&offset);
                 
                 Memory::Region R = memory.Lookup(pointer, target_ty);
@@ -1781,7 +1816,7 @@ IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
                 if (!P_extractor || !D_extractor)
                     return false;
                 
-                uint32_t offset = 0;
+                lldb::offset_t offset = 0;
                 lldb::addr_t pointer = P_extractor->GetAddress(&offset);
                 
                 Memory::Region R = memory.Lookup(pointer, target_ty);

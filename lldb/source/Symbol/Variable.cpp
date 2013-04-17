@@ -203,7 +203,7 @@ Variable::CalculateSymbolContext (SymbolContext *sc)
     if (m_owner_scope)
         m_owner_scope->CalculateSymbolContext(sc);
     else
-        sc->Clear();
+        sc->Clear(false);
 }
 
 bool
@@ -396,11 +396,12 @@ Variable::GetValuesForVariableExpressionPath (const char *variable_expr_path,
             
         default:
             {
-                RegularExpression regex ("^([A-Za-z_:][A-Za-z_0-9:]*)(.*)");
-                if (regex.Execute(variable_expr_path, 1))
+                static RegularExpression g_regex ("^([A-Za-z_:][A-Za-z_0-9:]*)(.*)");
+                RegularExpression::Match regex_match(1);
+                if (g_regex.Execute(variable_expr_path, &regex_match))
                 {
                     std::string variable_name;
-                    if (regex.GetMatchAtIndex(variable_expr_path, 1, variable_name))
+                    if (regex_match.GetMatchAtIndex(variable_expr_path, 1, variable_name))
                     {
                         variable_list.Clear();
                         if (callback (baton, variable_name.c_str(), variable_list))

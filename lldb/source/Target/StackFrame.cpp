@@ -250,7 +250,7 @@ void
 StackFrame::ChangePC (addr_t pc)
 {
     m_frame_code_addr.SetRawAddress(pc);
-    m_sc.Clear();
+    m_sc.Clear(false);
     m_flags.Reset(0);
     ThreadSP thread_sp (GetThread());
     if (thread_sp)
@@ -266,9 +266,12 @@ StackFrame::Disassemble ()
         Target *target = exe_ctx.GetTargetPtr();
         if (target)
         {
+            const char *plugin_name = NULL;
+            const char *flavor = NULL;
             Disassembler::Disassemble (target->GetDebugger(),
                                        target->GetArchitecture(),
-                                       NULL,
+                                       plugin_name,
+                                       flavor,
                                        exe_ctx,
                                        0,
                                        0,
@@ -452,7 +455,9 @@ StackFrame::GetSymbolContext (uint32_t resolve_scope)
             // function, block, line entry or symbol, so we can safely call
             // ResolveSymbolContextForAddress with our symbol context member m_sc.
             if (m_sc.target_sp)
+            {
                 resolved |= m_sc.target_sp->GetImages().ResolveSymbolContextForAddress (lookup_addr, resolve_scope, m_sc);
+            }
         }
 
         // Update our internal flags so we remember what we have tried to locate so
@@ -1424,9 +1429,12 @@ StackFrame::GetStatus (Stream& strm,
                         AddressRange pc_range;
                         pc_range.GetBaseAddress() = GetFrameCodeAddress();
                         pc_range.SetByteSize(disasm_lines * target_arch.GetMaximumOpcodeByteSize());
+                        const char *plugin_name = NULL;
+                        const char *flavor = NULL;
                         Disassembler::Disassemble (target->GetDebugger(),
                                                    target_arch,
-                                                   NULL,
+                                                   plugin_name,
+                                                   flavor,
                                                    exe_ctx,
                                                    pc_range,
                                                    disasm_lines,

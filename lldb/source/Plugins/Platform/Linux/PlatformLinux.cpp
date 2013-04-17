@@ -13,7 +13,9 @@
 
 // C Includes
 #include <stdio.h>
+#ifndef _WIN32
 #include <sys/utsname.h>
+#endif
 
 // C++ Includes
 // Other libraries and framework includes
@@ -331,7 +333,10 @@ PlatformLinux::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 void
 PlatformLinux::GetStatus (Stream &strm)
 {
-    struct utsname un;
+#ifdef _WIN32
+	strm << "Windows";
+#else
+	struct utsname un;
 
     if (uname(&un)) {
         strm << "Linux";
@@ -339,6 +344,7 @@ PlatformLinux::GetStatus (Stream &strm)
     }
 
     strm << un.sysname << ' ' << un.release << ' ' << un.version << '\n';
+#endif
 }
 
 size_t

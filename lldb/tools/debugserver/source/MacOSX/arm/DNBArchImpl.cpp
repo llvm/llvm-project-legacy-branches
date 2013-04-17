@@ -188,10 +188,10 @@ DNBArchMachARM::GetGPRState(bool force)
 
     // Read the registers from our thread
     mach_msg_type_number_t count = ARM_THREAD_STATE_COUNT;
-    kern_return_t kret = ::thread_get_state(m_thread->ThreadID(), ARM_THREAD_STATE, (thread_state_t)&m_state.context.gpr, &count);
+    kern_return_t kret = ::thread_get_state(m_thread->MachPortNumber(), ARM_THREAD_STATE, (thread_state_t)&m_state.context.gpr, &count);
     uint32_t *r = &m_state.context.gpr.__r[0];
     DNBLogThreadedIf(LOG_THREAD, "thread_get_state(0x%4.4x, %u, &gpr, %u) => 0x%8.8x (count = %u) regs r0=%8.8x r1=%8.8x r2=%8.8x r3=%8.8x r4=%8.8x r5=%8.8x r6=%8.8x r7=%8.8x r8=%8.8x r9=%8.8x r10=%8.8x r11=%8.8x s12=%8.8x sp=%8.8x lr=%8.8x pc=%8.8x cpsr=%8.8x", 
-                     m_thread->ThreadID(), 
+                     m_thread->MachPortNumber(), 
                      ARM_THREAD_STATE, 
                      ARM_THREAD_STATE_COUNT, 
                      kret,
@@ -227,12 +227,12 @@ DNBArchMachARM::GetVFPState(bool force)
 
     // Read the registers from our thread
     mach_msg_type_number_t count = ARM_VFP_STATE_COUNT;
-    kern_return_t kret = ::thread_get_state(m_thread->ThreadID(), ARM_VFP_STATE, (thread_state_t)&m_state.context.vfp, &count);
+    kern_return_t kret = ::thread_get_state(m_thread->MachPortNumber(), ARM_VFP_STATE, (thread_state_t)&m_state.context.vfp, &count);
     if (DNBLogEnabledForAny (LOG_THREAD))
     {
         uint32_t *r = &m_state.context.vfp.__r[0];
         DNBLogThreaded ("thread_get_state(0x%4.4x, %u, &gpr, %u) => 0x%8.8x (count => %u)",
-                        m_thread->ThreadID(), 
+                        m_thread->MachPortNumber(), 
                         ARM_THREAD_STATE, 
                         ARM_THREAD_STATE_COUNT, 
                         kret,
@@ -260,7 +260,7 @@ DNBArchMachARM::GetEXCState(bool force)
 
     // Read the registers from our thread
     mach_msg_type_number_t count = ARM_EXCEPTION_STATE_COUNT;
-    kern_return_t kret = ::thread_get_state(m_thread->ThreadID(), ARM_EXCEPTION_STATE, (thread_state_t)&m_state.context.exc, &count);
+    kern_return_t kret = ::thread_get_state(m_thread->MachPortNumber(), ARM_EXCEPTION_STATE, (thread_state_t)&m_state.context.exc, &count);
     m_state.SetError(set, Read, kret);
     return kret;
 }
@@ -287,7 +287,7 @@ DNBArchMachARM::GetDBGState(bool force)
 
     // Read the registers from our thread
     mach_msg_type_number_t count = ARM_DEBUG_STATE_COUNT;
-    kern_return_t kret = ::thread_get_state(m_thread->ThreadID(), ARM_DEBUG_STATE, (thread_state_t)&m_state.dbg, &count);
+    kern_return_t kret = ::thread_get_state(m_thread->MachPortNumber(), ARM_DEBUG_STATE, (thread_state_t)&m_state.dbg, &count);
     m_state.SetError(set, Read, kret);
     return kret;
 }
@@ -296,7 +296,7 @@ kern_return_t
 DNBArchMachARM::SetGPRState()
 {
     int set = e_regSetGPR;
-    kern_return_t kret = ::thread_set_state(m_thread->ThreadID(), ARM_THREAD_STATE, (thread_state_t)&m_state.context.gpr, ARM_THREAD_STATE_COUNT);
+    kern_return_t kret = ::thread_set_state(m_thread->MachPortNumber(), ARM_THREAD_STATE, (thread_state_t)&m_state.context.gpr, ARM_THREAD_STATE_COUNT);
     m_state.SetError(set, Write, kret);         // Set the current write error for this register set
     m_state.InvalidateRegisterSetState(set);    // Invalidate the current register state in case registers are read back differently
     return kret;                                // Return the error code
@@ -306,7 +306,7 @@ kern_return_t
 DNBArchMachARM::SetVFPState()
 {
     int set = e_regSetVFP;
-    kern_return_t kret = ::thread_set_state (m_thread->ThreadID(), ARM_VFP_STATE, (thread_state_t)&m_state.context.vfp, ARM_VFP_STATE_COUNT);
+    kern_return_t kret = ::thread_set_state (m_thread->MachPortNumber(), ARM_VFP_STATE, (thread_state_t)&m_state.context.vfp, ARM_VFP_STATE_COUNT);
     m_state.SetError(set, Write, kret);         // Set the current write error for this register set
     m_state.InvalidateRegisterSetState(set);    // Invalidate the current register state in case registers are read back differently
     return kret;                                // Return the error code
@@ -316,7 +316,7 @@ kern_return_t
 DNBArchMachARM::SetEXCState()
 {
     int set = e_regSetEXC;
-    kern_return_t kret = ::thread_set_state (m_thread->ThreadID(), ARM_EXCEPTION_STATE, (thread_state_t)&m_state.context.exc, ARM_EXCEPTION_STATE_COUNT);
+    kern_return_t kret = ::thread_set_state (m_thread->MachPortNumber(), ARM_EXCEPTION_STATE, (thread_state_t)&m_state.context.exc, ARM_EXCEPTION_STATE_COUNT);
     m_state.SetError(set, Write, kret);         // Set the current write error for this register set
     m_state.InvalidateRegisterSetState(set);    // Invalidate the current register state in case registers are read back differently
     return kret;                                // Return the error code
@@ -326,7 +326,7 @@ kern_return_t
 DNBArchMachARM::SetDBGState()
 {
     int set = e_regSetDBG;
-    kern_return_t kret = ::thread_set_state (m_thread->ThreadID(), ARM_DEBUG_STATE, (thread_state_t)&m_state.dbg, ARM_DEBUG_STATE_COUNT);
+    kern_return_t kret = ::thread_set_state (m_thread->MachPortNumber(), ARM_DEBUG_STATE, (thread_state_t)&m_state.dbg, ARM_DEBUG_STATE_COUNT);
     m_state.SetError(set, Write, kret);         // Set the current write error for this register set
     m_state.InvalidateRegisterSetState(set);    // Invalidate the current register state in case registers are read back differently
     return kret;                                // Return the error code
@@ -344,13 +344,6 @@ DNBArchMachARM::ThreadWillResume()
             if (EnableHardwareSingleStep(true) != KERN_SUCCESS)
             {
                 DNBLogThreaded("DNBArchMachARM::ThreadWillResume() failed to enable hardware single step");
-            }
-        }
-        else
-        {
-            if (SetSingleStepSoftwareBreakpoints() != KERN_SUCCESS)
-            {
-                DNBLogThreaded("DNBArchMachARM::ThreadWillResume() failed to enable software single step");
             }
         }
     }
@@ -469,13 +462,6 @@ DNBArchMachARM::ThreadDidStop()
                     }
                     m_sw_single_step_itblock_break_count = 0;
 
-#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
-
-                    // Decode instructions up to the current PC to ensure the internal decoder state is valid for the IT block
-                    // The decoder has to decode each instruction in the IT block even if it is not executed so that
-                    // the fields are correctly updated
-                    DecodeITBlockInstructions(m_state.context.gpr.__pc);
-#endif
                 }
 
             }
@@ -551,64 +537,6 @@ DNBArchMachARM::StepNotComplete ()
     return false;
 }
 
-
-#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
-
-void
-DNBArchMachARM::DecodeITBlockInstructions(nub_addr_t curr_pc)
-
-{
-    uint16_t opcode16;
-    uint32_t opcode32;
-    nub_addr_t next_pc_in_itblock;
-    nub_addr_t pc_in_itblock = m_last_decode_pc;
-
-    DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: last_decode_pc=0x%8.8x", __FUNCTION__, m_last_decode_pc);
-
-    // Decode IT block instruction from the instruction following the m_last_decoded_instruction at
-    // PC m_last_decode_pc upto and including the instruction at curr_pc
-    if (m_thread->Process()->Task().ReadMemory(pc_in_itblock, 2, &opcode16) == 2)
-    {
-        opcode32 = opcode16;
-        pc_in_itblock += 2;
-        // Check for 32 bit thumb opcode and read the upper 16 bits if needed
-        if (((opcode32 & 0xE000) == 0xE000) && opcode32 & 0x1800)
-        {
-            // Adjust 'next_pc_in_itblock' to point to the default next Thumb instruction for
-            // a 32 bit Thumb opcode
-            // Read bits 31:16 of a 32 bit Thumb opcode
-            if (m_thread->Process()->Task().ReadMemory(pc_in_itblock, 2, &opcode16) == 2)
-            {
-                pc_in_itblock += 2;
-                // 32 bit thumb opcode
-                opcode32 = (opcode32 << 16) | opcode16;
-            }
-            else
-            {
-                DNBLogError("%s: Unable to read opcode bits 31:16 for a 32 bit thumb opcode at pc=0x%8.8llx", __FUNCTION__, (uint64_t)pc_in_itblock);
-            }
-        }
-    }
-    else
-    {
-        DNBLogError("%s: Error reading 16-bit Thumb instruction at pc=0x%8.8x", __FUNCTION__, pc_in_itblock);
-    }
-
-    DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: pc_in_itblock=0x%8.8x, curr_pc=0x%8.8x", __FUNCTION__, pc_in_itblock, curr_pc);
-
-    next_pc_in_itblock = pc_in_itblock;
-    while (next_pc_in_itblock <= curr_pc)
-    {
-        arm_error_t decodeError;
-
-        m_last_decode_pc = pc_in_itblock;
-        decodeError = DecodeInstructionUsingDisassembler(pc_in_itblock, m_state.context.gpr.__cpsr, &m_last_decode_arm, &m_last_decode_thumb, &next_pc_in_itblock);
-
-        pc_in_itblock = next_pc_in_itblock;
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: next_pc_in_itblock=0x%8.8x", __FUNCTION__, next_pc_in_itblock);
-    }
-}
-#endif
 
 // Set the single step bit in the processor status register.
 kern_return_t
@@ -773,1155 +701,6 @@ DNBArchMachARM::ConditionPassed(uint8_t condition, uint32_t cpsr)
     return false;
 }
 
-#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
-
-bool
-DNBArchMachARM::ComputeNextPC(nub_addr_t currentPC, arm_decoded_instruction_t decodedInstruction, bool currentPCIsThumb, nub_addr_t *targetPC)
-{
-    nub_addr_t myTargetPC, addressWherePCLives;
-    pid_t mypid;
-
-    uint32_t cpsr_c = bit(m_state.context.gpr.__cpsr, 29); // Carry condition code flag
-
-    uint32_t firstOperand=0, secondOperand=0, shiftAmount=0, secondOperandAfterShift=0, immediateValue=0;
-    uint32_t halfwords=0, baseAddress=0, immediateOffset=0, addressOffsetFromRegister=0, addressOffsetFromRegisterAfterShift;
-    uint32_t baseAddressIndex=INVALID_NUB_HW_INDEX;
-    uint32_t firstOperandIndex=INVALID_NUB_HW_INDEX;
-    uint32_t secondOperandIndex=INVALID_NUB_HW_INDEX;
-    uint32_t addressOffsetFromRegisterIndex=INVALID_NUB_HW_INDEX;
-    uint32_t shiftRegisterIndex=INVALID_NUB_HW_INDEX;
-    uint16_t registerList16, registerList16NoPC;
-    uint8_t registerList8;
-    uint32_t numRegistersToLoad=0;
-
-    DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: instruction->code=%d", __FUNCTION__, decodedInstruction.instruction->code);
-
-    // Get the following in this switch statement:
-    //   - firstOperand, secondOperand, immediateValue, shiftAmount: For arithmetic, logical and move instructions
-    //   - baseAddress, immediateOffset, shiftAmount: For LDR
-    //   - numRegistersToLoad: For LDM and POP instructions
-    switch (decodedInstruction.instruction->code)
-    {
-            // Arithmetic operations that can change the PC
-        case ARM_INST_ADC:
-        case ARM_INST_ADCS:
-        case ARM_INST_ADD:
-        case ARM_INST_ADDS:
-        case ARM_INST_AND:
-        case ARM_INST_ANDS:
-        case ARM_INST_ASR:
-        case ARM_INST_ASRS:
-        case ARM_INST_BIC:
-        case ARM_INST_BICS:
-        case ARM_INST_EOR:
-        case ARM_INST_EORS:
-        case ARM_INST_ORR:
-        case ARM_INST_ORRS:
-        case ARM_INST_RSB:
-        case ARM_INST_RSBS:
-        case ARM_INST_RSC:
-        case ARM_INST_RSCS:
-        case ARM_INST_SBC:
-        case ARM_INST_SBCS:
-        case ARM_INST_SUB:
-        case ARM_INST_SUBS:
-            switch (decodedInstruction.addressMode)
-            {
-                case ARM_ADDR_DATA_IMM:
-                    if (decodedInstruction.numOperands != 3)
-                    {
-                        DNBLogError("Expected 3 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    if (decodedInstruction.op[0].value != PC_REG)
-                    {
-                        DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                        return false;
-                    }
-
-                    // Get firstOperand register value (at index=1)
-                    firstOperandIndex = decodedInstruction.op[1].value; // first operand register index
-                    firstOperand = m_state.context.gpr.__r[firstOperandIndex];
-
-                    // Get immediateValue (at index=2)
-                    immediateValue = decodedInstruction.op[2].value;
-
-                    break;
-
-                case ARM_ADDR_DATA_REG:
-                    if (decodedInstruction.numOperands != 3)
-                    {
-                        DNBLogError("Expected 3 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    if (decodedInstruction.op[0].value != PC_REG)
-                    {
-                        DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                        return false;
-                    }
-
-                    // Get firstOperand register value (at index=1)
-                    firstOperandIndex = decodedInstruction.op[1].value; // first operand register index
-                    firstOperand = m_state.context.gpr.__r[firstOperandIndex];
-
-                    // Get secondOperand register value (at index=2)
-                    secondOperandIndex = decodedInstruction.op[2].value; // second operand register index
-                    secondOperand = m_state.context.gpr.__r[secondOperandIndex];
-
-                    break;
-
-                case ARM_ADDR_DATA_SCALED_IMM:
-                    if (decodedInstruction.numOperands != 4)
-                    {
-                        DNBLogError("Expected 4 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    if (decodedInstruction.op[0].value != PC_REG)
-                    {
-                        DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                        return false;
-                    }
-
-                    // Get firstOperand register value (at index=1)
-                    firstOperandIndex = decodedInstruction.op[1].value; // first operand register index
-                    firstOperand = m_state.context.gpr.__r[firstOperandIndex];
-
-                    // Get secondOperand register value (at index=2)
-                    secondOperandIndex = decodedInstruction.op[2].value; // second operand register index
-                    secondOperand = m_state.context.gpr.__r[secondOperandIndex];
-
-                    // Get shiftAmount as immediate value (at index=3)
-                    shiftAmount = decodedInstruction.op[3].value;
-
-                    break;
-
-
-                case ARM_ADDR_DATA_SCALED_REG:
-                    if (decodedInstruction.numOperands != 4)
-                    {
-                        DNBLogError("Expected 4 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    if (decodedInstruction.op[0].value != PC_REG)
-                    {
-                        DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                        return false;
-                    }
-
-                    // Get firstOperand register value (at index=1)
-                    firstOperandIndex = decodedInstruction.op[1].value; // first operand register index
-                    firstOperand = m_state.context.gpr.__r[firstOperandIndex];
-
-                    // Get secondOperand register value (at index=2)
-                    secondOperandIndex = decodedInstruction.op[2].value; // second operand register index
-                    secondOperand = m_state.context.gpr.__r[secondOperandIndex];
-
-                    // Get shiftAmount from register (at index=3)
-                    shiftRegisterIndex = decodedInstruction.op[3].value; // second operand register index
-                    shiftAmount = m_state.context.gpr.__r[shiftRegisterIndex];
-
-                    break;
-
-                case THUMB_ADDR_HR_HR:
-                    if (decodedInstruction.numOperands != 2)
-                    {
-                        DNBLogError("Expected 2 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    if (decodedInstruction.op[0].value != PC_REG)
-                    {
-                        DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                        return false;
-                    }
-
-                    // Get firstOperand register value (at index=0)
-                    firstOperandIndex = decodedInstruction.op[0].value; // first operand register index
-                    firstOperand = m_state.context.gpr.__r[firstOperandIndex];
-
-                    // Get secondOperand register value (at index=1)
-                    secondOperandIndex = decodedInstruction.op[1].value; // second operand register index
-                    secondOperand = m_state.context.gpr.__r[secondOperandIndex];
-
-                    break;
-
-                default:
-                    break;
-            }
-            break;
-
-            // Logical shifts and move operations that can change the PC
-        case ARM_INST_LSL:
-        case ARM_INST_LSLS:
-        case ARM_INST_LSR:
-        case ARM_INST_LSRS:
-        case ARM_INST_MOV:
-        case ARM_INST_MOVS:
-        case ARM_INST_MVN:
-        case ARM_INST_MVNS:
-        case ARM_INST_ROR:
-        case ARM_INST_RORS:
-        case ARM_INST_RRX:
-        case ARM_INST_RRXS:
-            // In these cases, the firstOperand is always 0, as if it does not exist
-            switch (decodedInstruction.addressMode)
-            {
-                case ARM_ADDR_DATA_IMM:
-                    if (decodedInstruction.numOperands != 2)
-                    {
-                        DNBLogError("Expected 2 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    if (decodedInstruction.op[0].value != PC_REG)
-                    {
-                        DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                        return false;
-                    }
-
-                    // Get immediateValue (at index=1)
-                    immediateValue = decodedInstruction.op[1].value;
-
-                    break;
-
-                case ARM_ADDR_DATA_REG:
-                    if (decodedInstruction.numOperands != 2)
-                    {
-                        DNBLogError("Expected 2 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    if (decodedInstruction.op[0].value != PC_REG)
-                    {
-                        DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                        return false;
-                    }
-
-                    // Get secondOperand register value (at index=1)
-                    secondOperandIndex = decodedInstruction.op[1].value; // second operand register index
-                    secondOperand = m_state.context.gpr.__r[secondOperandIndex];
-
-                    break;
-
-                case ARM_ADDR_DATA_SCALED_IMM:
-                    if (decodedInstruction.numOperands != 3)
-                    {
-                        DNBLogError("Expected 4 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    if (decodedInstruction.op[0].value != PC_REG)
-                    {
-                        DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                        return false;
-                    }
-
-                    // Get secondOperand register value (at index=1)
-                    secondOperandIndex = decodedInstruction.op[2].value; // second operand register index
-                    secondOperand = m_state.context.gpr.__r[secondOperandIndex];
-
-                    // Get shiftAmount as immediate value (at index=2)
-                    shiftAmount = decodedInstruction.op[2].value;
-
-                    break;
-
-
-                case ARM_ADDR_DATA_SCALED_REG:
-                    if (decodedInstruction.numOperands != 3)
-                    {
-                        DNBLogError("Expected 3 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    if (decodedInstruction.op[0].value != PC_REG)
-                    {
-                        DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                        return false;
-                    }
-
-                    // Get secondOperand register value (at index=1)
-                    secondOperandIndex = decodedInstruction.op[1].value; // second operand register index
-                    secondOperand = m_state.context.gpr.__r[secondOperandIndex];
-
-                    // Get shiftAmount from register (at index=2)
-                    shiftRegisterIndex = decodedInstruction.op[2].value; // second operand register index
-                    shiftAmount = m_state.context.gpr.__r[shiftRegisterIndex];
-
-                    break;
-
-                case THUMB_ADDR_HR_HR:
-                    if (decodedInstruction.numOperands != 2)
-                    {
-                        DNBLogError("Expected 2 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    if (decodedInstruction.op[0].value != PC_REG)
-                    {
-                        DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                        return false;
-                    }
-
-                    // Get secondOperand register value (at index=1)
-                    secondOperandIndex = decodedInstruction.op[1].value; // second operand register index
-                    secondOperand = m_state.context.gpr.__r[secondOperandIndex];
-
-                    break;
-
-                default:
-                    break;
-            }
-
-            break;
-
-            // Simple branches, used to hop around within a routine
-        case ARM_INST_B:
-            *targetPC = decodedInstruction.targetPC; // Known targetPC
-            return true;
-            break;
-
-            // Branch-and-link, used to call ARM subroutines
-        case ARM_INST_BL:
-            *targetPC = decodedInstruction.targetPC; // Known targetPC
-            return true;
-            break;
-
-            // Branch-and-link with exchange, used to call opposite-mode subroutines
-        case ARM_INST_BLX:
-            if ((decodedInstruction.addressMode == ARM_ADDR_BRANCH_IMM) ||
-                (decodedInstruction.addressMode == THUMB_ADDR_UNCOND))
-            {
-                *targetPC = decodedInstruction.targetPC; // Known targetPC
-                return true;
-            }
-            else    // addressMode == ARM_ADDR_BRANCH_REG
-            {
-                // Unknown target unless we're branching to the PC itself,
-                //  although this may not work properly with BLX
-                if (decodedInstruction.op[REG_RD].value == PC_REG)
-                {
-                    // this should (almost) never happen
-                    *targetPC = decodedInstruction.targetPC; // Known targetPC
-                    return true;
-                }
-
-                // Get the branch address and return
-                if (decodedInstruction.numOperands != 1)
-                {
-                    DNBLogError("Expected 1 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                    return false;
-                }
-
-                // Get branch address in register (at index=0)
-                *targetPC = m_state.context.gpr.__r[decodedInstruction.op[0].value];
-                return true;
-            }
-            break;
-
-            // Branch with exchange, used to hop to opposite-mode code
-            // Branch to Jazelle code, used to execute Java; included here since it
-            //  acts just like BX unless the Jazelle unit is active and JPC is
-            //  already loaded into it.
-        case ARM_INST_BX:
-        case ARM_INST_BXJ:
-            // Unknown target unless we're branching to the PC itself,
-            //  although this can never switch to Thumb mode and is
-            //  therefore pretty much useless
-            if (decodedInstruction.op[REG_RD].value == PC_REG)
-            {
-                // this should (almost) never happen
-                *targetPC = decodedInstruction.targetPC; // Known targetPC
-                return true;
-            }
-
-            // Get the branch address and return
-            if (decodedInstruction.numOperands != 1)
-            {
-                DNBLogError("Expected 1 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                return false;
-            }
-
-            // Get branch address in register (at index=0)
-            *targetPC = m_state.context.gpr.__r[decodedInstruction.op[0].value];
-            return true;
-            break;
-
-            // Compare and branch on zero/non-zero (Thumb-16 only)
-            // Unusual condition check built into the instruction
-        case ARM_INST_CBZ:
-        case ARM_INST_CBNZ:
-            // Branch address is known at compile time
-            // Get the branch address and return
-            if (decodedInstruction.numOperands != 2)
-            {
-                DNBLogError("Expected 2 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                return false;
-            }
-
-            // Get branch address as an immediate value (at index=1)
-            *targetPC = decodedInstruction.op[1].value;
-            return true;
-            break;
-
-            // Load register can be used to load PC, usually with a function pointer
-        case ARM_INST_LDR:
-            if (decodedInstruction.op[REG_RD].value != PC_REG)
-            {
-                DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                return false;
-            }
-            switch (decodedInstruction.addressMode)
-            {
-                case ARM_ADDR_LSWUB_IMM:
-                case ARM_ADDR_LSWUB_IMM_PRE:
-                case ARM_ADDR_LSWUB_IMM_POST:
-                    if (decodedInstruction.numOperands != 3)
-                    {
-                        DNBLogError("Expected 3 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    // Get baseAddress from register (at index=1)
-                    baseAddressIndex = decodedInstruction.op[1].value;
-                    baseAddress = m_state.context.gpr.__r[baseAddressIndex];
-
-                    // Get immediateOffset (at index=2)
-                    immediateOffset = decodedInstruction.op[2].value;
-                    break;
-
-                case ARM_ADDR_LSWUB_REG:
-                case ARM_ADDR_LSWUB_REG_PRE:
-                case ARM_ADDR_LSWUB_REG_POST:
-                    if (decodedInstruction.numOperands != 3)
-                    {
-                        DNBLogError("Expected 3 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    // Get baseAddress from register (at index=1)
-                    baseAddressIndex = decodedInstruction.op[1].value;
-                    baseAddress = m_state.context.gpr.__r[baseAddressIndex];
-
-                    // Get immediateOffset from register (at index=2)
-                    addressOffsetFromRegisterIndex = decodedInstruction.op[2].value;
-                    addressOffsetFromRegister = m_state.context.gpr.__r[addressOffsetFromRegisterIndex];
-
-                    break;
-
-                case ARM_ADDR_LSWUB_SCALED:
-                case ARM_ADDR_LSWUB_SCALED_PRE:
-                case ARM_ADDR_LSWUB_SCALED_POST:
-                    if (decodedInstruction.numOperands != 4)
-                    {
-                        DNBLogError("Expected 4 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                        return false;
-                    }
-
-                    // Get baseAddress from register (at index=1)
-                    baseAddressIndex = decodedInstruction.op[1].value;
-                    baseAddress = m_state.context.gpr.__r[baseAddressIndex];
-
-                    // Get immediateOffset from register (at index=2)
-                    addressOffsetFromRegisterIndex = decodedInstruction.op[2].value;
-                    addressOffsetFromRegister = m_state.context.gpr.__r[addressOffsetFromRegisterIndex];
-
-                    // Get shiftAmount (at index=3)
-                    shiftAmount = decodedInstruction.op[3].value;
-
-                    break;
-
-                default:
-                    break;
-            }
-            break;
-
-            // 32b load multiple operations can load the PC along with everything else,
-            //  usually to return from a function call
-        case ARM_INST_LDMDA:
-        case ARM_INST_LDMDB:
-        case ARM_INST_LDMIA:
-        case ARM_INST_LDMIB:
-            if (decodedInstruction.op[LDM_REGLIST].value & PC_REGLIST_BIT)
-            {
-                if (decodedInstruction.numOperands != 2)
-                {
-                    DNBLogError("Expected 2 operands in decoded instruction structure. numOperands is %d!", decodedInstruction.numOperands);
-                    return false;
-                }
-
-                // Get baseAddress from register (at index=0)
-                baseAddressIndex = decodedInstruction.op[0].value;
-                baseAddress = m_state.context.gpr.__r[baseAddressIndex];
-
-                // Get registerList from register (at index=1)
-                registerList16 = (uint16_t)decodedInstruction.op[1].value;
-
-                // Count number of registers to load in the multiple register list excluding the PC
-                registerList16NoPC = registerList16&0x3FFF; // exclude the PC
-                numRegistersToLoad=0;
-                for (int i = 0; i < 16; i++)
-                {
-                    if (registerList16NoPC & 0x1) numRegistersToLoad++;
-                    registerList16NoPC = registerList16NoPC >> 1;
-                }
-            }
-            else
-            {
-                DNBLogError("Destination register is not a PC! %s routine should be called on on instructions that modify the PC. Destination register is R%d!", __FUNCTION__, decodedInstruction.op[0].value);
-                return false;
-            }
-            break;
-
-            // Normal 16-bit LD multiple can't touch R15, but POP can
-        case ARM_INST_POP:  // Can also get the PC & updates SP
-            // Get baseAddress from SP (at index=0)
-            baseAddress = m_state.context.gpr.__sp;
-
-            if (decodedInstruction.thumb16b)
-            {
-                // Get registerList from register (at index=0)
-                registerList8 = (uint8_t)decodedInstruction.op[0].value;
-
-                // Count number of registers to load in the multiple register list
-                numRegistersToLoad=0;
-                for (int i = 0; i < 8; i++)
-                {
-                    if (registerList8 & 0x1) numRegistersToLoad++;
-                    registerList8 = registerList8 >> 1;
-                }
-            }
-            else
-            {
-                // Get registerList from register (at index=0)
-                registerList16 = (uint16_t)decodedInstruction.op[0].value;
-
-                // Count number of registers to load in the multiple register list excluding the PC
-                registerList16NoPC = registerList16&0x3FFF; // exclude the PC
-                numRegistersToLoad=0;
-                for (int i = 0; i < 16; i++)
-                {
-                    if (registerList16NoPC & 0x1) numRegistersToLoad++;
-                    registerList16NoPC = registerList16NoPC >> 1;
-                }
-            }
-            break;
-
-            // 16b TBB and TBH instructions load a jump address from a table
-        case ARM_INST_TBB:
-        case ARM_INST_TBH:
-            // Get baseAddress from register (at index=0)
-            baseAddressIndex = decodedInstruction.op[0].value;
-            baseAddress = m_state.context.gpr.__r[baseAddressIndex];
-
-            // Get immediateOffset from register (at index=1)
-            addressOffsetFromRegisterIndex = decodedInstruction.op[1].value;
-            addressOffsetFromRegister = m_state.context.gpr.__r[addressOffsetFromRegisterIndex];
-            break;
-
-            // ThumbEE branch-to-handler instructions: Jump to handlers at some offset
-            //  from a special base pointer register (which is unknown at disassembly time)
-        case ARM_INST_HB:
-        case ARM_INST_HBP:
-//          TODO: ARM_INST_HB, ARM_INST_HBP
-            break;
-
-        case ARM_INST_HBL:
-        case ARM_INST_HBLP:
-//          TODO: ARM_INST_HBL, ARM_INST_HBLP
-            break;
-
-            // Breakpoint and software interrupt jump to interrupt handler (always ARM)
-        case ARM_INST_BKPT:
-        case ARM_INST_SMC:
-        case ARM_INST_SVC:
-
-            // Return from exception, obviously modifies PC [interrupt only!]
-        case ARM_INST_RFEDA:
-        case ARM_INST_RFEDB:
-        case ARM_INST_RFEIA:
-        case ARM_INST_RFEIB:
-
-            // Other instructions either can't change R15 or are "undefined" if you do,
-            //  so no sane compiler should ever generate them & we don't care here.
-            //  Also, R15 can only legally be used in a read-only manner for the
-            //  various ARM addressing mode (to get PC-relative addressing of constants),
-            //  but can NOT be used with any of the update modes.
-        default:
-            DNBLogError("%s should not be called for instruction code %d!", __FUNCTION__, decodedInstruction.instruction->code);
-            return false;
-            break;
-    }
-
-    // Adjust PC if PC is one of the input operands
-    if (baseAddressIndex == PC_REG)
-    {
-        if (currentPCIsThumb)
-            baseAddress += 4;
-        else
-            baseAddress += 8;
-    }
-
-    if (firstOperandIndex == PC_REG)
-    {
-        if (currentPCIsThumb)
-            firstOperand += 4;
-        else
-            firstOperand += 8;
-    }
-
-    if (secondOperandIndex == PC_REG)
-    {
-        if (currentPCIsThumb)
-            secondOperand += 4;
-        else
-            secondOperand += 8;
-    }
-
-    if (addressOffsetFromRegisterIndex == PC_REG)
-    {
-        if (currentPCIsThumb)
-            addressOffsetFromRegister += 4;
-        else
-            addressOffsetFromRegister += 8;
-    }
-
-    DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE,
-        "%s: firstOperand=%8.8x, secondOperand=%8.8x, immediateValue = %d, shiftAmount = %d, baseAddress = %8.8x, addressOffsetFromRegister = %8.8x, immediateOffset = %d, numRegistersToLoad = %d",
-        __FUNCTION__,
-        firstOperand,
-        secondOperand,
-        immediateValue,
-        shiftAmount,
-        baseAddress,
-        addressOffsetFromRegister,
-        immediateOffset,
-        numRegistersToLoad);
-
-
-    // Calculate following values after applying shiftAmount:
-    //   - immediateOffsetAfterShift, secondOperandAfterShift
-
-    switch (decodedInstruction.scaleMode)
-    {
-        case ARM_SCALE_NONE:
-            addressOffsetFromRegisterAfterShift = addressOffsetFromRegister;
-            secondOperandAfterShift = secondOperand;
-            break;
-
-        case ARM_SCALE_LSL:             // Logical shift left
-            addressOffsetFromRegisterAfterShift = addressOffsetFromRegister << shiftAmount;
-            secondOperandAfterShift = secondOperand << shiftAmount;
-            break;
-
-        case ARM_SCALE_LSR:             // Logical shift right
-            addressOffsetFromRegisterAfterShift = addressOffsetFromRegister >> shiftAmount;
-            secondOperandAfterShift = secondOperand >> shiftAmount;
-            break;
-
-        case ARM_SCALE_ASR:             // Arithmetic shift right
-            asm("mov %0, %1, asr %2" : "=r" (addressOffsetFromRegisterAfterShift) : "r" (addressOffsetFromRegister), "r" (shiftAmount));
-            asm("mov %0, %1, asr %2" : "=r" (secondOperandAfterShift) : "r" (secondOperand), "r" (shiftAmount));
-            break;
-
-        case ARM_SCALE_ROR:             // Rotate right
-            asm("mov %0, %1, ror %2" : "=r" (addressOffsetFromRegisterAfterShift) : "r" (addressOffsetFromRegister), "r" (shiftAmount));
-            asm("mov %0, %1, ror %2" : "=r" (secondOperandAfterShift) : "r" (secondOperand), "r" (shiftAmount));
-            break;
-
-        case ARM_SCALE_RRX:             // Rotate right, pulling in carry (1-bit shift only)
-            asm("mov %0, %1, rrx" : "=r" (addressOffsetFromRegisterAfterShift) : "r" (addressOffsetFromRegister));
-            asm("mov %0, %1, rrx" : "=r" (secondOperandAfterShift) : "r" (secondOperand));
-            break;
-    }
-
-    // Emulate instruction to calculate targetPC
-    // All branches are already handled in the first switch statement. A branch should not reach this switch
-    switch (decodedInstruction.instruction->code)
-    {
-            // Arithmetic operations that can change the PC
-        case ARM_INST_ADC:
-        case ARM_INST_ADCS:
-            // Add with Carry
-            *targetPC = firstOperand + (secondOperandAfterShift + immediateValue) + cpsr_c;
-            break;
-
-        case ARM_INST_ADD:
-        case ARM_INST_ADDS:
-            *targetPC = firstOperand + (secondOperandAfterShift + immediateValue);
-            break;
-
-        case ARM_INST_AND:
-        case ARM_INST_ANDS:
-            *targetPC = firstOperand & (secondOperandAfterShift + immediateValue);
-            break;
-
-        case ARM_INST_ASR:
-        case ARM_INST_ASRS:
-            asm("mov %0, %1, asr %2" : "=r" (myTargetPC) : "r" (firstOperand), "r" (secondOperandAfterShift + immediateValue));
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_BIC:
-        case ARM_INST_BICS:
-            asm("bic %0, %1, %2" : "=r" (myTargetPC) : "r" (firstOperand), "r" (secondOperandAfterShift + immediateValue));
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_EOR:
-        case ARM_INST_EORS:
-            asm("eor %0, %1, %2" : "=r" (myTargetPC) : "r" (firstOperand), "r" (secondOperandAfterShift + immediateValue));
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_ORR:
-        case ARM_INST_ORRS:
-            asm("orr %0, %1, %2" : "=r" (myTargetPC) : "r" (firstOperand), "r" (secondOperandAfterShift + immediateValue));
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_RSB:
-        case ARM_INST_RSBS:
-            asm("rsb %0, %1, %2" : "=r" (myTargetPC) : "r" (firstOperand), "r" (secondOperandAfterShift + immediateValue));
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_RSC:
-        case ARM_INST_RSCS:
-            myTargetPC = secondOperandAfterShift - (firstOperand + !cpsr_c);
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_SBC:
-        case ARM_INST_SBCS:
-            asm("sbc %0, %1, %2" : "=r" (myTargetPC) : "r" (firstOperand), "r" (secondOperandAfterShift + immediateValue  + !cpsr_c));
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_SUB:
-        case ARM_INST_SUBS:
-            asm("sub %0, %1, %2" : "=r" (myTargetPC) : "r" (firstOperand), "r" (secondOperandAfterShift + immediateValue));
-            *targetPC = myTargetPC;
-            break;
-
-            // Logical shifts and move operations that can change the PC
-        case ARM_INST_LSL:
-        case ARM_INST_LSLS:
-        case ARM_INST_LSR:
-        case ARM_INST_LSRS:
-        case ARM_INST_MOV:
-        case ARM_INST_MOVS:
-        case ARM_INST_ROR:
-        case ARM_INST_RORS:
-        case ARM_INST_RRX:
-        case ARM_INST_RRXS:
-            myTargetPC = secondOperandAfterShift + immediateValue;
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_MVN:
-        case ARM_INST_MVNS:
-            myTargetPC = !(secondOperandAfterShift + immediateValue);
-            *targetPC = myTargetPC;
-            break;
-
-            // Load register can be used to load PC, usually with a function pointer
-        case ARM_INST_LDR:
-            switch (decodedInstruction.addressMode) {
-                case ARM_ADDR_LSWUB_IMM_POST:
-                case ARM_ADDR_LSWUB_REG_POST:
-                case ARM_ADDR_LSWUB_SCALED_POST:
-                    addressWherePCLives = baseAddress;
-                    break;
-
-                case ARM_ADDR_LSWUB_IMM:
-                case ARM_ADDR_LSWUB_REG:
-                case ARM_ADDR_LSWUB_SCALED:
-                case ARM_ADDR_LSWUB_IMM_PRE:
-                case ARM_ADDR_LSWUB_REG_PRE:
-                case ARM_ADDR_LSWUB_SCALED_PRE:
-                    addressWherePCLives = baseAddress + (addressOffsetFromRegisterAfterShift + immediateOffset);
-                    break;
-
-                default:
-                    break;
-            }
-
-            mypid = m_thread->ProcessID();
-            if (DNBProcessMemoryRead(mypid, addressWherePCLives, sizeof(nub_addr_t), &myTargetPC) !=  sizeof(nub_addr_t))
-            {
-                DNBLogError("Could not read memory at %8.8x to get targetPC when processing the pop instruction!", addressWherePCLives);
-                return false;
-            }
-
-            *targetPC = myTargetPC;
-            break;
-
-            // 32b load multiple operations can load the PC along with everything else,
-            //  usually to return from a function call
-        case ARM_INST_LDMDA:
-            mypid = m_thread->ProcessID();
-            addressWherePCLives = baseAddress;
-            if (DNBProcessMemoryRead(mypid, addressWherePCLives, sizeof(nub_addr_t), &myTargetPC) !=  sizeof(nub_addr_t))
-            {
-                DNBLogError("Could not read memory at %8.8x to get targetPC when processing the pop instruction!", addressWherePCLives);
-                return false;
-            }
-
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_LDMDB:
-            mypid = m_thread->ProcessID();
-            addressWherePCLives = baseAddress - 4;
-            if (DNBProcessMemoryRead(mypid, addressWherePCLives, sizeof(nub_addr_t), &myTargetPC) !=  sizeof(nub_addr_t))
-            {
-                DNBLogError("Could not read memory at %8.8x to get targetPC when processing the pop instruction!", addressWherePCLives);
-                return false;
-            }
-
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_LDMIB:
-            mypid = m_thread->ProcessID();
-            addressWherePCLives = baseAddress + numRegistersToLoad*4 + 4;
-            if (DNBProcessMemoryRead(mypid, addressWherePCLives, sizeof(nub_addr_t), &myTargetPC) !=  sizeof(nub_addr_t))
-            {
-                DNBLogError("Could not read memory at %8.8x to get targetPC when processing the pop instruction!", addressWherePCLives);
-                return false;
-            }
-
-            *targetPC = myTargetPC;
-            break;
-
-        case ARM_INST_LDMIA: // same as pop
-            // Normal 16-bit LD multiple can't touch R15, but POP can
-        case ARM_INST_POP:  // Can also get the PC & updates SP
-            mypid = m_thread->ProcessID();
-            addressWherePCLives = baseAddress + numRegistersToLoad*4;
-            if (DNBProcessMemoryRead(mypid, addressWherePCLives, sizeof(nub_addr_t), &myTargetPC) !=  sizeof(nub_addr_t))
-            {
-                DNBLogError("Could not read memory at %8.8x to get targetPC when processing the pop instruction!", addressWherePCLives);
-                return false;
-            }
-
-            *targetPC = myTargetPC;
-            break;
-
-            // 16b TBB and TBH instructions load a jump address from a table
-        case ARM_INST_TBB:
-            mypid = m_thread->ProcessID();
-            addressWherePCLives = baseAddress + addressOffsetFromRegisterAfterShift;
-            if (DNBProcessMemoryRead(mypid, addressWherePCLives, 1, &halfwords) !=  1)
-            {
-                DNBLogError("Could not read memory at %8.8x to get targetPC when processing the TBB instruction!", addressWherePCLives);
-                return false;
-            }
-            // add 4 to currentPC since we are in Thumb mode and then add 2*halfwords
-            *targetPC = (currentPC + 4) + 2*halfwords;
-            break;
-
-        case ARM_INST_TBH:
-            mypid = m_thread->ProcessID();
-            addressWherePCLives = ((baseAddress + (addressOffsetFromRegisterAfterShift << 1)) & ~0x1);
-            if (DNBProcessMemoryRead(mypid, addressWherePCLives, 2, &halfwords) !=  2)
-            {
-                DNBLogError("Could not read memory at %8.8x to get targetPC when processing the TBH instruction!", addressWherePCLives);
-                return false;
-            }
-            // add 4 to currentPC since we are in Thumb mode and then add 2*halfwords
-            *targetPC = (currentPC + 4) + 2*halfwords;
-            break;
-
-            // ThumbEE branch-to-handler instructions: Jump to handlers at some offset
-            //  from a special base pointer register (which is unknown at disassembly time)
-        case ARM_INST_HB:
-        case ARM_INST_HBP:
-            //          TODO: ARM_INST_HB, ARM_INST_HBP
-            break;
-
-        case ARM_INST_HBL:
-        case ARM_INST_HBLP:
-            //          TODO: ARM_INST_HBL, ARM_INST_HBLP
-            break;
-
-            // Breakpoint and software interrupt jump to interrupt handler (always ARM)
-        case ARM_INST_BKPT:
-        case ARM_INST_SMC:
-        case ARM_INST_SVC:
-            //          TODO: ARM_INST_BKPT, ARM_INST_SMC, ARM_INST_SVC
-            break;
-
-            // Return from exception, obviously modifies PC [interrupt only!]
-        case ARM_INST_RFEDA:
-        case ARM_INST_RFEDB:
-        case ARM_INST_RFEIA:
-        case ARM_INST_RFEIB:
-            //          TODO: ARM_INST_RFEDA, ARM_INST_RFEDB, ARM_INST_RFEIA, ARM_INST_RFEIB
-            break;
-
-            // Other instructions either can't change R15 or are "undefined" if you do,
-            //  so no sane compiler should ever generate them & we don't care here.
-            //  Also, R15 can only legally be used in a read-only manner for the
-            //  various ARM addressing mode (to get PC-relative addressing of constants),
-            //  but can NOT be used with any of the update modes.
-        default:
-            DNBLogError("%s should not be called for instruction code %d!", __FUNCTION__, decodedInstruction.instruction->code);
-            return false;
-            break;
-    }
-
-    return true;
-}
-
-void
-DNBArchMachARM::EvaluateNextInstructionForSoftwareBreakpointSetup(nub_addr_t currentPC, uint32_t cpsr, bool currentPCIsThumb, nub_addr_t *nextPC, bool *nextPCIsThumb)
-{
-    DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "DNBArchMachARM::EvaluateNextInstructionForSoftwareBreakpointSetup() called");
-
-    nub_addr_t targetPC = INVALID_NUB_ADDRESS;
-    uint32_t registerValue;
-    arm_error_t decodeError;
-    nub_addr_t currentPCInITBlock, nextPCInITBlock;
-    int i;
-    bool last_decoded_instruction_executes = true;
-
-    DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: default nextPC=0x%8.8x (%s)", __FUNCTION__, *nextPC, *nextPCIsThumb ? "Thumb" : "ARM");
-
-    // Update *nextPC and *nextPCIsThumb for special cases
-    if (m_last_decode_thumb.itBlockRemaining) // we are in an IT block
-    {
-        // Set the nextPC to the PC of the instruction which will execute in the IT block
-        // If none of the instruction execute in the IT block based on the condition flags,
-        // then point to the instruction immediately following the IT block
-        const int itBlockRemaining = m_last_decode_thumb.itBlockRemaining;
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: itBlockRemaining=%8.8x", __FUNCTION__, itBlockRemaining);
-
-        // Determine the PC at which the next instruction resides
-        if (m_last_decode_arm.thumb16b)
-            currentPCInITBlock = currentPC + 2;
-        else
-            currentPCInITBlock = currentPC + 4;
-
-        for (i = 0; i < itBlockRemaining; i++)
-        {
-            DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: currentPCInITBlock=%8.8x", __FUNCTION__, currentPCInITBlock);
-            decodeError = DecodeInstructionUsingDisassembler(currentPCInITBlock, cpsr, &m_last_decode_arm, &m_last_decode_thumb, &nextPCInITBlock);
-
-            if (decodeError != ARM_SUCCESS)
-                DNBLogError("unable to disassemble instruction at 0x%8.8llx", (uint64_t)currentPCInITBlock);
-
-            DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: condition=%d", __FUNCTION__, m_last_decode_arm.condition);
-            if (ConditionPassed(m_last_decode_arm.condition, cpsr))
-            {
-                DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: Condition codes matched for instruction %d", __FUNCTION__, i);
-                break; // break from the for loop
-            }
-            else
-            {
-                DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: Condition codes DID NOT matched for instruction %d", __FUNCTION__, i);
-            }
-
-            // update currentPC and nextPCInITBlock
-            currentPCInITBlock = nextPCInITBlock;
-        }
-
-        if (i == itBlockRemaining) // We came out of the IT block without executing any instructions
-            last_decoded_instruction_executes = false;
-
-        *nextPC = currentPCInITBlock;
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: After IT block step-through: *nextPC=%8.8x", __FUNCTION__, *nextPC);
-    }
-
-    DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE,
-                    "%s: cpsr = %8.8x, thumb16b = %d, thumb = %d, branch = %d, conditional = %d, knownTarget = %d, links = %d, canSwitchMode = %d, doesSwitchMode = %d",
-                    __FUNCTION__,
-                    cpsr,
-                    m_last_decode_arm.thumb16b,
-                    m_last_decode_arm.thumb,
-                    m_last_decode_arm.branch,
-                    m_last_decode_arm.conditional,
-                    m_last_decode_arm.knownTarget,
-                    m_last_decode_arm.links,
-                    m_last_decode_arm.canSwitchMode,
-                    m_last_decode_arm.doesSwitchMode);
-
-
-    if (last_decoded_instruction_executes &&                    // Was this a conditional instruction that did execute?
-        m_last_decode_arm.branch &&                             // Can this instruction change the PC?
-        (m_last_decode_arm.instruction->code != ARM_INST_SVC))  // If this instruction is not an SVC instruction
-    {
-        // Set targetPC. Compute if needed.
-        if (m_last_decode_arm.knownTarget)
-        {
-            // Fixed, known PC-relative
-            targetPC = m_last_decode_arm.targetPC;
-        }
-        else
-        {
-            // if targetPC is not known at compile time (PC-relative target), compute targetPC
-            if (!ComputeNextPC(currentPC, m_last_decode_arm, currentPCIsThumb, &targetPC))
-            {
-                DNBLogError("%s: Unable to compute targetPC for instruction at 0x%8.8llx", __FUNCTION__, (uint64_t)currentPC);
-                targetPC = INVALID_NUB_ADDRESS;
-            }
-        }
-
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: targetPC=0x%8.8x, cpsr=0x%8.8x, condition=0x%hhx", __FUNCTION__, targetPC, cpsr, m_last_decode_arm.condition);
-
-        // Refine nextPC computation
-        if ((m_last_decode_arm.instruction->code == ARM_INST_CBZ) ||
-            (m_last_decode_arm.instruction->code == ARM_INST_CBNZ))
-        {
-            // Compare and branch on zero/non-zero (Thumb-16 only)
-            // Unusual condition check built into the instruction
-            registerValue = m_state.context.gpr.__r[m_last_decode_arm.op[REG_RD].value];
-
-            if (m_last_decode_arm.instruction->code == ARM_INST_CBZ)
-            {
-                if (registerValue == 0)
-                    *nextPC = targetPC;
-            }
-            else
-            {
-                if (registerValue != 0)
-                    *nextPC = targetPC;
-            }
-        }
-        else if (m_last_decode_arm.conditional) // Is the change conditional on flag results?
-        {
-            if (ConditionPassed(m_last_decode_arm.condition, cpsr)) // conditions match
-            {
-                DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: Condition matched!", __FUNCTION__);
-                *nextPC = targetPC;
-            }
-            else
-            {
-                DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: Condition did not match!", __FUNCTION__);
-            }
-        }
-        else
-        {
-            *nextPC = targetPC;
-        }
-
-        // Refine nextPCIsThumb computation
-        if (m_last_decode_arm.doesSwitchMode)
-        {
-            *nextPCIsThumb = !currentPCIsThumb;
-        }
-        else if (m_last_decode_arm.canSwitchMode)
-        {
-            // Legal to switch ARM <--> Thumb mode with this branch
-            // dependent on bit[0] of targetPC
-            *nextPCIsThumb = (*nextPC & 1u) != 0;
-        }
-        else
-        {
-            *nextPCIsThumb = currentPCIsThumb;
-        }
-    }
-
-    DNBLogThreadedIf(LOG_STEP, "%s: calculated nextPC=0x%8.8x (%s)", __FUNCTION__, *nextPC, *nextPCIsThumb ? "Thumb" : "ARM");
-}
-
-
-arm_error_t
-DNBArchMachARM::DecodeInstructionUsingDisassembler(nub_addr_t curr_pc, uint32_t curr_cpsr, arm_decoded_instruction_t *decodedInstruction, thumb_static_data_t *thumbStaticData, nub_addr_t *next_pc)
-{
-
-    DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: pc=0x%8.8x, cpsr=0x%8.8x", __FUNCTION__, curr_pc, curr_cpsr);
-
-    const uint32_t isetstate_mask = MASK_CPSR_T | MASK_CPSR_J;
-    const uint32_t curr_isetstate = curr_cpsr & isetstate_mask;
-    uint32_t opcode32;
-    nub_addr_t nextPC = curr_pc;
-    arm_error_t decodeReturnCode = ARM_SUCCESS;
-
-    m_last_decode_pc = curr_pc;
-    DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: last_decode_pc=0x%8.8x", __FUNCTION__, m_last_decode_pc);
-
-    switch (curr_isetstate) {
-        case 0x0: // ARM Instruction
-            // Read the ARM opcode
-            if (m_thread->Process()->Task().ReadMemory(curr_pc, 4, &opcode32) != 4)
-            {
-                DNBLogError("unable to read opcode bits 31:0 for an ARM opcode at 0x%8.8llx", (uint64_t)curr_pc);
-                decodeReturnCode = ARM_ERROR;
-            }
-            else
-            {
-                nextPC += 4;
-                decodeReturnCode = ArmDisassembler((uint64_t)curr_pc, opcode32, false, decodedInstruction, NULL, 0, NULL, 0);
-
-                if (decodeReturnCode != ARM_SUCCESS)
-                    DNBLogError("Unable to decode ARM instruction 0x%8.8x at 0x%8.8llx", opcode32, (uint64_t)curr_pc);
-            }
-            break;
-
-        case 0x20: // Thumb Instruction
-            uint16_t opcode16;
-            // Read the a 16 bit Thumb opcode
-            if (m_thread->Process()->Task().ReadMemory(curr_pc, 2, &opcode16) != 2)
-            {
-                DNBLogError("unable to read opcode bits 15:0 for a thumb opcode at 0x%8.8llx", (uint64_t)curr_pc);
-                decodeReturnCode = ARM_ERROR;
-            }
-            else
-            {
-                nextPC += 2;
-                opcode32 = opcode16;
-
-                decodeReturnCode = ThumbDisassembler((uint64_t)curr_pc, opcode16, false, false, thumbStaticData, decodedInstruction, NULL, 0, NULL, 0);
-
-                switch (decodeReturnCode) {
-                    case ARM_SKIP:
-                        // 32 bit thumb opcode
-                        nextPC += 2;
-                        if (m_thread->Process()->Task().ReadMemory(curr_pc+2, 2, &opcode16) != 2)
-                        {
-                            DNBLogError("unable to read opcode bits 15:0 for a thumb opcode at 0x%8.8llx", (uint64_t)curr_pc+2);
-                        }
-                        else
-                        {
-                            opcode32 = (opcode32 << 16) | opcode16;
-
-                            decodeReturnCode = ThumbDisassembler((uint64_t)(curr_pc+2), opcode16, false, false, thumbStaticData, decodedInstruction, NULL, 0, NULL, 0);
-
-                            if (decodeReturnCode != ARM_SUCCESS)
-                                DNBLogError("Unable to decode 2nd half of Thumb instruction 0x%8.4hx at 0x%8.8llx", opcode16, (uint64_t)curr_pc+2);
-                            break;
-                        }
-                        break;
-
-                    case ARM_SUCCESS:
-                        // 16 bit thumb opcode; at this point we are done decoding the opcode
-                        break;
-
-                    default:
-                        DNBLogError("Unable to decode Thumb instruction 0x%8.4hx at 0x%8.8llx", opcode16, (uint64_t)curr_pc);
-                        decodeReturnCode = ARM_ERROR;
-                        break;
-                }
-            }
-            break;
-
-        default:
-            break;
-    }
-
-    if (next_pc)
-        *next_pc = nextPC;
-
-    return decodeReturnCode;
-}
-
-#endif
-
 nub_bool_t
 DNBArchMachARM::BreakpointHit (nub_process_t pid, nub_thread_t tid, nub_break_t breakID, void *baton)
 {
@@ -1932,209 +711,6 @@ DNBArchMachARM::BreakpointHit (nub_process_t pid, nub_thread_t tid, nub_break_t 
     DNBThreadGetRegisterValueByID (pid, tid, REGISTER_SET_GENERIC, GENERIC_REGNUM_PC, &pc_value);
     pc_value.value.uint32 = bkpt_pc;
     return DNBThreadSetRegisterValueByID (pid, tid, REGISTER_SET_GENERIC, GENERIC_REGNUM_PC, &pc_value);
-}
-
-// Set the single step bit in the processor status register.
-kern_return_t
-DNBArchMachARM::SetSingleStepSoftwareBreakpoints()
-{
-    DNBError err;
-
-#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
-    err = GetGPRState(false);
-
-    if (err.Fail())
-    {
-        err.LogThreaded("%s: failed to read the GPR registers", __FUNCTION__);
-        return err.Error();
-    }
-
-    nub_addr_t curr_pc = m_state.context.gpr.__pc;
-    uint32_t curr_cpsr = m_state.context.gpr.__cpsr;
-    nub_addr_t next_pc = curr_pc;
-
-    bool curr_pc_is_thumb = (m_state.context.gpr.__cpsr & 0x20) != 0;
-    bool next_pc_is_thumb = curr_pc_is_thumb;
-
-    uint32_t curr_itstate = ((curr_cpsr & 0x6000000) >> 25) | ((curr_cpsr & 0xFC00) >> 8);
-    bool inITBlock = (curr_itstate & 0xF) ? 1 : 0;
-    bool lastInITBlock = ((curr_itstate & 0xF) == 0x8) ? 1 : 0;
-
-    DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: curr_pc=0x%8.8x (%s), curr_itstate=0x%x, inITBlock=%d, lastInITBlock=%d", __FUNCTION__, curr_pc, curr_pc_is_thumb ? "Thumb" : "ARM", curr_itstate, inITBlock, lastInITBlock);
-
-    // If the instruction is not in the IT block, then decode using the Disassembler and compute next_pc
-    if (!inITBlock)
-    {
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: Decoding an instruction NOT in the IT block", __FUNCTION__);
-
-        arm_error_t decodeReturnCode =  DecodeInstructionUsingDisassembler(curr_pc, curr_cpsr, &m_last_decode_arm, &m_last_decode_thumb, &next_pc);
-
-        if (decodeReturnCode != ARM_SUCCESS)
-        {
-            err = KERN_INVALID_ARGUMENT;
-            DNBLogError("DNBArchMachARM::SetSingleStepSoftwareBreakpoints: Unable to disassemble instruction at 0x%8.8llx", (uint64_t)curr_pc);
-        }
-    }
-    else
-    {
-        next_pc = curr_pc + ((m_last_decode_arm.thumb16b) ? 2 : 4);
-    }
-
-    // Instruction is NOT in the IT block OR
-    if (!inITBlock)
-    {
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: normal instruction", __FUNCTION__);
-        EvaluateNextInstructionForSoftwareBreakpointSetup(curr_pc, m_state.context.gpr.__cpsr, curr_pc_is_thumb, &next_pc, &next_pc_is_thumb);
-    }
-    else if (inITBlock && !m_last_decode_arm.setsFlags)
-    {
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: IT instruction that doesn't set flags", __FUNCTION__);
-        EvaluateNextInstructionForSoftwareBreakpointSetup(curr_pc, m_state.context.gpr.__cpsr, curr_pc_is_thumb, &next_pc, &next_pc_is_thumb);
-    }
-    else if (lastInITBlock && m_last_decode_arm.branch)
-    {
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: IT instruction which last in the IT block and is a branch", __FUNCTION__);
-        EvaluateNextInstructionForSoftwareBreakpointSetup(curr_pc, m_state.context.gpr.__cpsr, curr_pc_is_thumb, &next_pc, &next_pc_is_thumb);
-    }
-    else
-    {
-        // Instruction is in IT block and can modify the CPSR flags
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: IT instruction that sets flags", __FUNCTION__);
-
-        // NOTE: When this point of code is reached, the instruction at curr_pc has already been decoded
-        // inside the function ThreadDidStop(). Therefore m_last_decode_arm, m_last_decode_thumb
-        // reflect the decoded instruction at curr_pc
-
-        // If we find an instruction inside the IT block which will set/modify the condition flags (NZCV bits in CPSR),
-        // we set breakpoints at all remaining instructions inside the IT block starting from the instruction immediately
-        // following this one AND a breakpoint at the instruction immediately following the IT block. We do this because
-        // we cannot determine the next_pc until the instruction at which we are currently stopped executes. Hence we
-        // insert (m_last_decode_thumb.itBlockRemaining+1) 16-bit Thumb breakpoints at consecutive memory locations
-        // starting at addrOfNextInstructionInITBlock. We record these breakpoints in class variable m_sw_single_step_itblock_break_id[],
-        // and also record the total number of IT breakpoints set in the variable 'm_sw_single_step_itblock_break_count'.
-
-        // The instructions inside the IT block, which are replaced by the 16-bit Thumb breakpoints (opcode=0xDEFE)
-        // instructions, can be either Thumb-16 or Thumb-32. When a Thumb-32 instruction (say, inst#1) is replaced  Thumb
-        // by a 16-bit breakpoint (OS only supports 16-bit breakpoints in Thumb mode and 32-bit breakpoints in ARM mode), the
-        // breakpoint for the next instruction (say instr#2) is saved in the upper half of this Thumb-32 (instr#1)
-        // instruction. Hence if the execution stops at Breakpoint2 corresponding to instr#2, the PC is offset by 16-bits.
-        // We therefore have to keep track of PC of each instruction in the IT block that is being replaced with the 16-bit
-        // Thumb breakpoint, to ensure that when the breakpoint is hit, the PC is adjusted to the correct value. We save
-        // the actual PC corresponding to each instruction in the IT block by associating a call back with each breakpoint
-        // we set and passing it as a baton. When the breakpoint hits and the callback routine is called, the routine
-        // adjusts the PC based on the baton that is passed to it.
-
-        nub_addr_t addrOfNextInstructionInITBlock, pcInITBlock, nextPCInITBlock, bpAddressInITBlock;
-        uint16_t opcode16;
-        uint32_t opcode32;
-
-        addrOfNextInstructionInITBlock = (m_last_decode_arm.thumb16b) ? curr_pc + 2 : curr_pc + 4;
-
-        pcInITBlock = addrOfNextInstructionInITBlock;
-
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: itBlockRemaining=%d", __FUNCTION__, m_last_decode_thumb.itBlockRemaining);
-
-        m_sw_single_step_itblock_break_count = 0;
-        for (int i = 0; i <= m_last_decode_thumb.itBlockRemaining; i++)
-        {
-            if (NUB_BREAK_ID_IS_VALID(m_sw_single_step_itblock_break_id[i]))
-            {
-                DNBLogError("FunctionProfiler::SetSingleStepSoftwareBreakpoints(): Array m_sw_single_step_itblock_break_id should not contain any valid breakpoint IDs at this point. But found a valid breakID=%d at index=%d", m_sw_single_step_itblock_break_id[i], i);
-            }
-            else
-            {
-                nextPCInITBlock = pcInITBlock;
-                // Compute nextPCInITBlock based on opcode present at pcInITBlock
-                if (m_thread->Process()->Task().ReadMemory(pcInITBlock, 2, &opcode16) == 2)
-                {
-                    opcode32 = opcode16;
-                    nextPCInITBlock += 2;
-
-                    // Check for 32 bit thumb opcode and read the upper 16 bits if needed
-                    if (((opcode32 & 0xE000) == 0xE000) && (opcode32 & 0x1800))
-                    {
-                        // Adjust 'next_pc_in_itblock' to point to the default next Thumb instruction for
-                        // a 32 bit Thumb opcode
-                        // Read bits 31:16 of a 32 bit Thumb opcode
-                        if (m_thread->Process()->Task().ReadMemory(pcInITBlock+2, 2, &opcode16) == 2)
-                        {
-                            // 32 bit thumb opcode
-                            opcode32 = (opcode32 << 16) | opcode16;
-                            nextPCInITBlock += 2;
-                        }
-                        else
-                        {
-                            DNBLogError("FunctionProfiler::SetSingleStepSoftwareBreakpoints(): Unable to read opcode bits 31:16 for a 32 bit thumb opcode at pc=0x%8.8llx", (uint64_t)nextPCInITBlock);
-                        }
-                    }
-                }
-                else
-                {
-                    DNBLogError("FunctionProfiler::SetSingleStepSoftwareBreakpoints(): Error reading 16-bit Thumb instruction at pc=0x%8.8x", nextPCInITBlock);
-                }
-
-
-                // Set breakpoint and associate a callback function with it
-                bpAddressInITBlock = addrOfNextInstructionInITBlock + 2*i;
-                DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: Setting IT breakpoint[%d] at address: 0x%8.8x", __FUNCTION__, i, bpAddressInITBlock);
-
-                m_sw_single_step_itblock_break_id[i] = m_thread->Process()->CreateBreakpoint(bpAddressInITBlock, 2, false, m_thread->ThreadID());
-                if (!NUB_BREAK_ID_IS_VALID(m_sw_single_step_itblock_break_id[i]))
-                    err = KERN_INVALID_ARGUMENT;
-                else
-                {
-                    DNBLogThreadedIf(LOG_STEP, "%s: Set IT breakpoint[%i]=%d set at 0x%8.8x for instruction at 0x%8.8x", __FUNCTION__, i, m_sw_single_step_itblock_break_id[i], bpAddressInITBlock, pcInITBlock);
-
-                    // Set the breakpoint callback for these special IT breakpoints
-                    // so that if one of these breakpoints gets hit, it knows to
-                    // update the PC to the original address of the conditional
-                    // IT instruction.
-                    DNBBreakpointSetCallback(m_thread->ProcessID(), m_sw_single_step_itblock_break_id[i], DNBArchMachARM::BreakpointHit, (void*)pcInITBlock);
-                    m_sw_single_step_itblock_break_count++;
-                }
-            }
-
-            pcInITBlock = nextPCInITBlock;
-        }
-
-        DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: Set %u IT software single breakpoints.", __FUNCTION__, m_sw_single_step_itblock_break_count);
-
-    }
-
-    DNBLogThreadedIf(LOG_STEP, "%s: next_pc=0x%8.8x (%s)", __FUNCTION__, next_pc, next_pc_is_thumb ? "Thumb" : "ARM");
-
-    if (next_pc & 0x1)
-    {
-        assert(next_pc_is_thumb);
-    }
-
-    if (next_pc_is_thumb)
-    {
-        next_pc &= ~0x1;
-    }
-    else
-    {
-        assert((next_pc & 0x3) == 0);
-    }
-
-    if (!inITBlock || (inITBlock && !m_last_decode_arm.setsFlags) || (lastInITBlock && m_last_decode_arm.branch))
-    {
-        err = KERN_SUCCESS;
-
-        const DNBBreakpoint *bp = m_thread->Process()->Breakpoints().FindByAddress(next_pc);
-
-        if (bp == NULL)
-        {
-            m_sw_single_step_break_id = m_thread->Process()->CreateBreakpoint(next_pc, next_pc_is_thumb ? 2 : 4, false, m_thread->ThreadID());
-            if (!NUB_BREAK_ID_IS_VALID(m_sw_single_step_break_id))
-                err = KERN_INVALID_ARGUMENT;
-            DNBLogThreadedIf(LOG_STEP, "%s: software single step breakpoint with breakID=%d set at 0x%8.8x", __FUNCTION__, m_sw_single_step_break_id, next_pc);
-        }
-    }
-#else
-    err.LogThreaded("%s: ARMDisassembler.framework support is disabled", __FUNCTION__);
-#endif
-    return err.Error();
 }
 
 uint32_t
@@ -2450,6 +1026,8 @@ DNBArchMachARM::EnableHardwareWatchpoint (nub_addr_t addr, nub_size_t size, bool
                                     (write ? WCR_STORE : 0) |   // Stop on write access?
                                     WCR_ENABLE;                 // Enable this watchpoint;
 
+            DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchMachARM::EnableHardwareWatchpoint() adding watchpoint on address 0x%llx with control register value 0x%x", (uint64_t) m_state.dbg.__wvr[i], (uint32_t) m_state.dbg.__wcr[i]);
+
             kret = SetDBGState();
             //DumpDBGState(m_state.dbg);
 
@@ -2652,7 +1230,7 @@ DNBArchMachARM::GetWatchAddress(const DBG &debug_state, uint32_t hw_index)
 }
 
 //----------------------------------------------------------------------
-// Register information defintions for 32 bit ARMV6.
+// Register information defintions for 32 bit ARMV7.
 //----------------------------------------------------------------------
 enum gpr_regnums
 {
@@ -2677,7 +1255,7 @@ enum gpr_regnums
 
 enum 
 {
-    vfp_s0 = 0,
+    vfp_s0 = 17, // match the g_gdb_register_map_arm table in RNBRemote.cpp
     vfp_s1,
     vfp_s2,
     vfp_s3,
@@ -2708,8 +1286,12 @@ enum
     vfp_s28,
     vfp_s29,
     vfp_s30,
-    vfp_s31,
-    vfp_d0,
+    vfp_s31
+};
+
+enum
+{
+    vfp_d0 = 49, // match the g_gdb_register_map_arm table in RNBRemote.cpp
     vfp_d1,
     vfp_d2,
     vfp_d3,
@@ -2740,114 +1322,63 @@ enum
     vfp_d28,
     vfp_d29,
     vfp_d30,
-    vfp_d31,
+    vfp_d31
+};
+
+enum
+{
+    vfp_q0 = 81, // match the g_gdb_register_map_arm table in RNBRemote.cpp
+    vfp_q1,
+    vfp_q2,
+    vfp_q3,
+    vfp_q4,
+    vfp_q5,
+    vfp_q6,
+    vfp_q7,
+    vfp_q8,
+    vfp_q9,
+    vfp_q10,
+    vfp_q11,
+    vfp_q12,
+    vfp_q13,
+    vfp_q14,
+    vfp_q15,
     vfp_fpscr
 };
 
 enum
 {
     exc_exception,
-	exc_fsr,
-	exc_far,
-};
-
-enum
-{
-    gdb_r0 = 0,
-    gdb_r1,
-    gdb_r2,
-    gdb_r3,
-    gdb_r4,
-    gdb_r5,
-    gdb_r6,
-    gdb_r7,
-    gdb_r8,
-    gdb_r9,
-    gdb_r10,
-    gdb_r11,
-    gdb_r12,
-    gdb_sp,
-    gdb_lr,
-    gdb_pc,
-    gdb_f0,
-    gdb_f1,
-    gdb_f2,
-    gdb_f3,
-    gdb_f4,
-    gdb_f5,
-    gdb_f6,
-    gdb_f7,
-    gdb_f8,
-    gdb_cpsr,
-    gdb_s0,
-    gdb_s1,
-    gdb_s2,
-    gdb_s3,
-    gdb_s4,
-    gdb_s5,
-    gdb_s6,
-    gdb_s7,
-    gdb_s8,
-    gdb_s9,
-    gdb_s10,
-    gdb_s11,
-    gdb_s12,
-    gdb_s13,
-    gdb_s14,
-    gdb_s15,
-    gdb_s16,
-    gdb_s17,
-    gdb_s18,
-    gdb_s19,
-    gdb_s20,
-    gdb_s21,
-    gdb_s22,
-    gdb_s23,
-    gdb_s24,
-    gdb_s25,
-    gdb_s26,
-    gdb_s27,
-    gdb_s28,
-    gdb_s29,
-    gdb_s30,
-    gdb_s31,
-    gdb_fpscr,
-    gdb_d0,
-    gdb_d1,
-    gdb_d2,
-    gdb_d3,
-    gdb_d4,
-    gdb_d5,
-    gdb_d6,
-    gdb_d7,
-    gdb_d8,
-    gdb_d9,
-    gdb_d10,
-    gdb_d11,
-    gdb_d12,
-    gdb_d13,
-    gdb_d14,
-    gdb_d15
+    exc_fsr,
+    exc_far,
 };
 
 #define GPR_OFFSET_IDX(idx) (offsetof (DNBArchMachARM::GPR, __r[idx]))
 #define GPR_OFFSET_NAME(reg) (offsetof (DNBArchMachARM::GPR, __##reg))
-#define VFP_S_OFFSET_IDX(idx) (offsetof (DNBArchMachARM::FPU, __r[(idx)]) + offsetof (DNBArchMachARM::Context, vfp))
-#define VFP_D_OFFSET_IDX(idx) (VFP_S_OFFSET_IDX ((idx) * 2))
-#define VFP_OFFSET_NAME(reg) (offsetof (DNBArchMachARM::FPU, __##reg) + offsetof (DNBArchMachARM::Context, vfp))
+
 #define EXC_OFFSET(reg)      (offsetof (DNBArchMachARM::EXC, __##reg)  + offsetof (DNBArchMachARM::Context, exc))
 
 // These macros will auto define the register name, alt name, register size,
 // register offset, encoding, format and native register. This ensures that
 // the register state structures are defined correctly and have the correct
 // sizes and offsets.
-#define DEFINE_GPR_IDX(idx, reg, alt, gen) { e_regSetGPR, gpr_##reg, #reg, alt, Uint, Hex, 4, GPR_OFFSET_IDX(idx), gcc_##reg, dwarf_##reg, gen, gdb_##reg }
-#define DEFINE_GPR_NAME(reg, alt, gen) { e_regSetGPR, gpr_##reg, #reg, alt, Uint, Hex, 4, GPR_OFFSET_NAME(reg), gcc_##reg, dwarf_##reg, gen, gdb_##reg }
-//#define FLOAT_FORMAT Float
-#define FLOAT_FORMAT Hex
-#define DEFINE_VFP_S_IDX(idx) { e_regSetVFP, vfp_s##idx, "s" #idx, NULL, IEEE754, FLOAT_FORMAT, 4, VFP_S_OFFSET_IDX(idx), INVALID_NUB_REGNUM, dwarf_s##idx, INVALID_NUB_REGNUM, gdb_s##idx }
-//#define DEFINE_VFP_D_IDX(idx) { e_regSetVFP, vfp_d##idx, "d" #idx, NULL, IEEE754, Float, 8, VFP_D_OFFSET_IDX(idx), INVALID_NUB_REGNUM, dwarf_d##idx, INVALID_NUB_REGNUM, gdb_d##idx }
-#define DEFINE_VFP_D_IDX(idx) { e_regSetVFP, vfp_d##idx, "d" #idx, NULL, IEEE754, FLOAT_FORMAT, 8, VFP_D_OFFSET_IDX(idx), INVALID_NUB_REGNUM, dwarf_d##idx, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM }
+#define DEFINE_GPR_IDX(idx, reg, alt, gen) { e_regSetGPR, gpr_##reg, #reg, alt, Uint, Hex, 4, GPR_OFFSET_IDX(idx), gcc_##reg, dwarf_##reg, gen, INVALID_NUB_REGNUM, NULL, NULL}
+#define DEFINE_GPR_NAME(reg, alt, gen, inval) { e_regSetGPR, gpr_##reg, #reg, alt, Uint, Hex, 4, GPR_OFFSET_NAME(reg), gcc_##reg, dwarf_##reg, gen, INVALID_NUB_REGNUM, NULL, inval}
+
+// In case we are debugging to a debug target that the ability to
+// change into the protected modes with folded registers (ABT, IRQ,
+// FIQ, SYS, USR, etc..), we should invalidate r8-r14 if the CPSR
+// gets modified.
+
+uint32_t g_invalidate_cpsr[] = {
+    gpr_r8,
+    gpr_r9,
+    gpr_r10,
+    gpr_r11,
+    gpr_r12,
+    gpr_sp,
+    gpr_lr,
+    INVALID_NUB_REGNUM };
 
 // General purpose registers
 const DNBRegisterInfo
@@ -2866,81 +1397,146 @@ DNBArchMachARM::g_gpr_registers[] =
     DEFINE_GPR_IDX (10, r10,  NULL, INVALID_NUB_REGNUM   ),
     DEFINE_GPR_IDX (11, r11,  NULL, INVALID_NUB_REGNUM   ),
     DEFINE_GPR_IDX (12, r12,  NULL, INVALID_NUB_REGNUM   ),
-    DEFINE_GPR_NAME (sp, "r13", GENERIC_REGNUM_SP    ),
-    DEFINE_GPR_NAME (lr, "r14", GENERIC_REGNUM_RA    ),
-    DEFINE_GPR_NAME (pc, "r15", GENERIC_REGNUM_PC    ),
-    DEFINE_GPR_NAME (cpsr, "flags", GENERIC_REGNUM_FLAGS )
+    DEFINE_GPR_NAME (sp, "r13", GENERIC_REGNUM_SP, NULL),
+    DEFINE_GPR_NAME (lr, "r14", GENERIC_REGNUM_RA, NULL),
+    DEFINE_GPR_NAME (pc, "r15", GENERIC_REGNUM_PC, NULL),
+    DEFINE_GPR_NAME (cpsr, "flags", GENERIC_REGNUM_FLAGS, g_invalidate_cpsr)
 };
+
+uint32_t g_contained_q0[] {vfp_q0, INVALID_NUB_REGNUM };
+uint32_t g_contained_q1[] {vfp_q1, INVALID_NUB_REGNUM };
+uint32_t g_contained_q2[] {vfp_q2, INVALID_NUB_REGNUM };
+uint32_t g_contained_q3[] {vfp_q3, INVALID_NUB_REGNUM };
+uint32_t g_contained_q4[] {vfp_q4, INVALID_NUB_REGNUM };
+uint32_t g_contained_q5[] {vfp_q5, INVALID_NUB_REGNUM };
+uint32_t g_contained_q6[] {vfp_q6, INVALID_NUB_REGNUM };
+uint32_t g_contained_q7[] {vfp_q7, INVALID_NUB_REGNUM };
+uint32_t g_contained_q8[] {vfp_q8, INVALID_NUB_REGNUM };
+uint32_t g_contained_q9[] {vfp_q9, INVALID_NUB_REGNUM };
+uint32_t g_contained_q10[] {vfp_q10, INVALID_NUB_REGNUM };
+uint32_t g_contained_q11[] {vfp_q11, INVALID_NUB_REGNUM };
+uint32_t g_contained_q12[] {vfp_q12, INVALID_NUB_REGNUM };
+uint32_t g_contained_q13[] {vfp_q13, INVALID_NUB_REGNUM };
+uint32_t g_contained_q14[] {vfp_q14, INVALID_NUB_REGNUM };
+uint32_t g_contained_q15[] {vfp_q15, INVALID_NUB_REGNUM };
+
+uint32_t g_invalidate_q0[]  {vfp_q0,   vfp_d0, vfp_d1,    vfp_s0, vfp_s1, vfp_s2, vfp_s3,        INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q1[]  {vfp_q1,   vfp_d2, vfp_d3,    vfp_s4, vfp_s5, vfp_s6, vfp_s7,        INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q2[]  {vfp_q2,   vfp_d4, vfp_d5,    vfp_s8, vfp_s9, vfp_s10, vfp_s11,      INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q3[]  {vfp_q3,   vfp_d6, vfp_d7,    vfp_s12, vfp_s13, vfp_s14, vfp_s15,    INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q4[]  {vfp_q4,   vfp_d8, vfp_d9,    vfp_s16, vfp_s17, vfp_s18, vfp_s19,    INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q5[]  {vfp_q5,   vfp_d10, vfp_d11,  vfp_s20, vfp_s21, vfp_s22, vfp_s23,    INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q6[]  {vfp_q6,   vfp_d12, vfp_d13,  vfp_s24, vfp_s25, vfp_s26, vfp_s27,    INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q7[]  {vfp_q7,   vfp_d14, vfp_d15,  vfp_s28, vfp_s29, vfp_s30, vfp_s31,    INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q8[]  {vfp_q8,   vfp_d16, vfp_d17,  INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q9[]  {vfp_q9,   vfp_d18, vfp_d19,  INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q10[] {vfp_q10,  vfp_d20, vfp_d21,  INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q11[] {vfp_q11,  vfp_d22, vfp_d23,  INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q12[] {vfp_q12,  vfp_d24, vfp_d25,  INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q13[] {vfp_q13,  vfp_d26, vfp_d27,  INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q14[] {vfp_q14,  vfp_d28, vfp_d29,  INVALID_NUB_REGNUM };
+uint32_t g_invalidate_q15[] {vfp_q15,  vfp_d30, vfp_d31,  INVALID_NUB_REGNUM };
+
+#define VFP_S_OFFSET_IDX(idx) (offsetof (DNBArchMachARM::FPU, __r[(idx)]) + offsetof (DNBArchMachARM::Context, vfp))
+#define VFP_D_OFFSET_IDX(idx) (VFP_S_OFFSET_IDX ((idx) * 2))
+#define VFP_Q_OFFSET_IDX(idx) (VFP_S_OFFSET_IDX ((idx) * 4))
+
+#define VFP_OFFSET_NAME(reg) (offsetof (DNBArchMachARM::FPU, __##reg) + offsetof (DNBArchMachARM::Context, vfp))
+
+#define FLOAT_FORMAT Float
+
+#define DEFINE_VFP_S_IDX(idx)  e_regSetVFP, vfp_s##idx - vfp_s0, "s" #idx, NULL, IEEE754, FLOAT_FORMAT, 4, VFP_S_OFFSET_IDX(idx), INVALID_NUB_REGNUM, dwarf_s##idx, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM
+#define DEFINE_VFP_D_IDX(idx)  e_regSetVFP, vfp_d##idx - vfp_s0, "d" #idx, NULL, IEEE754, FLOAT_FORMAT, 8, VFP_D_OFFSET_IDX(idx), INVALID_NUB_REGNUM, dwarf_d##idx, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM
+#define DEFINE_VFP_Q_IDX(idx)  e_regSetVFP, vfp_q##idx - vfp_s0, "q" #idx, NULL, Vector, VectorOfUInt8, 16, VFP_Q_OFFSET_IDX(idx), INVALID_NUB_REGNUM, dwarf_q##idx, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM
 
 // Floating point registers
 const DNBRegisterInfo
 DNBArchMachARM::g_vfp_registers[] =
 {
-    DEFINE_VFP_S_IDX ( 0),
-    DEFINE_VFP_S_IDX ( 1),
-    DEFINE_VFP_S_IDX ( 2),
-    DEFINE_VFP_S_IDX ( 3),
-    DEFINE_VFP_S_IDX ( 4),
-    DEFINE_VFP_S_IDX ( 5),
-    DEFINE_VFP_S_IDX ( 6),
-    DEFINE_VFP_S_IDX ( 7),
-    DEFINE_VFP_S_IDX ( 8),
-    DEFINE_VFP_S_IDX ( 9),
-    DEFINE_VFP_S_IDX (10),
-    DEFINE_VFP_S_IDX (11),
-    DEFINE_VFP_S_IDX (12),
-    DEFINE_VFP_S_IDX (13),
-    DEFINE_VFP_S_IDX (14),
-    DEFINE_VFP_S_IDX (15),
-    DEFINE_VFP_S_IDX (16),
-    DEFINE_VFP_S_IDX (17),
-    DEFINE_VFP_S_IDX (18),
-    DEFINE_VFP_S_IDX (19),
-    DEFINE_VFP_S_IDX (20),
-    DEFINE_VFP_S_IDX (21),
-    DEFINE_VFP_S_IDX (22),
-    DEFINE_VFP_S_IDX (23),
-    DEFINE_VFP_S_IDX (24),
-    DEFINE_VFP_S_IDX (25),
-    DEFINE_VFP_S_IDX (26),
-    DEFINE_VFP_S_IDX (27),
-    DEFINE_VFP_S_IDX (28),
-    DEFINE_VFP_S_IDX (29),
-    DEFINE_VFP_S_IDX (30),
-    DEFINE_VFP_S_IDX (31),
-    DEFINE_VFP_D_IDX (0),
-    DEFINE_VFP_D_IDX (1),
-    DEFINE_VFP_D_IDX (2),
-    DEFINE_VFP_D_IDX (3),
-    DEFINE_VFP_D_IDX (4),
-    DEFINE_VFP_D_IDX (5),
-    DEFINE_VFP_D_IDX (6),
-    DEFINE_VFP_D_IDX (7),
-    DEFINE_VFP_D_IDX (8),
-    DEFINE_VFP_D_IDX (9),
-    DEFINE_VFP_D_IDX (10),
-    DEFINE_VFP_D_IDX (11),
-    DEFINE_VFP_D_IDX (12),
-    DEFINE_VFP_D_IDX (13),
-    DEFINE_VFP_D_IDX (14),
-    DEFINE_VFP_D_IDX (15),
-    DEFINE_VFP_D_IDX (16),
-    DEFINE_VFP_D_IDX (17),
-    DEFINE_VFP_D_IDX (18),
-    DEFINE_VFP_D_IDX (19),
-    DEFINE_VFP_D_IDX (20),
-    DEFINE_VFP_D_IDX (21),
-    DEFINE_VFP_D_IDX (22),
-    DEFINE_VFP_D_IDX (23),
-    DEFINE_VFP_D_IDX (24),
-    DEFINE_VFP_D_IDX (25),
-    DEFINE_VFP_D_IDX (26),
-    DEFINE_VFP_D_IDX (27),
-    DEFINE_VFP_D_IDX (28),
-    DEFINE_VFP_D_IDX (29),
-    DEFINE_VFP_D_IDX (30),
-    DEFINE_VFP_D_IDX (31),
-    { e_regSetVFP, vfp_fpscr, "fpscr", NULL, Uint, Hex, 4, VFP_OFFSET_NAME(fpscr), INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, gdb_fpscr }
+    { DEFINE_VFP_S_IDX ( 0), g_contained_q0, g_invalidate_q0 },
+    { DEFINE_VFP_S_IDX ( 1), g_contained_q0, g_invalidate_q0 },
+    { DEFINE_VFP_S_IDX ( 2), g_contained_q0, g_invalidate_q0 },
+    { DEFINE_VFP_S_IDX ( 3), g_contained_q0, g_invalidate_q0 },
+    { DEFINE_VFP_S_IDX ( 4), g_contained_q1, g_invalidate_q1 },
+    { DEFINE_VFP_S_IDX ( 5), g_contained_q1, g_invalidate_q1 },
+    { DEFINE_VFP_S_IDX ( 6), g_contained_q1, g_invalidate_q1 },
+    { DEFINE_VFP_S_IDX ( 7), g_contained_q1, g_invalidate_q1 },
+    { DEFINE_VFP_S_IDX ( 8), g_contained_q2, g_invalidate_q2 },
+    { DEFINE_VFP_S_IDX ( 9), g_contained_q2, g_invalidate_q2 },
+    { DEFINE_VFP_S_IDX (10), g_contained_q2, g_invalidate_q2 },
+    { DEFINE_VFP_S_IDX (11), g_contained_q2, g_invalidate_q2 },
+    { DEFINE_VFP_S_IDX (12), g_contained_q3, g_invalidate_q3 },
+    { DEFINE_VFP_S_IDX (13), g_contained_q3, g_invalidate_q3 },
+    { DEFINE_VFP_S_IDX (14), g_contained_q3, g_invalidate_q3 },
+    { DEFINE_VFP_S_IDX (15), g_contained_q3, g_invalidate_q3 },
+    { DEFINE_VFP_S_IDX (16), g_contained_q4, g_invalidate_q4 },
+    { DEFINE_VFP_S_IDX (17), g_contained_q4, g_invalidate_q4 },
+    { DEFINE_VFP_S_IDX (18), g_contained_q4, g_invalidate_q4 },
+    { DEFINE_VFP_S_IDX (19), g_contained_q4, g_invalidate_q4 },
+    { DEFINE_VFP_S_IDX (20), g_contained_q5, g_invalidate_q5 },
+    { DEFINE_VFP_S_IDX (21), g_contained_q5, g_invalidate_q5 },
+    { DEFINE_VFP_S_IDX (22), g_contained_q5, g_invalidate_q5 },
+    { DEFINE_VFP_S_IDX (23), g_contained_q5, g_invalidate_q5 },
+    { DEFINE_VFP_S_IDX (24), g_contained_q6, g_invalidate_q6 },
+    { DEFINE_VFP_S_IDX (25), g_contained_q6, g_invalidate_q6 },
+    { DEFINE_VFP_S_IDX (26), g_contained_q6, g_invalidate_q6 },
+    { DEFINE_VFP_S_IDX (27), g_contained_q6, g_invalidate_q6 },
+    { DEFINE_VFP_S_IDX (28), g_contained_q7, g_invalidate_q7 },
+    { DEFINE_VFP_S_IDX (29), g_contained_q7, g_invalidate_q7 },
+    { DEFINE_VFP_S_IDX (30), g_contained_q7, g_invalidate_q7 },
+    { DEFINE_VFP_S_IDX (31), g_contained_q7, g_invalidate_q7 },
+
+    { DEFINE_VFP_D_IDX (0),  g_contained_q0, g_invalidate_q0 },
+    { DEFINE_VFP_D_IDX (1),  g_contained_q0, g_invalidate_q0 },
+    { DEFINE_VFP_D_IDX (2),  g_contained_q1, g_invalidate_q1 },
+    { DEFINE_VFP_D_IDX (3),  g_contained_q1, g_invalidate_q1 },
+    { DEFINE_VFP_D_IDX (4),  g_contained_q2, g_invalidate_q2 },
+    { DEFINE_VFP_D_IDX (5),  g_contained_q2, g_invalidate_q2 },
+    { DEFINE_VFP_D_IDX (6),  g_contained_q3, g_invalidate_q3 },
+    { DEFINE_VFP_D_IDX (7),  g_contained_q3, g_invalidate_q3 },
+    { DEFINE_VFP_D_IDX (8),  g_contained_q4, g_invalidate_q4 },
+    { DEFINE_VFP_D_IDX (9),  g_contained_q4, g_invalidate_q4 },
+    { DEFINE_VFP_D_IDX (10), g_contained_q5, g_invalidate_q5 },
+    { DEFINE_VFP_D_IDX (11), g_contained_q5, g_invalidate_q5 },
+    { DEFINE_VFP_D_IDX (12), g_contained_q6, g_invalidate_q6 },
+    { DEFINE_VFP_D_IDX (13), g_contained_q6, g_invalidate_q6 },
+    { DEFINE_VFP_D_IDX (14), g_contained_q7, g_invalidate_q7 },
+    { DEFINE_VFP_D_IDX (15), g_contained_q7, g_invalidate_q7 },
+    { DEFINE_VFP_D_IDX (16), g_contained_q8, g_invalidate_q8 },
+    { DEFINE_VFP_D_IDX (17), g_contained_q8, g_invalidate_q8 },
+    { DEFINE_VFP_D_IDX (18), g_contained_q9, g_invalidate_q9 },
+    { DEFINE_VFP_D_IDX (19), g_contained_q9, g_invalidate_q9 },
+    { DEFINE_VFP_D_IDX (20), g_contained_q10, g_invalidate_q10 },
+    { DEFINE_VFP_D_IDX (21), g_contained_q10, g_invalidate_q10 },
+    { DEFINE_VFP_D_IDX (22), g_contained_q11, g_invalidate_q11 },
+    { DEFINE_VFP_D_IDX (23), g_contained_q11, g_invalidate_q11 },
+    { DEFINE_VFP_D_IDX (24), g_contained_q12, g_invalidate_q12 },
+    { DEFINE_VFP_D_IDX (25), g_contained_q12, g_invalidate_q12 },
+    { DEFINE_VFP_D_IDX (26), g_contained_q13, g_invalidate_q13 },
+    { DEFINE_VFP_D_IDX (27), g_contained_q13, g_invalidate_q13 },
+    { DEFINE_VFP_D_IDX (28), g_contained_q14, g_invalidate_q14 },
+    { DEFINE_VFP_D_IDX (29), g_contained_q14, g_invalidate_q14 },
+    { DEFINE_VFP_D_IDX (30), g_contained_q15, g_invalidate_q15 },
+    { DEFINE_VFP_D_IDX (31), g_contained_q15, g_invalidate_q15 },
+
+    { DEFINE_VFP_Q_IDX (0),  NULL,            g_invalidate_q0 },
+    { DEFINE_VFP_Q_IDX (1),  NULL,            g_invalidate_q1 },
+    { DEFINE_VFP_Q_IDX (2),  NULL,            g_invalidate_q2 },
+    { DEFINE_VFP_Q_IDX (3),  NULL,            g_invalidate_q3 },
+    { DEFINE_VFP_Q_IDX (4),  NULL,            g_invalidate_q4 },
+    { DEFINE_VFP_Q_IDX (5),  NULL,            g_invalidate_q5 },
+    { DEFINE_VFP_Q_IDX (6),  NULL,            g_invalidate_q6 },
+    { DEFINE_VFP_Q_IDX (7),  NULL,            g_invalidate_q7 },
+    { DEFINE_VFP_Q_IDX (8),  NULL,            g_invalidate_q8 },
+    { DEFINE_VFP_Q_IDX (9),  NULL,            g_invalidate_q9 },
+    { DEFINE_VFP_Q_IDX (10),  NULL,           g_invalidate_q10 },
+    { DEFINE_VFP_Q_IDX (11),  NULL,           g_invalidate_q11 },
+    { DEFINE_VFP_Q_IDX (12),  NULL,           g_invalidate_q12 },
+    { DEFINE_VFP_Q_IDX (13),  NULL,           g_invalidate_q13 },
+    { DEFINE_VFP_Q_IDX (14),  NULL,           g_invalidate_q14 },
+    { DEFINE_VFP_Q_IDX (15),  NULL,           g_invalidate_q15 },
+
+    { e_regSetVFP, vfp_fpscr, "fpscr", NULL, Uint, Hex, 4, VFP_OFFSET_NAME(fpscr), INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, NULL, NULL }
 };
 
 // Exception registers
@@ -3038,12 +1634,16 @@ DNBArchMachARM::GetRegisterValue(int set, int reg, DNBRegisterValue *value)
             break;
 
         case e_regSetVFP:
-            if (reg <= vfp_s31)
+            // "reg" is an index into the floating point register set at this point.
+            // We need to translate it up so entry 0 in the fp reg set is the same as vfp_s0 
+            // in the enumerated values for case statement below.
+            reg += vfp_s0;
+            if (reg >= vfp_s0 && reg <= vfp_s31)
             {
-                value->value.uint32 = m_state.context.vfp.__r[reg];
+                value->value.uint32 = m_state.context.vfp.__r[reg - vfp_s0];
                 return true;
             }
-            else if (reg <= vfp_d31)
+            else if (reg >= vfp_d0 && reg <= vfp_d31)
             {
                 uint32_t d_reg_idx = reg - vfp_d0;
                 uint32_t s_reg_idx = d_reg_idx * 2;
@@ -3051,6 +1651,13 @@ DNBArchMachARM::GetRegisterValue(int set, int reg, DNBRegisterValue *value)
                 value->value.v_sint32[1] = m_state.context.vfp.__r[s_reg_idx + 1];
                 return true;
             }
+            else if (reg >= vfp_q0 && reg <= vfp_q15)
+            {
+                uint32_t s_reg_idx = (reg - vfp_q0) * 4;
+                memcpy (&value->value.v_uint8, (uint8_t *) &m_state.context.vfp.__r[s_reg_idx], 16);
+                return true;
+            }
+
             else if (reg == vfp_fpscr)
             {
                 value->value.uint32 = m_state.context.vfp.__fpscr;
@@ -3125,18 +1732,29 @@ DNBArchMachARM::SetRegisterValue(int set, int reg, const DNBRegisterValue *value
             break;
 
         case e_regSetVFP:
-            if (reg <= vfp_s31)
+            // "reg" is an index into the floating point register set at this point.
+            // We need to translate it up so entry 0 in the fp reg set is the same as vfp_s0 
+            // in the enumerated values for case statement below.
+            reg += vfp_s0;
+
+            if (reg >= vfp_s0 && reg <= vfp_s31)
             {
-                m_state.context.vfp.__r[reg] = value->value.uint32;
+                m_state.context.vfp.__r[reg - vfp_s0] = value->value.uint32;
                 success = true;
             }
-            else if (reg <= vfp_d31)
+            else if (reg >= vfp_d0 && reg <= vfp_d31)
             {
                 uint32_t d_reg_idx = reg - vfp_d0;
                 uint32_t s_reg_idx = d_reg_idx * 2;
                 m_state.context.vfp.__r[s_reg_idx + 0] = value->value.v_sint32[0];
                 m_state.context.vfp.__r[s_reg_idx + 1] = value->value.v_sint32[1];
                 success = true;
+            }
+            else if (reg >= vfp_q0 && reg <= vfp_q15)
+            {
+                uint32_t s_reg_idx = (reg - vfp_q0) * 4;
+                memcpy ((uint8_t *) &m_state.context.vfp.__r[s_reg_idx], &value->value.v_uint8, 16);
+                return true;
             }
             else if (reg == vfp_fpscr)
             {

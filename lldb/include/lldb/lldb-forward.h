@@ -118,12 +118,14 @@ class   InlineFunctionInfo;
 class   InputReader;
 class   Instruction;
 class   InstructionList;
+class   IRExecutionUnit;
 class   LanguageRuntime;
 class   LineTable;
 class   Listener;
 class   Log;
 class   LogChannel;
 class   Mangled;
+class   Materializer;
 class   Module;
 class   ModuleList;
 class   ModuleSpec;
@@ -166,11 +168,11 @@ class   ProcessInstanceInfoMatch;
 class   ProcessLaunchInfo;
 class   Property;
 struct  PropertyDefinition;
-class   PythonDataArray;
-class   PythonDataDictionary;
-class   PythonDataInteger;
-class   PythonDataObject;
-class   PythonDataString;
+class   PythonArray;
+class   PythonDictionary;
+class   PythonInteger;
+class   PythonObject;
+class   PythonString;
 class   RegisterContext;
 class   RegisterLocation;
 class   RegisterLocationList;
@@ -178,6 +180,7 @@ class   RegisterValue;
 class   RegularExpression;
 class   Scalar;
 class   ScriptInterpreter;
+class   ScriptInterpreterLocker;
 class   ScriptInterpreterObject;
 #ifndef LLDB_DISABLE_PYTHON
 class   ScriptInterpreterPython;
@@ -218,7 +221,7 @@ class   SyntheticChildren;
 class   SyntheticChildrenFrontEnd;
 class   TypeFilterImpl;
 #ifndef LLDB_DISABLE_PYTHON
-class   TypeSyntheticImpl;
+class   ScriptedSyntheticChildren;
 #endif
 class   Target;
 class   TargetList;
@@ -236,6 +239,7 @@ class   ThreadPlanTracer;
 class   ThreadSpec;
 class   TimeValue;
 class   Type;
+class   TypeCategoryMap;
 class   TypeImpl;
 class   TypeAndOrName;
 class   TypeList;
@@ -304,7 +308,6 @@ namespace lldb {
     typedef STD_SHARED_PTR(lldb_private::LanguageRuntime) LanguageRuntimeSP;
     typedef STD_SHARED_PTR(lldb_private::LineTable) LineTableSP;
     typedef STD_SHARED_PTR(lldb_private::Listener) ListenerSP;
-    typedef STD_SHARED_PTR(lldb_private::Log) LogSP;
     typedef STD_SHARED_PTR(lldb_private::LogChannel) LogChannelSP;
     typedef STD_SHARED_PTR(lldb_private::Module) ModuleSP;
     typedef STD_WEAK_PTR(  lldb_private::Module) ModuleWP;
@@ -322,7 +325,6 @@ namespace lldb {
     typedef STD_SHARED_PTR(lldb_private::OptionValueFormat) OptionValueFormatSP;
     typedef STD_SHARED_PTR(lldb_private::OptionValuePathMappings) OptionValuePathMappingsSP;
     typedef STD_SHARED_PTR(lldb_private::OptionValueProperties) OptionValuePropertiesSP;
-//  typedef STD_WEAK_PTR(  lldb_private::OptionValueProperties) OptionValuePropertiesWP;
     typedef STD_SHARED_PTR(lldb_private::OptionValueRegex) OptionValueRegexSP;
     typedef STD_SHARED_PTR(lldb_private::OptionValueSInt64) OptionValueSInt64SP;
     typedef STD_SHARED_PTR(lldb_private::OptionValueString) OptionValueStringSP;
@@ -373,7 +375,7 @@ namespace lldb {
     typedef STD_SHARED_PTR(lldb_private::TypeNameSpecifierImpl) TypeNameSpecifierImplSP;
     typedef STD_SHARED_PTR(lldb_private::TypeSummaryImpl) TypeSummaryImplSP;
 #ifndef LLDB_DISABLE_PYTHON
-    typedef STD_SHARED_PTR(lldb_private::TypeSyntheticImpl) TypeSyntheticImplSP;
+    typedef STD_SHARED_PTR(lldb_private::ScriptedSyntheticChildren) ScriptedSyntheticChildrenSP;
 #endif
     typedef STD_SHARED_PTR(lldb_private::UnwindPlan) UnwindPlanSP;
     typedef lldb_private::SharingPtr<lldb_private::ValueObject> ValueObjectSP;

@@ -46,7 +46,7 @@ public:
     ValidatePlan (Stream *error);
 
     virtual bool
-    PlanExplainsStop ();
+    PlanExplainsStop (Event *event_ptr);
 
 
     virtual lldb::StateType
@@ -54,6 +54,12 @@ public:
 
     virtual bool
     ShouldStop (Event *event_ptr);
+    
+    virtual bool
+    StopOthers()
+    {
+        return m_stop_others;
+    }
 
     // The base class MischiefManaged does some cleanup - so you have to call it
     // in your MischiefManaged derived class.

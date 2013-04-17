@@ -131,7 +131,7 @@ public:
     /// to their default state.
     //------------------------------------------------------------------
     void
-    Clear ();
+    Clear (bool clear_target);
 
     //------------------------------------------------------------------
     /// Dump a description of this object to a Stream.
@@ -459,10 +459,23 @@ public:
     ///     otherwise.
     //------------------------------------------------------------------
     bool
-    GetContextAtIndex(uint32_t idx, SymbolContext& sc) const;
+    GetContextAtIndex(size_t idx, SymbolContext& sc) const;
+
+    //------------------------------------------------------------------
+    /// Get accessor for the last symbol context in the list.
+    ///
+    /// @param[out] sc
+    ///     A reference to the symbol context to fill in.
+    ///
+    /// @return
+    ///     Returns \b true if \a sc was filled in, \b false if the
+    ///     list is empty.
+    //------------------------------------------------------------------
+    bool
+    GetLastContext(SymbolContext& sc) const;
 
     bool
-    RemoveContextAtIndex (uint32_t idx);
+    RemoveContextAtIndex (size_t idx);
     //------------------------------------------------------------------
     /// Get accessor for a symbol context list size.
     ///

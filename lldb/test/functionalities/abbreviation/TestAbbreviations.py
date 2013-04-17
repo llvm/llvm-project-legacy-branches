@@ -62,7 +62,7 @@ class AbbreviationsTestCase(TestBase):
         self.expect("lo li",
                     startstr = "Logging categories for ")
 
-        self.runCmd("se se prompt Sycamore> ")
+        self.runCmd("se se prompt 'Sycamore> '")
         self.expect("se sh prompt",
                     startstr = 'prompt (string) = "Sycamore> "')
 
@@ -168,7 +168,6 @@ class AbbreviationsTestCase(TestBase):
             self.expect("i li",
                         substrs = [ 'a.out',
                                     '/usr/lib/dyld',
-                                    '/usr/lib/libstdc++',
                                     '/usr/lib/libSystem.B.dylib'])
 
 

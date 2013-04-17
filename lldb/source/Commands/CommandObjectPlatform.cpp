@@ -207,7 +207,16 @@ protected:
     {
         Stream &ostrm = result.GetOutputStream();      
         
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {
+            platform_sp = target->GetPlatform();
+        }
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }
         if (platform_sp)
         {
             platform_sp->GetStatus (ostrm);
@@ -357,11 +366,11 @@ class CommandObjectPlatformProcessLaunch : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformProcessLaunch (CommandInterpreter &interpreter) :
-        CommandObjectParsed (interpreter, 
+        CommandObjectParsed (interpreter,
                              "platform process launch",
                              "Launch a new process on a remote platform.",
                              "platform process launch program",
-                             0),
+                             eFlagRequiresTarget | eFlagTryTargetAPILock),
         m_options (interpreter)
     {
     }
@@ -381,20 +390,22 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
-        
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {   
+            platform_sp = target->GetPlatform();
+        }   
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }   
+
         if (platform_sp)
         {
             Error error;
-            const uint32_t argc = args.GetArgumentCount();
-            Target *target = m_interpreter.GetExecutionContext().GetTargetPtr();
-            if (target == NULL)
-            {
-                result.AppendError ("invalid target, create a debug target using the 'target create' command");
-                result.SetStatus (eReturnStatusFailed);
-                return false;
-            }
-
+            const size_t argc = args.GetArgumentCount();
+            Target *target = m_exe_ctx.GetTargetPtr();
             Module *exe_module = target->GetExecutableModulePointer();
             if (exe_module)
             {
@@ -497,7 +508,16 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {   
+            platform_sp = target->GetPlatform();
+        }   
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }   
         
         if (platform_sp)
         {
@@ -777,7 +797,17 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {   
+            platform_sp = target->GetPlatform();
+        }   
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }   
+
         if (platform_sp)
         {
             const size_t argc = args.GetArgumentCount();

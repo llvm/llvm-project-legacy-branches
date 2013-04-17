@@ -49,7 +49,7 @@ Log::Log () :
 {
 }
 
-Log::Log (StreamSP &stream_sp) :
+Log::Log (const StreamSP &stream_sp) :
     m_stream_sp(stream_sp),
     m_options(0),
     m_mask_bits(0)
@@ -120,10 +120,9 @@ Log::PrintfWithFlagsVarArg (uint32_t flags, const char *format, va_list args)
         // Add the process and thread if requested
         if (m_options.Test (LLDB_LOG_OPTION_PREPEND_THREAD_NAME))
         {
-            const char *thread_name_str = Host::GetThreadName (getpid(), Host::GetCurrentThreadID());
-            if (thread_name_str)
-                header.Printf ("%s ", thread_name_str);
-
+            std::string thread_name (Host::GetThreadName (getpid(), Host::GetCurrentThreadID()));
+            if (!thread_name.empty())
+                header.Printf ("%s ", thread_name.c_str());
         }
 
         header.PrintfVarArg (format, args);
@@ -526,7 +525,7 @@ LogChannel::FindPlugin (const char *plugin_name)
 }
 
 LogChannel::LogChannel () :
-    m_log_sp ()
+    m_log_ap ()
 {
 }
 

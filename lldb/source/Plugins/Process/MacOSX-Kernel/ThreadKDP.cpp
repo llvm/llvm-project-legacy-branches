@@ -76,7 +76,7 @@ ThreadKDP::WillResume (StateType resume_state)
 
     ClearStackFrames();
 
-    lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP));
     if (log)
         log->Printf ("Resuming thread: %4.4" PRIx64 " with state: %s.", GetID(), StateAsCString(resume_state));
 
@@ -95,7 +95,9 @@ ThreadKDP::RefreshStateAfterStop()
     // register supply functions where they check the process stop ID and do
     // the right thing.
     const bool force = false;
-    GetRegisterContext()->InvalidateIfNeeded (force);
+    lldb::RegisterContextSP reg_ctx_sp (GetRegisterContext());
+    if (reg_ctx_sp)
+        reg_ctx_sp->InvalidateIfNeeded (force);
 }
 
 void
@@ -164,8 +166,12 @@ ThreadKDP::CreateRegisterContextForFrame (StackFrame *frame)
             }
         }
     }
-    else if (m_unwinder_ap.get())
-        reg_ctx_sp = m_unwinder_ap->CreateRegisterContextForFrame (frame);
+    else
+    {
+        Unwind *unwinder = GetUnwinder ();
+        if (unwinder)
+            reg_ctx_sp = unwinder->CreateRegisterContextForFrame (frame);
+    }
     return reg_ctx_sp;
 }
 
@@ -194,7 +200,7 @@ ThreadKDP::GetPrivateStopReason ()
 void
 ThreadKDP::SetStopInfoFrom_KDP_EXCEPTION (const DataExtractor &exc_reply_packet)
 {
-    uint32_t offset = 0;
+    lldb::offset_t offset = 0;
     uint8_t reply_command = exc_reply_packet.GetU8(&offset);
     if (reply_command == CommunicationKDP::KDP_EXCEPTION)
     {

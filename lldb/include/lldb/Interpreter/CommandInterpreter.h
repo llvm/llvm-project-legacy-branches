@@ -114,6 +114,9 @@ public:
 
     bool
     RemoveAlias (const char *alias_name);
+    
+    bool
+    GetAliasFullName (const char *cmd, std::string &full_name);
 
     bool
     RemoveUser (const char *alias_name);
@@ -278,7 +281,7 @@ public:
                              const char *command_word,
                              const char *separator,
                              const char *help_text,
-                             uint32_t max_word_len);
+                             size_t max_word_len);
     
     // this mimics OutputFormattedHelpText but it does perform a much simpler
     // formatting, basically ensuring line alignment. This is only good if you have
@@ -333,10 +336,6 @@ public:
 
     void
     Initialize ();
-
-    void
-    CrossRegisterCommand (const char *dest_cmd, 
-                          const char *object_type);
 
     void
     SetScriptLanguage (lldb::ScriptLanguage lang);
@@ -436,6 +435,9 @@ public:
     bool
     GetExpandRegexAliases () const;
     
+    bool
+    GetPromptOnQuit () const;
+
 protected:
     friend class Debugger;
 

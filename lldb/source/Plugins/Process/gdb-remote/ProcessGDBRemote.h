@@ -141,10 +141,10 @@ public:
     DoHalt (bool &caused_stop);
 
     virtual lldb_private::Error
-    WillDetach ();
-
-    virtual lldb_private::Error
     DoDetach ();
+    
+    virtual bool
+    DetachRequiresHalt() { return true; }
 
     virtual lldb_private::Error
     DoSignal (int signal);
@@ -193,10 +193,10 @@ public:
     // Process Breakpoints
     //----------------------------------------------------------------------
     virtual lldb_private::Error
-    EnableBreakpoint (lldb_private::BreakpointSite *bp_site);
+    EnableBreakpointSite (lldb_private::BreakpointSite *bp_site);
 
     virtual lldb_private::Error
-    DisableBreakpoint (lldb_private::BreakpointSite *bp_site);
+    DisableBreakpointSite (lldb_private::BreakpointSite *bp_site);
 
     //----------------------------------------------------------------------
     // Process Watchpoints
@@ -297,9 +297,6 @@ protected:
         m_last_stop_packet = response;
     }
 
-    void
-    CheckForKernel (lldb_private::Stream *strm);
-
     //------------------------------------------------------------------
     /// Broadcaster event bits definitions.
     //------------------------------------------------------------------
@@ -342,7 +339,6 @@ protected:
     bool m_waiting_for_attach;
     bool m_destroy_tried_resuming;
     std::string m_dyld_plugin_name;
-    lldb::addr_t m_kernel_load_addr;
     lldb::CommandObjectSP m_command_sp;
     
     bool
@@ -386,11 +382,6 @@ protected:
                                lldb::InputReaderAction notification,
                                const char *bytes, 
                                size_t bytes_len);
-
-    lldb_private::Error
-    InterruptIfRunning (bool discard_thread_plans, 
-                        bool catch_stop_event, 
-                        lldb::EventSP &stop_event_sp);
 
     lldb_private::DynamicLoader *
     GetDynamicLoader ();

@@ -67,10 +67,8 @@ public:
     uint64_t
     GetAsSecondsSinceJan1_1970() const;
 
-#ifdef _POSIX_SOURCE
     struct timespec
     GetAsTimeSpec () const;
-#endif
 
     struct timeval
     GetAsTimeVal () const;

@@ -98,7 +98,7 @@ public:
     /// @return
     ///     Whatever SetExternalVisibleDeclsForName returns.
     //------------------------------------------------------------------
-    clang::DeclContextLookupResult 
+    bool
     FindExternalVisibleDeclsByName (const clang::DeclContext *DC,
                                     clang::DeclarationName Name);
     
@@ -248,7 +248,7 @@ public:
         {
         }
         
-        clang::DeclContextLookupResult 
+        bool
         FindExternalVisibleDeclsByName (const clang::DeclContext *DC,
                                         clang::DeclarationName Name)
         {
@@ -297,17 +297,19 @@ public:
         }
         
         ClangASTMetadata *
-        GetMetadata(uintptr_t object)
+        GetMetadata(const void * object)
         {
             return m_original.GetMetadata(object);
         }
         
-        void SetMetadata(uintptr_t object, ClangASTMetadata &metadata)
+        void
+        SetMetadata(const void * object, ClangASTMetadata &metadata)
         {
             return m_original.SetMetadata(object, metadata);
         }
         
-        bool HasMetadata(uintptr_t object)
+        bool
+        HasMetadata(const void * object)
         {
             return m_original.HasMetadata(object);
         }

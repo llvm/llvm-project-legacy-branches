@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "lldb/Core/History.h"
+#include "lldb/lldb-private.h"
 
 // C Includes
 #ifndef _WIN32
@@ -24,9 +25,5 @@ using namespace lldb_private;
 void
 HistorySourceUInt::DumpHistoryEvent (Stream &strm, HistoryEvent event)
 {
-#if _WIN32
-    strm.Printf ("%s %llu", m_name.c_str(), (uint64_t)((uintptr_t)event));
-#else
     strm.Printf ("%s %" PRIu64, m_name.c_str(), (uint64_t)((uintptr_t)event));
-#endif
 }

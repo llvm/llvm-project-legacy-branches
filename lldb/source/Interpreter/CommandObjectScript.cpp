@@ -16,13 +16,14 @@
 // Other libraries and framework includes
 // Project includes
 
-#include "lldb/Core/DataVisualization.h"
 #include "lldb/Core/Debugger.h"
-#include "lldb/Interpreter/Args.h"
 
+#include "lldb/DataFormatters/DataVisualization.h"
+
+#include "lldb/Interpreter/Args.h"
+#include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/ScriptInterpreter.h"
-#include "lldb/Interpreter/CommandInterpreter.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -50,6 +51,19 @@ CommandObjectScript::DoExecute
     CommandReturnObject &result
 )
 {
+#ifdef LLDB_DISABLE_PYTHON
+    // if we ever support languages other than Python this simple #ifdef won't work
+    result.AppendError("your copy of LLDB does not support scripting.");
+    result.SetStatus (eReturnStatusFailed);
+    return false;
+#else
+    if (m_interpreter.GetDebugger().GetScriptLanguage() == lldb::eScriptLanguageNone)
+    {
+        result.AppendError("the script-lang setting is set to none - scripting not available");
+        result.SetStatus (eReturnStatusFailed);
+        return false;
+    }
+    
     ScriptInterpreter *script_interpreter = m_interpreter.GetScriptInterpreter ();
 
     if (script_interpreter == NULL)
@@ -75,4 +89,5 @@ CommandObjectScript::DoExecute
         result.SetStatus(eReturnStatusFailed);
 
     return result.Succeeded();
+#endif
 }

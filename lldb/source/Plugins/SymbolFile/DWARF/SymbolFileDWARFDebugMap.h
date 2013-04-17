@@ -16,6 +16,7 @@
 
 #include "clang/AST/CharUnits.h"
 
+#include "lldb/Core/RangeMap.h"
 #include "lldb/Symbol/SymbolFile.h"
 
 #include "UniqueDWARFASTType.h"
@@ -129,43 +130,55 @@ protected:
 
     friend class SymbolFileDWARF;
     friend class DebugMapModule;
+    struct OSOInfo
+    {
+        lldb::ModuleSP module_sp;
+        bool symbol_file_supported;
+        
+        OSOInfo() :
+            module_sp (),
+            symbol_file_supported (true)
+        {
+        }
+    };
+    
+    typedef STD_SHARED_PTR(OSOInfo) OSOInfoSP;
+
+    typedef lldb_private::RangeDataVector<lldb::addr_t, lldb::addr_t, lldb::addr_t> FileRangeMap;
+
     //------------------------------------------------------------------
     // Class specific types
     //------------------------------------------------------------------
     struct CompileUnitInfo
     {
         lldb_private::FileSpec so_file;
-        lldb_private::FileSpec oso_file;
-        lldb_private::ConstString oso_object; // for archives this will be the .o file in the "oso_file"
-//        lldb_private::Symbol *so_symbol;
-//        lldb_private::Symbol *oso_symbol;
-//        lldb_private::Symbol *last_symbol;
+        lldb_private::ConstString oso_path;
+        OSOInfoSP oso_sp;
+        lldb::CompUnitSP compile_unit_sp;
         uint32_t first_symbol_index;
         uint32_t last_symbol_index;
         uint32_t first_symbol_id;
         uint32_t last_symbol_id;
-        lldb::ModuleSP oso_module_sp;
-        lldb::CompUnitSP oso_compile_unit_sp;
-//        SymbolFileDWARF *oso_symfile;
-        bool symbol_file_supported;
+        FileRangeMap file_range_map;
+        bool file_range_map_valid;
+        
 
         CompileUnitInfo() :
             so_file (),
-            oso_file (),
-            oso_object (),
-//            so_symbol (NULL),
-//            oso_symbol (NULL),
-//            last_symbol (NULL),
+            oso_path (),
+            oso_sp (),
+            compile_unit_sp (),
             first_symbol_index (UINT32_MAX),
             last_symbol_index (UINT32_MAX),
             first_symbol_id (UINT32_MAX),
             last_symbol_id (UINT32_MAX),
-            oso_module_sp (),
-            oso_compile_unit_sp (),
-//            oso_symfile (NULL),
-            symbol_file_supported (true)
+            file_range_map (),
+            file_range_map_valid (false)
         {
         }
+        
+        const FileRangeMap &
+        GetFileRangeMap(SymbolFileDWARFDebugMap *exe_symfile);
     };
 
     //------------------------------------------------------------------
@@ -185,8 +198,9 @@ protected:
     CompileUnitInfo *
     GetCompUnitInfo (const lldb_private::SymbolContext& sc);
 
-    CompileUnitInfo *
-    GetCompUnitInfo (const lldb_private::Module *oso_module);
+    size_t
+    GetCompUnitInfosForModule (const lldb_private::Module *oso_module,
+                               std::vector<CompileUnitInfo *>& cu_infos);
     
     lldb_private::Module *
     GetModuleByCompUnitInfo (CompileUnitInfo *comp_unit_info);
@@ -237,6 +251,9 @@ protected:
 
     lldb::CompUnitSP
     GetCompileUnit (SymbolFileDWARF *oso_dwarf);
+    
+    CompileUnitInfo *
+    GetCompileUnitInfo (SymbolFileDWARF *oso_dwarf);
 
     lldb::TypeSP
     FindDefinitionTypeForDWARFDeclContext (const DWARFDeclContext &die_decl_ctx);    
@@ -255,6 +272,58 @@ protected:
     {
         return m_unique_ast_type_map;
     }
+    
+    
+    //------------------------------------------------------------------
+    // OSOEntry
+    //------------------------------------------------------------------
+    class OSOEntry
+    {
+    public:
+        
+        OSOEntry () :
+        m_exe_sym_idx (UINT32_MAX),
+        m_oso_file_addr (LLDB_INVALID_ADDRESS)
+        {
+        }
+        
+        OSOEntry (uint32_t exe_sym_idx,
+                  lldb::addr_t oso_file_addr) :
+        m_exe_sym_idx (exe_sym_idx),
+        m_oso_file_addr (oso_file_addr)
+        {
+        }
+        
+        uint32_t
+        GetExeSymbolIndex () const
+        {
+            return m_exe_sym_idx;
+        }
+        
+        bool
+        operator < (const OSOEntry &rhs) const
+        {
+            return m_exe_sym_idx < rhs.m_exe_sym_idx;
+        }
+        
+        lldb::addr_t
+        GetOSOFileAddress () const
+        {
+            return m_oso_file_addr;
+        }
+        
+        void
+        SetOSOFileAddress (lldb::addr_t oso_file_addr)
+        {
+            m_oso_file_addr = oso_file_addr;
+        }
+    protected:
+        uint32_t m_exe_sym_idx;
+        lldb::addr_t m_oso_file_addr;
+    };
+
+    typedef lldb_private::RangeDataVector<lldb::addr_t, lldb::addr_t, OSOEntry> DebugMap;
+
     //------------------------------------------------------------------
     // Member Variables
     //------------------------------------------------------------------
@@ -262,8 +331,80 @@ protected:
     std::vector<CompileUnitInfo> m_compile_unit_infos;
     std::vector<uint32_t> m_func_indexes;   // Sorted by address
     std::vector<uint32_t> m_glob_indexes;
+    std::map<lldb_private::ConstString, OSOInfoSP> m_oso_map;
     UniqueDWARFASTTypeMap m_unique_ast_type_map;
     lldb_private::LazyBool m_supports_DW_AT_APPLE_objc_complete_type;
+    DebugMap m_debug_map;
+    
+    //------------------------------------------------------------------
+    // When an object file from the debug map gets parsed in
+    // SymbolFileDWARF, it needs to tell the debug map about the object
+    // files addresses by calling this function once for each N_FUN,
+    // N_GSYM and N_STSYM and after all entries in the debug map have
+    // been matched up, FinalizeOSOFileRanges() should be called.
+    //------------------------------------------------------------------
+    bool
+    AddOSOFileRange (CompileUnitInfo *cu_info,
+                     lldb::addr_t exe_file_addr,
+                     lldb::addr_t oso_file_addr,
+                     lldb::addr_t oso_byte_size);
+    
+    //------------------------------------------------------------------
+    // Called after calling AddOSOFileRange() for each object file debug
+    // map entry to finalize the info for the unlinked compile unit.
+    //------------------------------------------------------------------
+    void
+    FinalizeOSOFileRanges (CompileUnitInfo *cu_info);
+
+    //------------------------------------------------------------------
+    /// Convert \a addr from a .o file address, to an executable address.
+    ///
+    /// @param[in] addr
+    ///     A section offset address from a .o file
+    ///
+    /// @return
+    ///     Returns true if \a addr was converted to be an executable
+    ///     section/offset address, false otherwise.
+    //------------------------------------------------------------------
+    bool
+    LinkOSOAddress (lldb_private::Address &addr);
+    
+    //------------------------------------------------------------------
+    /// Convert a .o file "file address" to an executable "file address".
+    ///
+    /// @param[in] oso_symfile
+    ///     The DWARF symbol file that contains \a oso_file_addr
+    ///
+    /// @param[in] oso_file_addr
+    ///     A .o file "file address" to convert.
+    ///
+    /// @return
+    ///     LLDB_INVALID_ADDRESS if \a oso_file_addr is not in the
+    ///     linked executable, otherwise a valid "file address" from the
+    ///     linked executable that contains the debug map.
+    //------------------------------------------------------------------
+    lldb::addr_t
+    LinkOSOFileAddress (SymbolFileDWARF *oso_symfile, lldb::addr_t oso_file_addr);
+            
+    //------------------------------------------------------------------
+    /// Given a line table full of lines with "file adresses" that are
+    /// for a .o file represented by \a oso_symfile, link a new line table
+    /// and return it.
+    ///
+    /// @param[in] oso_symfile
+    ///     The DWARF symbol file that produced the \a line_table
+    ///
+    /// @param[in] addr
+    ///     A section offset address from a .o file
+    ///
+    /// @return
+    ///     Returns a valid line table full of linked addresses, or NULL
+    ///     if none of the line table adresses exist in the main
+    ///     executable.
+    //------------------------------------------------------------------
+    lldb_private::LineTable *
+    LinkOSOLineTable (SymbolFileDWARF *oso_symfile,
+                      lldb_private::LineTable *line_table);
 };
 
 #endif // #ifndef SymbolFileDWARF_SymbolFileDWARFDebugMap_h_

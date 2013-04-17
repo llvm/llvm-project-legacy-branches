@@ -77,6 +77,24 @@ public:
 
     void
     SetPythonOSPluginPath (const FileSpec &file);
+    
+    bool
+    GetIgnoreBreakpointsInExpressions () const;
+    
+    void
+    SetIgnoreBreakpointsInExpressions (bool ignore);
+
+    bool
+    GetUnwindOnErrorInExpressions () const;
+    
+    void
+    SetUnwindOnErrorInExpressions (bool ignore);
+    
+    bool
+    GetStopOnSharedLibraryEvents () const;
+    
+    void
+    SetStopOnSharedLibraryEvents (bool stop);
 };
 
 typedef STD_SHARED_PTR(ProcessProperties) ProcessPropertiesSP;
@@ -631,7 +649,7 @@ public:
     const FileAction *
     GetFileActionForFD (int fd) const
     {
-        for (uint32_t idx=0, count=m_file_actions.size(); idx < count; ++idx)
+        for (size_t idx=0, count=m_file_actions.size(); idx < count; ++idx)
         {
             if (m_file_actions[idx].GetFD () == fd)
                 return &m_file_actions[idx];
@@ -1063,7 +1081,7 @@ public:
         m_infos.clear();
     }
     
-    uint32_t
+    size_t
     GetSize()
     {
         return m_infos.size();
@@ -1076,7 +1094,7 @@ public:
     }
 
     const char *
-    GetProcessNameAtIndex (uint32_t idx)
+    GetProcessNameAtIndex (size_t idx)
     {
         if (idx < m_infos.size())
             return m_infos[idx].GetName();
@@ -1084,7 +1102,7 @@ public:
     }
 
     size_t
-    GetProcessNameLengthAtIndex (uint32_t idx)
+    GetProcessNameLengthAtIndex (size_t idx)
     {
         if (idx < m_infos.size())
             return m_infos[idx].GetNameLength();
@@ -1092,7 +1110,7 @@ public:
     }
 
     lldb::pid_t
-    GetProcessIDAtIndex (uint32_t idx)
+    GetProcessIDAtIndex (size_t idx)
     {
         if (idx < m_infos.size())
             return m_infos[idx].GetProcessID();
@@ -1100,7 +1118,7 @@ public:
     }
 
     bool
-    GetInfoAtIndex (uint32_t idx, ProcessInstanceInfo &info)
+    GetInfoAtIndex (size_t idx, ProcessInstanceInfo &info)
     {
         if (idx < m_infos.size())
         {
@@ -1112,7 +1130,7 @@ public:
     
     // You must ensure "idx" is valid before calling this function
     const ProcessInstanceInfo &
-    GetProcessInfoAtIndex (uint32_t idx) const
+    GetProcessInfoAtIndex (size_t idx) const
     {
         assert (idx < m_infos.size());
         return m_infos[idx];
@@ -1135,6 +1153,7 @@ friend bool operator== (const ProcessModID &lhs, const ProcessModID &rhs);
 public:
     ProcessModID () : 
         m_stop_id (0),
+        m_last_natural_stop_id(0),
         m_resume_id (0), 
         m_memory_id (0),
         m_last_user_expression_resume (0),
@@ -1159,7 +1178,9 @@ public:
     ~ProcessModID () {}
     
     void BumpStopID () { 
-        m_stop_id++; 
+        m_stop_id++;
+        if (!IsLastResumeForUserExpression())
+            m_last_natural_stop_id++;
     }
     
     void BumpMemoryID () { m_memory_id++; }
@@ -1171,6 +1192,7 @@ public:
     }
     
     uint32_t GetStopID() const { return m_stop_id; }
+    uint32_t GetLastNaturalStopID() const { return m_last_natural_stop_id; }
     uint32_t GetMemoryID () const { return m_memory_id; }
     uint32_t GetResumeID () const { return m_resume_id; }
     uint32_t GetLastUserExpressionResumeID () const { return m_last_user_expression_resume; }
@@ -1213,6 +1235,7 @@ public:
     
 private:
     uint32_t m_stop_id;
+    uint32_t m_last_natural_stop_id;
     uint32_t m_resume_id;
     uint32_t m_memory_id;
     uint32_t m_last_user_expression_resume;
@@ -1381,6 +1404,7 @@ public:
         return GetStaticBroadcasterClass();
     }
 
+    
     //------------------------------------------------------------------
     /// A notification structure that can be used by clients to listen
     /// for changes in a process's lifetime.
@@ -1428,6 +1452,22 @@ public:
             {
                 return m_restarted;
             }
+        
+            size_t
+            GetNumRestartedReasons ()
+            {
+                return m_restarted_reasons.size();
+            }
+        
+            const char *
+            GetRestartedReasonAtIndex(size_t idx)
+            {
+                if (idx > m_restarted_reasons.size())
+                    return NULL;
+                else
+                    return m_restarted_reasons[idx].c_str();
+            }
+        
             bool
             GetInterrupted () const
             {
@@ -1451,6 +1491,15 @@ public:
 
             static bool
             GetRestartedFromEvent (const Event *event_ptr);
+        
+            static size_t
+            GetNumRestartedReasons(const Event *event_ptr);
+        
+            static const char *
+            GetRestartedReasonAtIndex(const Event *event_ptr, size_t idx);
+        
+            static void
+            AddRestartedReason (Event *event_ptr, const char *reason);
 
             static void
             SetRestartedInEvent (Event *event_ptr, bool new_value);
@@ -1481,9 +1530,15 @@ public:
             {
                 m_interrupted = new_value;
             }
+            void
+            AddRestartedReason (const char *reason)
+            {
+                m_restarted_reasons.push_back(reason);
+            }
 
             lldb::ProcessSP m_process_sp;
             lldb::StateType m_state;
+            std::vector<std::string> m_restarted_reasons;
             bool m_restarted;  // For "eStateStopped" events, this is true if the target was automatically restarted.
             int m_update_state;
             bool m_interrupted;
@@ -1569,6 +1624,11 @@ public:
     uint32_t
     GetAddressByteSize () const;
 
+    uint32_t
+    GetUniqueID() const
+    {
+        return m_process_unique_id;
+    }
     //------------------------------------------------------------------
     /// Check if a plug-in instance can debug the file in \a module.
     ///
@@ -2296,6 +2356,9 @@ public:
     //------------------------------------------------------------------
     virtual void
     DidDetach () {}
+    
+    virtual bool
+    DetachRequiresHalt() { return false; }
 
     //------------------------------------------------------------------
     /// Called before sending a signal to a process.
@@ -2333,6 +2396,9 @@ public:
 
     virtual void
     DidDestroy () { }
+    
+    virtual bool
+    DestroyRequiresHalt() { return true; }
 
 
     //------------------------------------------------------------------
@@ -2415,7 +2481,8 @@ public:
                     lldb::ThreadPlanSP &thread_plan_sp,
                     bool stop_others,
                     bool run_others,
-                    bool discard_on_error,
+                    bool unwind_on_error,
+                    bool ignore_breakpoints,
                     uint32_t timeout_usec,
                     Stream &errors);
 
@@ -2520,6 +2587,12 @@ public:
     GetLastUserExpressionResumeID () const
     {
         return m_mod_id.GetLastUserExpressionResumeID();
+    }
+    
+    uint32_t
+    GetLastNaturalStopID()
+    {
+        return m_mod_id.GetLastNaturalStopID();
     }
     
     //------------------------------------------------------------------
@@ -2745,7 +2818,7 @@ public:
     size_t
     WriteScalarToMemory (lldb::addr_t vm_addr, 
                          const Scalar &scalar, 
-                         uint32_t size, 
+                         size_t size, 
                          Error &error);
 
     size_t
@@ -2833,6 +2906,28 @@ public:
     lldb::addr_t
     AllocateMemory (size_t size, uint32_t permissions, Error &error);
 
+
+    //------------------------------------------------------------------
+    /// Resolve dynamically loaded indirect functions.
+    ///
+    /// @param[in] address
+    ///     The load address of the indirect function to resolve.
+    ///
+    /// @param[out] error
+    ///     An error value in case the resolve fails.
+    ///
+    /// @return
+    ///     The address of the resolved function.
+    ///     LLDB_INVALID_ADDRESS if the resolution failed.
+    //------------------------------------------------------------------
+
+    virtual lldb::addr_t
+    ResolveIndirectFunction(const Address *address, Error &error)
+    {
+        error.SetErrorStringWithFormat("error: %s does not support indirect functions in the debug process", GetShortPluginName());
+        return LLDB_INVALID_ADDRESS;
+    }
+
     virtual Error
     GetMemoryRegionInfo (lldb::addr_t load_addr, 
                         MemoryRegionInfo &range_info)
@@ -2860,9 +2955,7 @@ public:
     
     lldb::ModuleSP
     ReadModuleFromMemory (const FileSpec& file_spec, 
-                          lldb::addr_t header_addr,
-                          bool add_image_to_target,
-                          bool load_sections_in_target);
+                          lldb::addr_t header_addr);
 
     //------------------------------------------------------------------
     /// Attempt to get the attributes for a region of memory in the process.
@@ -3051,7 +3144,7 @@ public:
     GetSoftwareBreakpointTrapOpcode (BreakpointSite* bp_site);
 
     virtual Error
-    EnableBreakpoint (BreakpointSite *bp_site)
+    EnableBreakpointSite (BreakpointSite *bp_site)
     {
         Error error;
         error.SetErrorStringWithFormat("error: %s does not support enabling breakpoints", GetShortPluginName());
@@ -3060,7 +3153,7 @@ public:
 
 
     virtual Error
-    DisableBreakpoint (BreakpointSite *bp_site)
+    DisableBreakpointSite (BreakpointSite *bp_site)
     {
         Error error;
         error.SetErrorStringWithFormat("error: %s does not support disabling breakpoints", GetShortPluginName());
@@ -3106,10 +3199,7 @@ public:
 
 
     // BreakpointLocations use RemoveOwnerFromBreakpointSite to remove
-    // themselves from the owner's list of this breakpoint sites.  This has to
-    // be a static function because you can't be sure that removing the
-    // breakpoint from it's containing map won't delete the breakpoint site,
-    // and doing that in an instance method isn't copasetic.
+    // themselves from the owner's list of this breakpoint sites.
     void
     RemoveOwnerFromBreakpointSite (lldb::user_id_t owner_id,
                                    lldb::user_id_t owner_loc_id,
@@ -3138,10 +3228,25 @@ public:
     {
         return m_thread_list;
     }
-
-
+    
+    // This is obsoleted and will be removed very soon.
     uint32_t
     GetNextThreadIndexID ();
+    
+    uint32_t
+    GetNextThreadIndexID (uint64_t thread_id);
+    
+    lldb::ThreadSP
+    CreateOSPluginThread (lldb::tid_t tid, lldb::addr_t context);
+    
+    // Returns true if an index id has been assigned to a thread.
+    bool
+    HasAssignedIndexIDToThread(uint64_t sb_thread_id);
+    
+    // Given a thread_id, it will assign a more reasonable index id for display to the user.
+    // If the thread_id has previously been assigned, the same index id will be used.
+    uint32_t
+    AssignIndexIDToThread(uint64_t thread_id);
 
     //------------------------------------------------------------------
     // Event Handling
@@ -3358,7 +3463,10 @@ public:
     ReadWriteLock &
     GetRunLock ()
     {
-        return m_run_lock;
+        if (Host::GetCurrentThread() == m_private_state_thread)
+            return m_private_run_lock;
+        else
+            return m_public_run_lock;
     }
 
 protected:
@@ -3469,7 +3577,9 @@ protected:
     Predicate<bool>             m_private_state_control_wait; /// This Predicate is used to signal that a control operation is complete.
     lldb::thread_t              m_private_state_thread;  // Thread ID for the thread that watches interal state events
     ProcessModID                m_mod_id;               ///< Tracks the state of the process over stops and other alterations.
+    uint32_t                    m_process_unique_id;    ///< Each lldb_private::Process class that is created gets a unique integer ID that increments with each new instance
     uint32_t                    m_thread_index_id;      ///< Each thread is created with a 1 based index that won't get re-used.
+    std::map<uint64_t, uint32_t> m_thread_id_to_index_id_map;
     int                         m_exit_status;          ///< The exit status of the process, or -1 if not set.
     std::string                 m_exit_string;          ///< A textual description of why a process exited.
     ThreadList                  m_thread_list;          ///< The threads for this process.
@@ -3495,10 +3605,13 @@ protected:
     LanguageRuntimeCollection   m_language_runtimes;
     std::auto_ptr<NextEventAction> m_next_event_action_ap;
     std::vector<PreResumeCallbackAndBaton> m_pre_resume_actions;
-    ReadWriteLock               m_run_lock;
+    ReadWriteLock               m_public_run_lock;
+    ReadWriteLock               m_private_run_lock;
     Predicate<bool>             m_currently_handling_event;
     bool                        m_finalize_called;
-
+    lldb::StateType             m_last_broadcast_state;   /// This helps with the Public event coalescing in ShouldBroadcastEvent.
+    bool m_destroy_in_process;
+    
     enum {
         eCanJITDontKnow= 0,
         eCanJITYes,
@@ -3586,13 +3699,15 @@ protected:
                                 const char *bytes,
                                 size_t bytes_len);
     
+    Error
+    HaltForDestroyOrDetach(lldb::EventSP &exit_event_sp);
     
 private:
     //------------------------------------------------------------------
     // For Process only
     //------------------------------------------------------------------
     void ControlPrivateStateThread (uint32_t signal);
-
+    
     DISALLOW_COPY_AND_ASSIGN (Process);
 
 };

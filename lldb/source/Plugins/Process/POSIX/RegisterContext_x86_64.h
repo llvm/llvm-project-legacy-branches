@@ -42,13 +42,13 @@ public:
     GetRegisterCount();
 
     const lldb_private::RegisterInfo *
-    GetRegisterInfoAtIndex(uint32_t reg);
+    GetRegisterInfoAtIndex(size_t reg);
 
     size_t
     GetRegisterSetCount();
 
     const lldb_private::RegisterSet *
-    GetRegisterSet(uint32_t set);
+    GetRegisterSet(size_t set);
 
     static unsigned
     GetRegisterIndexFromOffset(unsigned offset);
@@ -127,6 +127,11 @@ public:
         uint64_t error_code;    // CPU error code.
         uint64_t fault_address; // Control register CR3.
     };
+
+protected:
+    // Determines if an extended register set is supported on the processor running the inferior process.
+    virtual bool
+    IsRegisterSetAvailable(size_t set_index);
 
 private:
     UserArea user;

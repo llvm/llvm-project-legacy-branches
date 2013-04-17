@@ -108,9 +108,10 @@ SymbolContext::operator= (const SymbolContext& rhs)
 }
 
 void
-SymbolContext::Clear()
+SymbolContext::Clear(bool clear_target)
 {
-    target_sp.reset();
+    if (clear_target)
+        target_sp.reset();
     module_sp.reset();
     comp_unit   = NULL;
     function    = NULL;
@@ -453,7 +454,7 @@ SymbolContext::GetParentOfInlinedScope (const Address &curr_frame_pc,
                                         SymbolContext &next_frame_sc, 
                                         Address &next_frame_pc) const
 {
-    next_frame_sc.Clear();
+    next_frame_sc.Clear(false);
     next_frame_pc.Clear();
 
     if (block)
@@ -492,7 +493,7 @@ SymbolContext::GetParentOfInlinedScope (const Address &curr_frame_pc,
             }
             else
             {
-                LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_SYMBOLS));
+                Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_SYMBOLS));
 
                 if (log)
                 {
@@ -1044,7 +1045,7 @@ SymbolContextList::Dump(Stream *s, Target *target) const
 }
 
 bool
-SymbolContextList::GetContextAtIndex(uint32_t idx, SymbolContext& sc) const
+SymbolContextList::GetContextAtIndex(size_t idx, SymbolContext& sc) const
 {
     if (idx < m_symbol_contexts.size())
     {
@@ -1055,7 +1056,18 @@ SymbolContextList::GetContextAtIndex(uint32_t idx, SymbolContext& sc) const
 }
 
 bool
-SymbolContextList::RemoveContextAtIndex (uint32_t idx)
+SymbolContextList::GetLastContext(SymbolContext& sc) const
+{
+    if (!m_symbol_contexts.empty())
+    {
+        sc = m_symbol_contexts.back();
+        return true;
+    }
+    return false;
+}
+
+bool
+SymbolContextList::RemoveContextAtIndex (size_t idx)
 {
     if (idx < m_symbol_contexts.size())
     {
@@ -1075,8 +1087,8 @@ uint32_t
 SymbolContextList::NumLineEntriesWithLine (uint32_t line) const
 {
     uint32_t match_count = 0;
-    const uint32_t size = m_symbol_contexts.size();
-    for (uint32_t idx = 0; idx<size; ++idx)
+    const size_t size = m_symbol_contexts.size();
+    for (size_t idx = 0; idx<size; ++idx)
     {
         if (m_symbol_contexts[idx].line_entry.line == line)
             ++match_count;
@@ -1089,8 +1101,8 @@ SymbolContextList::GetDescription(Stream *s,
                                   lldb::DescriptionLevel level, 
                                   Target *target) const
 {
-    const uint32_t size = m_symbol_contexts.size();
-    for (uint32_t idx = 0; idx<size; ++idx)
+    const size_t size = m_symbol_contexts.size();
+    for (size_t idx = 0; idx<size; ++idx)
         m_symbol_contexts[idx].GetDescription (s, level, target);
 }
 

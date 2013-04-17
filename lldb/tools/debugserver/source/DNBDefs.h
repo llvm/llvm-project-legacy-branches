@@ -73,7 +73,7 @@ typedef uint32_t        nub_break_t;
 typedef uint32_t        nub_watch_t;
 typedef uint32_t        nub_index_t;
 typedef pid_t           nub_process_t;
-typedef unsigned int    nub_thread_t;
+typedef uint64_t        nub_thread_t;
 typedef uint32_t        nub_event_t;
 typedef uint32_t        nub_bool_t;
 
@@ -230,6 +230,8 @@ struct DNBRegisterInfo
     uint32_t    reg_dwarf;      // DWARF register number (INVALID_NUB_REGNUM when none)
     uint32_t    reg_generic;    // Generic register number (INVALID_NUB_REGNUM when none)
     uint32_t    reg_gdb;        // The GDB register number (INVALID_NUB_REGNUM when none)
+    uint32_t    *pseudo_regs;   // If this register is a part of another register, list the one or more registers
+    uint32_t    *update_regs;   // If modifying this register will invalidate other registers, list them here
 };
 
 struct DNBRegisterSetInfo
@@ -354,6 +356,23 @@ struct DNBRegionInfo
     nub_addr_t addr;
     nub_addr_t size;
     uint32_t permissions;
+};
+
+enum DNBProfileDataScanType
+{
+    eProfileHostCPU             = (1 << 0),
+    eProfileCPU                 = (1 << 1),
+    
+    eProfileThreadsCPU          = (1 << 2), // By default excludes eProfileThreadName and eProfileQueueName.
+    eProfileThreadName          = (1 << 3), // Assume eProfileThreadsCPU, get thread name as well.
+    eProfileQueueName           = (1 << 4), // Assume eProfileThreadsCPU, get queue name as well.
+    
+    eProfileHostMemory          = (1 << 5),
+    
+    eProfileMemory              = (1 << 6), // By default, excludes eProfileMemoryDirtyPage.
+    eProfileMemoryDirtyPage     = (1 << 7), // Assume eProfileMemory, get Dirty Page size as well.
+    
+    eProfileAll                 = 0xffffffff
 };
 
 typedef nub_bool_t (*DNBCallbackBreakpointHit)(nub_process_t pid, nub_thread_t tid, nub_break_t breakID, void *baton);

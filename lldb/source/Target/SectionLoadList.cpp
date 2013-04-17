@@ -59,7 +59,7 @@ SectionLoadList::GetSectionLoadAddress (const lldb::SectionSP &section) const
 bool
 SectionLoadList::SetSectionLoadAddress (const lldb::SectionSP &section, addr_t load_addr, bool warn_multiple)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
 
     if (log)
     {
@@ -136,7 +136,7 @@ SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp)
 
     if (section_sp)
     {
-        LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
+        Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
 
         if (log)
         {
@@ -155,6 +155,7 @@ SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp)
         sect_to_addr_collection::iterator sta_pos = m_sect_to_addr.find(section_sp.get());
         if (sta_pos != m_sect_to_addr.end())
         {
+            ++unload_count;
             addr_t load_addr = sta_pos->second;
             m_sect_to_addr.erase (sta_pos);
 
@@ -169,7 +170,7 @@ SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp)
 bool
 SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp, addr_t load_addr)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
 
     if (log)
     {
@@ -215,9 +216,10 @@ SectionLoadList::ResolveLoadAddress (addr_t load_addr, Address &so_addr) const
         {
             if (load_addr != pos->first && pos != m_addr_to_sect.begin())
                 --pos;
-            if (load_addr >= pos->first)
+            const addr_t pos_load_addr = pos->first;
+            if (load_addr >= pos_load_addr)
             {
-                addr_t offset = load_addr - pos->first;
+                addr_t offset = load_addr - pos_load_addr;
                 if (offset < pos->second->GetByteSize())
                 {
                     // We have found the top level section, now we need to find the

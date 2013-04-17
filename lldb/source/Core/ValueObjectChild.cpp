@@ -30,7 +30,7 @@ ValueObjectChild::ValueObjectChild
     clang::ASTContext *clang_ast,
     void *clang_type,
     const ConstString &name,
-    uint32_t byte_size,
+    uint64_t byte_size,
     int32_t byte_offset,
     uint32_t bitfield_bit_size,
     uint32_t bitfield_bit_offset,
@@ -62,7 +62,7 @@ ValueObjectChild::GetValueType() const
     return m_parent->GetValueType();
 }
 
-uint32_t
+size_t
 ValueObjectChild::CalculateNumChildren()
 {
     return ClangASTContext::GetNumChildren (GetClangAST (), GetClangType(), true);
@@ -229,5 +229,8 @@ ValueObjectChild::UpdateValue ()
 bool
 ValueObjectChild::IsInScope ()
 {
-    return m_parent->IsInScope ();
+    ValueObject* root(GetRoot());
+    if (root)
+        return root->IsInScope ();
+    return false;
 }

@@ -34,9 +34,10 @@ enum {
   PATH_MAX = MAX_PATH
 };
 
+/*
 enum {
   REG_EXTENDED
-};
+};*/
 
 enum {
   STDIN_FILENO = 0,
@@ -87,6 +88,9 @@ int getopt_long(int argc, char * const *argv,
     const char *optstring,
     const struct option *longopts, int *longindex);
 
+int getopt_long_only(int argc, char * const *argv,
+    const char *optstring,
+    const struct option *longopts, int *longindex);
 extern int optreset;
 
 // missing macros 
@@ -94,6 +98,71 @@ extern int optreset;
 #define va_copy(d,s) ((d) = (s))
 
 #endif
+
+#define PRId32        "ld"
+#define PRIi32        "li"
+#define PRIo32        "lo"
+#define PRIu32        "lu"
+#define PRIx32        "lx"
+#define PRIX32        "lX"
+#ifndef PRId64
+#define PRId64        "lld"
+#endif
+#ifndef PRIi64
+#define PRIi64        "lli"
+#endif
+#ifndef PRIo64
+#define PRIo64        "llo"
+#endif
+#ifndef PRIu64
+#define PRIu64        "llu"
+#endif
+#ifndef PRIx64
+#define PRIx64        "llx"
+#endif
+#ifndef PRIX64
+#define PRIX64        "llX"
+#endif
+
+#define __WALL 0x40000000
+
+
+#define	SIGHUP	1	
+#define	SIGINT	2	
+#define	SIGQUIT	3	
+#define	SIGILL	4	
+#define	SIGTRAP	5	
+#define SIGIOT  6
+#define	SIGEMT	7	
+#define	SIGFPE	8	
+#define	SIGKILL	9	
+#define	SIGBUS	10	
+#define	SIGSEGV	11	
+#define	SIGSYS	12	
+#define	SIGPIPE	13	
+#define	SIGALRM	14	
+#define	SIGTERM	15	
+#define	SIGURG	16	
+#define SIGSTKFLT 16
+#define	SIGSTOP	17	
+#define	SIGTSTP	18	
+#define	SIGCONT	19	
+#define	SIGCHLD	20	
+#define	SIGTTIN	21	
+#define	SIGTTOU	22	
+#define	SIGIO	23	
+#define SIGPOLL 23
+#define	SIGXCPU	24	
+#define	SIGXFSZ	25	
+#define	SIGVTALRM 26	
+#define	SIGPROF	27	
+#define SIGWINCH 28	
+#define SIGINFO	29	
+#define SIGUSR1 30	
+#define SIGPWR 30
+#define SIGUSR2 31	
+
+
 
 #endif  // defined(__cplusplus)
 

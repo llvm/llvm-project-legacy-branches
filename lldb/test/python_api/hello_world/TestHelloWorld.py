@@ -67,7 +67,7 @@ class HelloWorldTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_world_attach_with_name_api()
 
-    @expectedFailureLinux # due to bugzilla 14541
+    @expectedFailureLinux # due to bugzilla 14541 -- lldb is unable to attach to process by name
     @python_api_test
     @dwarf_test
     def test_with_dwarf_and_attach_to_process_with_name_api(self):
@@ -135,11 +135,9 @@ class HelloWorldTestCase(TestBase):
 
         target = self.dbg.CreateTarget(self.exe)
 
-        # Spawn a new process and don't display the stdout if not in TraceOn() mode.
-        import subprocess
-        popen = subprocess.Popen([self.exe, "abc", "xyz"],
-                                 stdout = open(os.devnull, 'w') if not self.TraceOn() else None)
-        #print "pid of spawned process: %d" % popen.pid
+        # Spawn a new process
+        popen = self.spawnSubprocess(self.exe, ["abc", "xyz"])
+        self.addTearDownHook(self.cleanupSubprocesses)
 
         listener = lldb.SBListener("my.attach.listener")
         error = lldb.SBError()
@@ -159,11 +157,9 @@ class HelloWorldTestCase(TestBase):
 
         target = self.dbg.CreateTarget(self.exe)
 
-        # Spawn a new process and don't display the stdout if not in TraceOn() mode.
-        import subprocess
-        popen = subprocess.Popen([self.exe, "abc", "xyz"],
-                                 stdout = open(os.devnull, 'w') if not self.TraceOn() else None)
-        #print "pid of spawned process: %d" % popen.pid
+        # Spawn a new process
+        popen = self.spawnSubprocess(self.exe, ["abc", "xyz"])
+        self.addTearDownHook(self.cleanupSubprocesses)
 
         listener = lldb.SBListener("my.attach.listener")
         error = lldb.SBError()

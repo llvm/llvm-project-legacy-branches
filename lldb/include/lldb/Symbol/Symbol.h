@@ -37,7 +37,8 @@ public:
             bool is_artificial,
             const lldb::SectionSP &section_sp,
             lldb::addr_t value,
-            uint32_t size,
+            lldb::addr_t size,
+            bool size_is_valid,
             uint32_t flags);
 
     Symbol (uint32_t symID,
@@ -49,6 +50,7 @@ public:
             bool is_trampoline,
             bool is_artificial,
             const AddressRange &range,
+            bool size_is_valid,
             uint32_t flags);
 
     Symbol (const Symbol& rhs);
@@ -205,11 +207,14 @@ public:
     bool
     IsTrampoline () const;
 
+    bool
+    IsIndirect () const;
+
     lldb::addr_t
     GetByteSize () const;
     
     void
-    SetByteSize (uint32_t size)
+    SetByteSize (lldb::addr_t size)
     {
         m_calculated_size = size > 0;
         m_addr_range.SetByteSize(size);

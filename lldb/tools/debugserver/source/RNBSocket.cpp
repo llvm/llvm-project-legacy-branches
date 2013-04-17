@@ -31,7 +31,7 @@
    This function blocks while waiting for that connection.  */
 
 rnb_err_t
-RNBSocket::Listen (in_port_t port, PortBoundCallback callback, const void *callback_baton)
+RNBSocket::Listen (in_port_t port, PortBoundCallback callback, const void *callback_baton, bool localhost_only)
 {
     //DNBLogThreadedIf(LOG_RNB_COMM, "%8u RNBSocket::%s called", (uint32_t)m_timer.ElapsedMicroSeconds(true), __FUNCTION__);
     // Disconnect without saving errno
@@ -56,7 +56,14 @@ RNBSocket::Listen (in_port_t port, PortBoundCallback callback, const void *callb
     sa.sin_len = sizeof sa;
     sa.sin_family = AF_INET;
     sa.sin_port = htons (port);
-    sa.sin_addr.s_addr = htonl (INADDR_ANY);
+    if (localhost_only)
+    {
+        sa.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
+    }
+    else
+    {
+        sa.sin_addr.s_addr = htonl (INADDR_ANY);
+    }
 
     int error = ::bind (listen_fd, (struct sockaddr *) &sa, sizeof(sa));
     if (error == -1)
@@ -188,13 +195,16 @@ RNBSocket::ConnectToService()
     DNBLog("Connecting to com.apple.%s service...", DEBUGSERVER_PROGRAM_NAME);
     // Disconnect from any previous connections
     Disconnect(false);
-
-    SSLContextRef ssl_ctx;
-    bzero(&ssl_ctx, sizeof(ssl_ctx));
-    if (::lockdown_secure_checkin (&m_fd, &ssl_ctx, NULL, NULL) != kLDESuccess)
+    if (::secure_lockdown_checkin (&m_ld_conn, NULL, NULL) != kLDESuccess)
     {
-        DNBLogThreadedIf(LOG_RNB_COMM, "::lockdown_secure_checkin(&m_fd, NULL, NULL, NULL) failed");
+        DNBLogThreadedIf(LOG_RNB_COMM, "::secure_lockdown_checkin(&m_fd, NULL, NULL) failed");
         m_fd = -1;
+        return rnb_not_connected;
+    }
+    m_fd = ::lockdown_get_socket (m_ld_conn);
+    if (m_fd == -1)
+    {
+        DNBLogThreadedIf(LOG_RNB_COMM, "::lockdown_get_socket() failed");
         return rnb_not_connected;
     }
     m_fd_from_lockdown = true;
@@ -238,7 +248,14 @@ RNBSocket::Disconnect (bool save_errno)
 {
 #ifdef WITH_LOCKDOWN
     if (m_fd_from_lockdown)
+    {
         m_fd_from_lockdown = false;
+        m_fd = -1;
+        if (lockdown_deactivate (m_ld_conn) == 0)
+            return rnb_success;
+        else
+            return rnb_err;
+    }
 #endif
     return ClosePort (m_fd, save_errno);
 }

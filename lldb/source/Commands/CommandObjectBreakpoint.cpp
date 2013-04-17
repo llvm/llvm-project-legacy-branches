@@ -189,7 +189,7 @@ public:
                     if (!success)
                         error.SetErrorStringWithFormat ("Invalid boolean value for on-catch option: '%s'", option_arg);
                 }
-
+                break;
                 case 'i':
                 {
                     m_ignore_count = Args::StringToUInt32(option_arg, UINT32_MAX, 0);
@@ -396,7 +396,7 @@ protected:
             case eSetTypeFileAndLine: // Breakpoint by source position
                 {
                     FileSpec file;
-                    uint32_t num_files = m_options.m_filenames.GetSize();
+                    const size_t num_files = m_options.m_filenames.GetSize();
                     if (num_files == 0)
                     {
                         if (!GetDefaultFile (target, file, result))
@@ -467,7 +467,7 @@ protected:
                 break;
             case eSetTypeSourceRegexp: // Breakpoint by regexp on source text.
                 {
-                    int num_files = m_options.m_filenames.GetSize();
+                    const size_t num_files = m_options.m_filenames.GetSize();
                     
                     if (num_files == 0)
                     {
@@ -557,7 +557,7 @@ private:
         // Then use the current stack frame's file.
         if (!target->GetSourceManager().GetDefaultFileAndLine(file, default_line))
         {
-            StackFrame *cur_frame = m_interpreter.GetExecutionContext().GetFramePtr();
+            StackFrame *cur_frame = m_exe_ctx.GetFramePtr();
             if (cur_frame == NULL)
             {
                 result.AppendError ("No selected frame to use to find the default file.");
@@ -607,13 +607,13 @@ CommandObjectBreakpointSet::CommandOptions::g_option_table[] =
         "Set the number of times this breakpoint is skipped before stopping." },
 
     { LLDB_OPT_SET_ALL, false, "one-shot", 'o', no_argument,   NULL, 0, eArgTypeNone,
-        "The breakpoint is deleted the first time it stop causes a stop." },
+        "The breakpoint is deleted the first time it causes a stop." },
 
     { LLDB_OPT_SET_ALL, false, "condition",    'c', required_argument, NULL, 0, eArgTypeExpression,
         "The breakpoint stops only if this condition expression evaluates to true."},
 
     { LLDB_OPT_SET_ALL, false, "thread-index", 'x', required_argument, NULL, 0, eArgTypeThreadIndex,
-        "The breakpoint stops only for the thread whose index matches this argument."},
+        "The breakpoint stops only for the thread whose indeX matches this argument."},
 
     { LLDB_OPT_SET_ALL, false, "thread-id", 't', required_argument, NULL, 0, eArgTypeThreadID,
         "The breakpoint stops only for the thread whose TID matches this argument."},
@@ -625,7 +625,10 @@ CommandObjectBreakpointSet::CommandOptions::g_option_table[] =
         "The breakpoint stops only for threads in the queue whose name is given by this argument."},
 
     { LLDB_OPT_FILE, false, "file", 'f', required_argument, NULL, CommandCompletions::eSourceFileCompletion, eArgTypeFilename,
-        "Specifies the source file in which to set this breakpoint."},
+        "Specifies the source file in which to set this breakpoint.  "
+        "Note, by default lldb only looks for files that are #included if they use the standard include file extensions.  "
+        "To set breakpoints on .c/.cpp/.m/.mm files that are #included, set target.inline-breakpoint-strategy"
+        " to \"always\"."},
 
     { LLDB_OPT_SET_1, true, "line", 'l', required_argument, NULL, 0, eArgTypeLineNum,
         "Specifies the line number on which to set this breakpoint."},
@@ -635,11 +638,11 @@ CommandObjectBreakpointSet::CommandOptions::g_option_table[] =
     //    { 0, false, "column",     'C', required_argument, NULL, "<column>",
     //    "Set the breakpoint by source location at this particular column."},
 
-    { LLDB_OPT_SET_2, true, "address", 'a', required_argument, NULL, 0, eArgTypeAddress,
+    { LLDB_OPT_SET_2, true, "address", 'a', required_argument, NULL, 0, eArgTypeAddressOrExpression,
         "Set the breakpoint by address, at the specified address."},
 
     { LLDB_OPT_SET_3, true, "name", 'n', required_argument, NULL, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,
-        "Set the breakpoint by function name.  Can be repeated multiple times to make one breakpoint for multiple snames" },
+        "Set the breakpoint by function name.  Can be repeated multiple times to make one breakpoint for multiple names" },
 
     { LLDB_OPT_SET_4, true, "fullname", 'F', required_argument, NULL, CommandCompletions::eSymbolCompletion, eArgTypeFullName,
         "Set the breakpoint by fully qualified function names. For C++ this means namespaces and all arguments, and "
@@ -982,7 +985,7 @@ CommandObjectBreakpointModify::CommandOptions::g_option_table[] =
 {
 { LLDB_OPT_SET_ALL, false, "ignore-count", 'i', required_argument, NULL, 0, eArgTypeCount, "Set the number of times this breakpoint is skipped before stopping." },
 { LLDB_OPT_SET_ALL, false, "one-shot",     'o', required_argument, NULL, 0, eArgTypeBoolean, "The breakpoint is deleted the first time it stop causes a stop." },
-{ LLDB_OPT_SET_ALL, false, "thread-index", 'x', required_argument, NULL, 0, eArgTypeThreadIndex, "The breakpoint stops only for the thread whose indeX matches this argument."},
+{ LLDB_OPT_SET_ALL, false, "thread-index", 'x', required_argument, NULL, 0, eArgTypeThreadIndex, "The breakpoint stops only for the thread whose index matches this argument."},
 { LLDB_OPT_SET_ALL, false, "thread-id",    't', required_argument, NULL, 0, eArgTypeThreadID, "The breakpoint stops only for the thread whose TID matches this argument."},
 { LLDB_OPT_SET_ALL, false, "thread-name",  'T', required_argument, NULL, 0, eArgTypeThreadName, "The breakpoint stops only for the thread whose thread name matches this argument."},
 { LLDB_OPT_SET_ALL, false, "queue-name",   'q', required_argument, NULL, 0, eArgTypeQueueName, "The breakpoint stops only for threads in the queue whose name is given by this argument."},
@@ -1106,10 +1109,30 @@ public:
                              "Disable the specified breakpoint(s) without removing it/them.  If no breakpoints are specified, disable them all.",
                              NULL)
     {
+        SetHelpLong(
+"Disable the specified breakpoint(s) without removing it/them.  \n\
+If no breakpoints are specified, disable them all.\n\
+\n\
+Note: disabling a breakpoint will cause none of its locations to be hit\n\
+regardless of whether they are enabled or disabled.  So the sequence: \n\
+\n\
+    (lldb) break disable 1\n\
+    (lldb) break enable 1.1\n\
+\n\
+will NOT cause location 1.1 to get hit.  To achieve that, do:\n\
+\n\
+    (lldb) break disable 1.*\n\
+    (lldb) break enable 1.1\n\
+\n\
+The first command disables all the locations of breakpoint 1, \n\
+the second re-enables the first location."
+                    );
+        
         CommandArgumentEntry arg;
         CommandObject::AddIDsArgumentData(arg, eArgTypeBreakpointID, eArgTypeBreakpointIDRange);
         // Add the entry for the first argument for this command to the object's arguments vector.
-        m_arguments.push_back (arg);   
+        m_arguments.push_back (arg);
+
     }
 
 
@@ -1647,7 +1670,7 @@ protected:
             else
             {
                 target->RemoveAllBreakpoints ();
-                result.AppendMessageWithFormat ("All breakpoints removed. (%lu breakpoints)\n", num_breakpoints);
+                result.AppendMessageWithFormat ("All breakpoints removed. (%lu %s)\n", num_breakpoints, num_breakpoints > 1 ? "breakpoints" : "breakpoint");
             }
             result.SetStatus (eReturnStatusSuccessFinishNoResult);
         }
@@ -1790,7 +1813,7 @@ CommandObjectMultiwordBreakpoint::VerifyBreakpointIDs (Args &args, Target *targe
             Breakpoint *breakpoint = target->GetBreakpointByID (cur_bp_id.GetBreakpointID()).get();
             if (breakpoint != NULL)
             {
-                int num_locations = breakpoint->GetNumLocations();
+                const size_t num_locations = breakpoint->GetNumLocations();
                 if (cur_bp_id.GetLocationID() > num_locations)
                 {
                     StreamString id_str;

@@ -73,6 +73,7 @@ ThreadPlanStepUntil::ThreadPlanStepUntil
             {
                 return_bp->SetThreadID(thread_id);
                 m_return_bp_id = return_bp->GetID();
+                return_bp->SetBreakpointKind ("until-return-backstop");
             }
         }
 
@@ -86,6 +87,7 @@ ThreadPlanStepUntil::ThreadPlanStepUntil
             {
                 until_bp->SetThreadID(thread_id);
                 m_until_points[address_list[i]] = until_bp->GetID();
+                until_bp->SetBreakpointKind("until-target");
             }
             else
             {
@@ -303,7 +305,7 @@ ThreadPlanStepUntil::AnalyzeStop()
 }
 
 bool
-ThreadPlanStepUntil::PlanExplainsStop ()
+ThreadPlanStepUntil::PlanExplainsStop (Event *event_ptr)
 {
     // We don't explain signals or breakpoints (breakpoints that handle stepping in or
     // out will be handled by a child plan.
@@ -396,7 +398,7 @@ ThreadPlanStepUntil::MischiefManaged ()
     bool done = false;
     if (IsPlanComplete())
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log)
             log->Printf("Completed step until plan.");
 

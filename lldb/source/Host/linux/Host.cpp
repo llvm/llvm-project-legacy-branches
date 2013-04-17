@@ -9,7 +9,11 @@
 
 // C Includes
 #include <stdio.h>
+#ifndef _WIN32
 #include <sys/utsname.h>
+#else
+#include <io.h>
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -33,7 +37,15 @@ Host::GetOSVersion(uint32_t &major,
                    uint32_t &minor, 
                    uint32_t &update)
 {
-    struct utsname un;
+#ifdef _WIN32
+	OSVERSIONINFO info;
+	GetVersionEx(&info);
+	major = info.dwMajorVersion;
+	minor = info.dwMinorVersion;
+	update = info.dwBuildNumber;
+	return true;
+#else
+	struct utsname un;
     int status;
 
     if (uname(&un))
@@ -41,6 +53,7 @@ Host::GetOSVersion(uint32_t &major,
 
     status = sscanf(un.release, "%u.%u.%u", &major, &minor, &update);
      return status == 3;
+#endif
 }
 
 Error

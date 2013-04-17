@@ -11,7 +11,7 @@
 #define liblldb_ReadWriteLock_h_
 #if defined(__cplusplus)
 
-#if defined(WIN32)
+#if defined(_WIN32)
 #include "lldb/lldb-defines.h"
 #include <Windows.h>
 #undef interface

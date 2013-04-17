@@ -16,7 +16,6 @@
 #include <string>
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Core/DataVisualization.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/StreamFile.h"
@@ -25,6 +24,7 @@
 #include "lldb/Core/Value.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectVariable.h"
+#include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
@@ -63,7 +63,10 @@ public:
                              "frame info",
                              "List information about the currently selected frame in the current thread.",
                              "frame info",
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+                             eFlagRequiresFrame         |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   )
     {
     }
 
@@ -73,21 +76,10 @@ public:
 
 protected:
     bool
-    DoExecute (Args& command,
-             CommandReturnObject &result)
+    DoExecute (Args& command, CommandReturnObject &result)
     {
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        StackFrame *frame = exe_ctx.GetFramePtr();
-        if (frame)
-        {
-            frame->DumpUsingSettingsFormat (&result.GetOutputStream());
+        m_exe_ctx.GetFrameRef().DumpUsingSettingsFormat (&result.GetOutputStream());
             result.SetStatus (eReturnStatusSuccessFinishResult);
-        }
-        else
-        {
-            result.AppendError ("no current frame");
-            result.SetStatus (eReturnStatusFailed);
-        }
         return result.Succeeded();
     }
 };
@@ -162,7 +154,10 @@ public:
                              "frame select",
                              "Select a frame by index from within the current thread and make it the current frame.",
                              NULL,
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
+                             eFlagRequiresThread        |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   ),
         m_options (interpreter)
     {
         CommandArgumentEntry arg;
@@ -193,13 +188,11 @@ public:
 
 protected:
     bool
-    DoExecute (Args& command,
-             CommandReturnObject &result)
+    DoExecute (Args& command, CommandReturnObject &result)
     {
-        ExecutionContext exe_ctx (m_interpreter.GetExecutionContext());
-        Thread *thread = exe_ctx.GetThreadPtr();
-        if (thread)
-        {
+        // No need to check "thread" for validity as eFlagRequiresThread ensures it is valid
+        Thread *thread = m_exe_ctx.GetThreadPtr();
+
             uint32_t frame_idx = UINT32_MAX;
             if (m_options.relative_frame_offset != INT32_MIN)
             {
@@ -268,38 +261,19 @@ protected:
                 }
             }
 
-            const bool broadcast = true;
-            bool success = thread->SetSelectedFrameByIndex (frame_idx, broadcast);
+        bool success = thread->SetSelectedFrameByIndexNoisily (frame_idx, result.GetOutputStream());
             if (success)
             {
-                exe_ctx.SetFrameSP(thread->GetSelectedFrame ());
-                StackFrame *frame = exe_ctx.GetFramePtr();
-                if (frame)
-                {
-                    bool already_shown = false;
-                    SymbolContext frame_sc(frame->GetSymbolContext(eSymbolContextLineEntry));
-                    if (m_interpreter.GetDebugger().GetUseExternalEditor() && frame_sc.line_entry.file && frame_sc.line_entry.line != 0)
-                    {
-                        already_shown = Host::OpenFileInExternalEditor (frame_sc.line_entry.file, frame_sc.line_entry.line);
-                    }
-
-                    bool show_frame_info = true;
-                    bool show_source = !already_shown;
-                    if (frame->GetStatus (result.GetOutputStream(), show_frame_info, show_source))
-                    {
+            m_exe_ctx.SetFrameSP(thread->GetSelectedFrame ());
                         result.SetStatus (eReturnStatusSuccessFinishResult);
-                        return result.Succeeded();
                     }
-                }
-            }
-            result.AppendErrorWithFormat ("Frame index (%u) out of range.\n", frame_idx);
-        }
         else
         {
-            result.AppendError ("no current thread");
-        }
+            result.AppendErrorWithFormat ("Frame index (%u) out of range.\n", frame_idx);
         result.SetStatus (eReturnStatusFailed);
-        return false;
+    }
+        
+        return result.Succeeded();
     }
 protected:
 
@@ -331,7 +305,11 @@ public:
                              "Children of aggregate variables can be specified such as "
                              "'var->child.x'.",
                              NULL,
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
+                             eFlagRequiresFrame |
+                             eFlagTryTargetAPILock |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused |
+                             eFlagRequiresProcess),
         m_option_group (interpreter),
         m_option_variable(true), // Include the frame specific options by passing "true"
         m_option_format (eFormatDefault),
@@ -372,14 +350,8 @@ protected:
     virtual bool
     DoExecute (Args& command, CommandReturnObject &result)
     {
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        StackFrame *frame = exe_ctx.GetFramePtr();
-        if (frame == NULL)
-        {
-            result.AppendError ("you must be stopped in a valid stack frame to view frame variables.");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
+        // No need to check "frame" for validity as eFlagRequiresFrame ensures it is valid
+        StackFrame *frame = m_exe_ctx.GetFramePtr();
 
         Stream &s = result.GetOutputStream();
 
@@ -402,22 +374,7 @@ protected:
         else if (!m_option_variable.summary_string.IsCurrentValueEmpty())
             summary_format_sp.reset(new StringSummaryFormat(TypeSummaryImpl::Flags(),m_option_variable.summary_string.GetCurrentValue()));
         
-        ValueObject::DumpValueObjectOptions options;
-        
-        options.SetMaximumPointerDepth(m_varobj_options.ptr_depth)
-            .SetMaximumDepth(m_varobj_options.max_depth)
-            .SetShowTypes(m_varobj_options.show_types)
-            .SetShowLocation(m_varobj_options.show_location)
-            .SetUseObjectiveC(m_varobj_options.use_objc)
-            .SetUseDynamicType(m_varobj_options.use_dynamic)
-            .SetUseSyntheticValue(m_varobj_options.use_synth)
-            .SetFlatOutput(m_varobj_options.flat_output)
-            .SetOmitSummaryDepth(m_varobj_options.no_summary_depth)
-            .SetIgnoreCap(m_varobj_options.ignore_cap)
-            .SetSummary(summary_format_sp);
-
-        if (m_varobj_options.be_raw)
-            options.SetRawDisplay(true);
+        ValueObject::DumpValueObjectOptions options(m_varobj_options.GetAsDumpOptions(false,eFormatDefault,summary_format_sp));
         
         if (variable_list)
         {
@@ -434,7 +391,7 @@ protected:
                 {
                     if (m_option_variable.use_regex)
                     {
-                        const uint32_t regex_start_index = regex_var_list.GetSize();
+                        const size_t regex_start_index = regex_var_list.GetSize();
                         RegularExpression regex (name_cstr);
                         if (regex.Compile(name_cstr))
                         {
@@ -444,7 +401,7 @@ protected:
                                                                                                      num_matches);
                             if (num_new_regex_vars > 0)
                             {
-                                for (uint32_t regex_idx = regex_start_index, end_index = regex_var_list.GetSize(); 
+                                for (size_t regex_idx = regex_start_index, end_index = regex_var_list.GetSize();
                                      regex_idx < end_index;
                                      ++regex_idx)
                                 {
@@ -527,10 +484,10 @@ protected:
             }
             else // No command arg specified.  Use variable_list, instead.
             {
-                const uint32_t num_variables = variable_list->GetSize();
+                const size_t num_variables = variable_list->GetSize();
                 if (num_variables > 0)
                 {
-                    for (uint32_t i=0; i<num_variables; i++)
+                    for (size_t i=0; i<num_variables; i++)
                     {
                         var_sp = variable_list->GetVariableAtIndex(i);
                         bool dump_variable = true;

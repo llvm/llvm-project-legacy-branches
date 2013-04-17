@@ -96,14 +96,17 @@ public:
     virtual lldb_private::Error
     DoDeallocateMemory(lldb::addr_t ptr);
 
+    virtual lldb::addr_t
+    ResolveIndirectFunction(const lldb_private::Address *address, lldb_private::Error &error);
+
     virtual size_t
     GetSoftwareBreakpointTrapOpcode(lldb_private::BreakpointSite* bp_site);
 
     virtual lldb_private::Error
-    EnableBreakpoint(lldb_private::BreakpointSite *bp_site);
+    EnableBreakpointSite(lldb_private::BreakpointSite *bp_site);
 
     virtual lldb_private::Error
-    DisableBreakpoint(lldb_private::BreakpointSite *bp_site);
+    DisableBreakpointSite(lldb_private::BreakpointSite *bp_site);
 
     virtual uint32_t
     UpdateThreadListIfNeeded();
@@ -120,12 +123,6 @@ public:
 
     virtual size_t
     PutSTDIN(const char *buf, size_t len, lldb_private::Error &error);
-
-    virtual size_t
-    GetSTDOUT(char *buf, size_t len, lldb_private::Error &error);
-
-    virtual size_t
-    GetSTDERR(char *buf, size_t len, lldb_private::Error &error);
 
     //--------------------------------------------------------------------------
     // ProcessPOSIX internal API.

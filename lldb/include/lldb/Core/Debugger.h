@@ -22,13 +22,13 @@
 
 #include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/Communication.h"
-#include "lldb/Core/FormatManager.h"
 #include "lldb/Core/InputReaderStack.h"
 #include "lldb/Core/Listener.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/SourceManager.h"
 #include "lldb/Core/UserID.h"
 #include "lldb/Core/UserSettingsController.h"
+#include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/Host/Terminal.h"
 #include "lldb/Interpreter/OptionValueProperties.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -158,10 +158,7 @@ public:
     // information, but it can look up files by absolute path and display them to you.
     // To get the target's source manager, call GetSourceManager on the target instead.
     SourceManager &
-    GetSourceManager ()
-    {
-        return m_source_manager;
-    }
+    GetSourceManager ();
 
 public:
     
@@ -226,11 +223,11 @@ public:
     static lldb::DebuggerSP
     FindDebuggerWithInstanceName (const ConstString &instance_name);
     
-    static uint32_t
+    static size_t
     GetNumDebuggers();
     
     static lldb::DebuggerSP
-    GetDebuggerAtIndex (uint32_t);
+    GetDebuggerAtIndex (size_t index);
 
     static bool
     FormatPrompt (const char *format,
@@ -361,7 +358,7 @@ protected:
     TargetList m_target_list;
     PlatformList m_platform_list;
     Listener m_listener;
-    SourceManager m_source_manager;    // This is a scratch source manager that we return if we have no targets.
+    std::auto_ptr<SourceManager> m_source_manager_ap;    // This is a scratch source manager that we return if we have no targets.
     SourceManager::SourceFileCache m_source_file_cache; // All the source managers for targets created in this debugger used this shared
                                                         // source file cache.
     std::auto_ptr<CommandInterpreter> m_command_interpreter_ap;

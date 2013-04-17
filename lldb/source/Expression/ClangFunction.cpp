@@ -136,7 +136,7 @@ ClangFunction::CompileFunction (Stream &errors)
     // to pull the defined arguments out of the function, then add the types from the
     // arguments list for the variable arguments.
 
-    uint32_t num_args = UINT32_MAX;
+    size_t num_args = UINT32_MAX;
     bool trust_function = false;
     // GetArgumentCount returns -1 for an unprototyped function.
     if (m_function_ptr)
@@ -214,7 +214,7 @@ ClangFunction::CompileFunction (Stream &errors)
     m_wrapper_function_text.append (args_list_buffer);
     m_wrapper_function_text.append (");\n}\n");
 
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     if (log)
         log->Printf ("Expression: \n\n%s\n\n", m_wrapper_function_text.c_str());
         
@@ -264,19 +264,21 @@ ClangFunction::WriteFunctionWrapper (ExecutionContext &exe_ctx, Stream &errors)
     
     bool evaluated_statically = false; // should stay that way
     
-    Error jit_error (m_parser->PrepareForExecution (m_jit_alloc,
-                                                    m_jit_start_addr,
+    Error jit_error (m_parser->PrepareForExecution (m_jit_start_addr,
                                                     m_jit_end_addr,
+                                                    m_execution_unit_ap,
                                                     exe_ctx, 
-                                                    NULL,
                                                     evaluated_statically,
                                                     const_result,
                                                     eExecutionPolicyAlways));
     
     if (!jit_error.Success())
         return false;
-    if (process && m_jit_alloc != LLDB_INVALID_ADDRESS)
+    
+    if (process && m_jit_start_addr)
         m_jit_process_wp = lldb::ProcessWP(process->shared_from_this());
+    
+    m_JITted = true;
 
     return true;
 }
@@ -336,7 +338,7 @@ ClangFunction::WriteFunctionArguments (ExecutionContext &exe_ctx,
 
     // TODO: verify fun_addr needs to be a callable address
     Scalar fun_addr (function_address.GetCallableLoadAddress(exe_ctx.GetTargetPtr()));
-    int first_offset = m_member_offsets[0];
+    uint64_t first_offset = m_member_offsets[0];
     process->WriteScalarToMemory(args_addr_ref + first_offset, fun_addr, process->GetAddressByteSize(), error);
 
     // FIXME: We will need to extend this for Variadic functions.
@@ -354,7 +356,7 @@ ClangFunction::WriteFunctionArguments (ExecutionContext &exe_ctx,
     {
         // FIXME: We should sanity check sizes.
 
-        int offset = m_member_offsets[i+1]; // Clang sizes are in bytes.
+        uint64_t offset = m_member_offsets[i+1]; // Clang sizes are in bytes.
         Value *arg_value = arg_values.GetValueAtIndex(i);
         
         // FIXME: For now just do scalars:
@@ -387,7 +389,7 @@ ClangFunction::InsertFunction (ExecutionContext &exe_ctx, lldb::addr_t &args_add
     if (!WriteFunctionArguments(exe_ctx, args_addr_ref, errors))
         return false;
 
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     if (log)
         log->Printf ("Call Address: 0x%" PRIx64 " Struct Address: 0x%" PRIx64 ".\n", m_jit_start_addr, args_addr_ref);
         
@@ -400,10 +402,16 @@ ClangFunction::GetThreadPlanToCallFunction (ExecutionContext &exe_ctx,
                                             lldb::addr_t &args_addr, 
                                             Stream &errors, 
                                             bool stop_others, 
-                                            bool discard_on_error, 
+                                            bool unwind_on_error,
+                                            bool ignore_breakpoints,
                                             lldb::addr_t *this_arg,
                                             lldb::addr_t *cmd_arg)
 {
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_EXPRESSIONS | LIBLLDB_LOG_STEP));
+    
+    if (log)
+        log->Printf("-- [ClangFunction::GetThreadPlanToCallFunction] Creating thread plan to call function --");
+    
     // FIXME: Use the errors Stream for better error reporting.
     Thread *thread = exe_ctx.GetThreadPtr();
     if (thread == NULL)
@@ -420,7 +428,8 @@ ClangFunction::GetThreadPlanToCallFunction (ExecutionContext &exe_ctx,
                                                        ClangASTType(),
                                                        args_addr,
                                                        stop_others, 
-                                                       discard_on_error,
+                                                       unwind_on_error,
+                                                       ignore_breakpoints,
                                                        this_arg,
                                                        cmd_arg);
     new_plan->SetIsMasterPlan(true);
@@ -435,6 +444,12 @@ ClangFunction::FetchFunctionResults (ExecutionContext &exe_ctx, lldb::addr_t arg
     // FIXME: How does clang tell us there's no return value?  We need to handle that case.
     // FIXME: Create our ThreadPlanCallFunction with the return ClangASTType, and then use GetReturnValueObject
     // to fetch the value.  That way we can fetch any values we need.
+    
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_EXPRESSIONS | LIBLLDB_LOG_STEP));
+    
+    if (log)
+        log->Printf("-- [ClangFunction::FetchFunctionResults] Fetching function results --");
+    
     Process *process = exe_ctx.GetProcessPtr();
     
     if (process == NULL)
@@ -477,8 +492,10 @@ ExecutionResults
 ClangFunction::ExecuteFunction(ExecutionContext &exe_ctx, Stream &errors, bool stop_others, Value &results)
 {
     const bool try_all_threads = false;
-    const bool discard_on_error = true;
-    return ExecuteFunction (exe_ctx, NULL, errors, stop_others, 0UL, try_all_threads, discard_on_error, results);
+    const bool unwind_on_error = true;
+    const bool ignore_breakpoints = true;
+    return ExecuteFunction (exe_ctx, NULL, errors, stop_others, 0UL, try_all_threads,
+                            unwind_on_error, ignore_breakpoints, results);
 }
 
 ExecutionResults
@@ -490,9 +507,10 @@ ClangFunction::ExecuteFunction(
         Value &results)
 {
     const bool stop_others = true;
-    const bool discard_on_error = true;
+    const bool unwind_on_error = true;
+    const bool ignore_breakpoints = true;
     return ExecuteFunction (exe_ctx, NULL, errors, stop_others, timeout_usec,
-                            try_all_threads, discard_on_error, results);
+                            try_all_threads, unwind_on_error, ignore_breakpoints, results);
 }
 
 // This is the static function
@@ -503,17 +521,24 @@ ClangFunction::ExecuteFunction (
         lldb::addr_t &void_arg,
         bool stop_others,
         bool try_all_threads,
-        bool discard_on_error,
+        bool unwind_on_error,
+        bool ignore_breakpoints,
         uint32_t timeout_usec,
         Stream &errors,
         lldb::addr_t *this_arg)
 {
-    lldb::ThreadPlanSP call_plan_sp (ClangFunction::GetThreadPlanToCallFunction (exe_ctx, 
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_EXPRESSIONS | LIBLLDB_LOG_STEP));
+
+    if (log)
+        log->Printf("== [ClangFunction::ExecuteFunction] Executing function ==");
+    
+    lldb::ThreadPlanSP call_plan_sp (ClangFunction::GetThreadPlanToCallFunction (exe_ctx,
                                                                                  function_address, 
                                                                                  void_arg, 
                                                                                  errors, 
                                                                                  stop_others, 
-                                                                                 discard_on_error, 
+                                                                                 unwind_on_error,
+                                                                                 ignore_breakpoints,
                                                                                  this_arg));
     if (!call_plan_sp)
         return eExecutionSetupError;
@@ -526,9 +551,22 @@ ClangFunction::ExecuteFunction (
     ExecutionResults results = exe_ctx.GetProcessRef().RunThreadPlan (exe_ctx, call_plan_sp,
                                                                       stop_others, 
                                                                       try_all_threads, 
-                                                                      discard_on_error,
+                                                                      unwind_on_error,
+                                                                      ignore_breakpoints,
                                                                       timeout_usec,
                                                                       errors);
+    
+    if (log)
+    {
+        if (results != eExecutionCompleted)
+        {
+            log->Printf("== [ClangFunction::ExecuteFunction] Execution completed abnormally ==");
+        }
+        else
+        {
+            log->Printf("== [ClangFunction::ExecuteFunction] Execution completed normally ==");
+        }
+    }
     
     if (exe_ctx.GetProcessPtr())
         exe_ctx.GetProcessPtr()->SetRunningUserExpression(false);
@@ -544,7 +582,8 @@ ClangFunction::ExecuteFunction(
         bool stop_others, 
         uint32_t timeout_usec, 
         bool try_all_threads,
-        bool discard_on_error, 
+        bool unwind_on_error,
+        bool ignore_breakpoints,
         Value &results)
 {
     using namespace clang;
@@ -571,7 +610,8 @@ ClangFunction::ExecuteFunction(
                                                    args_addr, 
                                                    stop_others, 
                                                    try_all_threads, 
-                                                   discard_on_error, 
+                                                   unwind_on_error,
+                                                   ignore_breakpoints,
                                                    timeout_usec, 
                                                    errors);
 

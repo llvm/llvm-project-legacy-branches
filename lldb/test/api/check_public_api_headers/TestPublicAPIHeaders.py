@@ -14,21 +14,21 @@ class SBDirCheckerCase(TestBase):
 
     def setUp(self):
         TestBase.setUp(self)
-        self.build_dir = os.environ["LLDB_BUILD_DIR"]
+        self.lib_dir = os.environ["LLDB_LIB_DIR"]
         self.template = 'main.cpp.template'
         self.source = 'main.cpp'
 
     def test_sb_api_directory(self):
         """Test the SB API directory and make sure there's no unwanted stuff."""
 
-        if sys.platform.startswith("darwin") and self.getArchitecture() == "i386":
-            self.skipTest("LLDB.framework built 64-bit")
+        if self.getArchitecture() == "i386":
+            self.skipTest("LLDB is 64-bit and cannot be linked to 32-bit test program.")
 
         # Call the program generator to produce main.cpp.
         self.generate_main_cpp()
 
         if sys.platform.startswith("darwin"):
-            d = {'FRAMEWORK_INCLUDES' : "-F%s" % self.build_dir}
+            d = {'FRAMEWORK_INCLUDES' : "-F%s" % self.lib_dir}
         if sys.platform.startswith("linux") or os.environ.get('LLDB_BUILD_TYPE') == 'Makefile':
             d = {'FRAMEWORK_INCLUDES' : "-I%s" % os.path.join(os.environ["LLDB_SRC"], "include")}
         self.buildDefault(dictionary=d)
@@ -69,18 +69,14 @@ class SBDirCheckerCase(TestBase):
 
         self.line_to_break = line_number(self.source, '// Set breakpoint here.')
 
-        if sys.platform.startswith("darwin"):
-            env_var = 'DYLD_FRAMEWORK_PATH'
-            env_val = self.build_dir
-        if sys.platform.startswith("linux"):
-            env_var = 'LD_LIBRARY_PATH'
-            env_val = self.build_dir
+        existing_library_path = os.environ[self.dylibPath] if self.dylibPath in os.environ else None
 
-        env_cmd = "settings set target.env-vars %s=%s" %(env_var, env_val)
+        env_val = self.lib_dir if not existing_library_path else "%s:%s" % (existing_library_path, self.lib_dir)
+        env_cmd = "settings set target.env-vars %s=%s" %(self.dylibPath, env_val)
         if self.TraceOn():
             print "Set environment to: ", env_cmd
         self.runCmd(env_cmd)
-        self.addTearDownHook(lambda: self.runCmd("settings remove target.env-vars %s" % env_var))
+        self.addTearDownHook(lambda: self.runCmd("settings remove target.env-vars %s" % self.dylibPath))
 
         lldbutil.run_break_set_by_file_and_line (self, self.source, self.line_to_break, num_expected_locations = -1)
 

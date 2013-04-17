@@ -23,14 +23,6 @@ using namespace lldb;
 using namespace lldb_private;
 #include "llvm/ADT/StringRef.h"
 
-static inline void StripLeadingSpaces(llvm::StringRef &s)
-{
-    const size_t non_space = s.find_first_not_of(' ');
-    if (non_space > 0)
-        s = s.substr(non_space);
-}
-
-
 //-------------------------------------------------------------------------
 // CommandObjectSettingsSet
 //-------------------------------------------------------------------------
@@ -202,12 +194,10 @@ insert-before or insert-after.\n");
                 }
                 else
                 {
-                    ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-
                     // Complete setting value
                     const char *setting_var_name = input.GetArgumentAtIndex(setting_var_idx);
                     Error error;
-                    lldb::OptionValueSP value_sp (m_interpreter.GetDebugger().GetPropertyValue(&exe_ctx, setting_var_name, false, error));
+                    lldb::OptionValueSP value_sp (m_interpreter.GetDebugger().GetPropertyValue(&m_exe_ctx, setting_var_name, false, error));
                     if (value_sp)
                     {
                         value_sp->AutoComplete (m_interpreter,
@@ -250,28 +240,25 @@ protected:
         }
 
         // Split the raw command into var_name and value pair.
-        std::string var_name_string = var_name;
         llvm::StringRef raw_str(command);
-        llvm::StringRef var_value_str = raw_str.split(var_name).second;
-        StripLeadingSpaces(var_value_str);
-        std::string var_value_string = var_value_str.str();
+        std::string var_value_string = raw_str.split(var_name).second.str();
+        const char *var_value_cstr = Args::StripSpaces(var_value_string, true, true, false);
 
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
         Error error;
         if (m_options.m_global)
         {
             error = m_interpreter.GetDebugger().SetPropertyValue (NULL,
                                                                   eVarSetOperationAssign,
                                                                   var_name,
-                                                                  var_value_string.c_str());
+                                                                  var_value_cstr);
         }
         
         if (error.Success())
         {
-            error = m_interpreter.GetDebugger().SetPropertyValue (&exe_ctx,
+            error = m_interpreter.GetDebugger().SetPropertyValue (&m_exe_ctx,
                                                                   eVarSetOperationAssign,
                                                                   var_name,
-                                                                  var_value_string.c_str());
+                                                                  var_value_cstr);
         }
 
         if (error.Fail())
@@ -357,7 +344,6 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
         result.SetStatus (eReturnStatusSuccessFinishResult);
 
         const size_t argc = args.GetArgumentCount ();
@@ -367,7 +353,7 @@ protected:
             {
                 const char *property_path = args.GetArgumentAtIndex (i);
 
-                Error error(m_interpreter.GetDebugger().DumpPropertyValue (&exe_ctx, result.GetOutputStream(), property_path, OptionValue::eDumpGroupValue));
+                Error error(m_interpreter.GetDebugger().DumpPropertyValue (&m_exe_ctx, result.GetOutputStream(), property_path, OptionValue::eDumpGroupValue));
                 if (error.Success())
                 {
                     result.GetOutputStream().EOL();
@@ -381,7 +367,7 @@ protected:
         }
         else
         {
-            m_interpreter.GetDebugger().DumpAllPropertyValues (& exe_ctx, result.GetOutputStream(), OptionValue::eDumpGroupValue);
+            m_interpreter.GetDebugger().DumpAllPropertyValues (&m_exe_ctx, result.GetOutputStream(), OptionValue::eDumpGroupValue);
         }
 
         return result.Succeeded();
@@ -450,7 +436,6 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
         result.SetStatus (eReturnStatusSuccessFinishResult);
 
         const bool will_modify = false;
@@ -463,7 +448,7 @@ protected:
             {
                 const char *property_path = args.GetArgumentAtIndex (i);
                 
-                const Property *property = m_interpreter.GetDebugger().GetValueProperties()->GetPropertyAtPath (&exe_ctx, will_modify, property_path);
+                const Property *property = m_interpreter.GetDebugger().GetValueProperties()->GetPropertyAtPath (&m_exe_ctx, will_modify, property_path);
 
                 if (property)
                 {
@@ -586,17 +571,14 @@ protected:
         }
         
         // Split the raw command into var_name and value pair.
-        std::string var_name_string = var_name;
         llvm::StringRef raw_str(command);
-        llvm::StringRef var_value_str = raw_str.split(var_name).second;
-        StripLeadingSpaces(var_value_str);
-        std::string var_value_string = var_value_str.str();
+        std::string var_value_string = raw_str.split(var_name).second.str();
+        const char *var_value_cstr = Args::StripSpaces(var_value_string, true, true, false);
         
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        Error error (m_interpreter.GetDebugger().SetPropertyValue (&exe_ctx,
+        Error error (m_interpreter.GetDebugger().SetPropertyValue (&m_exe_ctx,
                                                                    eVarSetOperationRemove,
                                                                    var_name,
-                                                                   var_value_string.c_str()));
+                                                                   var_value_cstr));
         if (error.Fail())
         {
             result.AppendError (error.AsCString());
@@ -703,7 +685,6 @@ protected:
 
         Args cmd_args(command);
         const char *var_name = cmd_args.GetArgumentAtIndex (0);
-        std::string var_name_string;
         if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings replace' command requires a valid variable name; No value supplied");
@@ -711,19 +692,16 @@ protected:
             return false;
         }
 
-        var_name_string = var_name;
 
         // Split the raw command into var_name, index_value, and value triple.
         llvm::StringRef raw_str(command);
-        llvm::StringRef var_value_str = raw_str.split(var_name).second;
-        StripLeadingSpaces(var_value_str);
-        std::string var_value_string = var_value_str.str();
+        std::string var_value_string = raw_str.split(var_name).second.str();
+        const char *var_value_cstr = Args::StripSpaces(var_value_string, true, true, false);
 
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        Error error(m_interpreter.GetDebugger().SetPropertyValue (&exe_ctx,
+        Error error(m_interpreter.GetDebugger().SetPropertyValue (&m_exe_ctx,
                                                                   eVarSetOperationReplace,
                                                                   var_name,
-                                                                  var_value_string.c_str()));
+                                                                  var_value_cstr));
         if (error.Fail())
         {
             result.AppendError (error.AsCString());
@@ -837,7 +815,6 @@ protected:
         }
 
         const char *var_name = cmd_args.GetArgumentAtIndex (0);
-        std::string var_name_string;
         if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings insert-before' command requires a valid variable name; No value supplied");
@@ -845,19 +822,15 @@ protected:
             return false;
         }
 
-        var_name_string = var_name;
-
         // Split the raw command into var_name, index_value, and value triple.
         llvm::StringRef raw_str(command);
-        llvm::StringRef var_value_str = raw_str.split(var_name).second;
-        StripLeadingSpaces(var_value_str);
-        std::string var_value_string = var_value_str.str();
+        std::string var_value_string = raw_str.split(var_name).second.str();
+        const char *var_value_cstr = Args::StripSpaces(var_value_string, true, true, false);
 
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        Error error(m_interpreter.GetDebugger().SetPropertyValue (&exe_ctx,
+        Error error(m_interpreter.GetDebugger().SetPropertyValue (&m_exe_ctx,
                                                                   eVarSetOperationInsertBefore,
                                                                   var_name,
-                                                                  var_value_string.c_str()));
+                                                                  var_value_cstr));
         if (error.Fail())
         {
             result.AppendError (error.AsCString());
@@ -966,7 +939,6 @@ protected:
         }
 
         const char *var_name = cmd_args.GetArgumentAtIndex (0);
-        std::string var_name_string;
         if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings insert-after' command requires a valid variable name; No value supplied");
@@ -974,19 +946,15 @@ protected:
             return false;
         }
 
-        var_name_string = var_name;
-
         // Split the raw command into var_name, index_value, and value triple.
         llvm::StringRef raw_str(command);
-        llvm::StringRef var_value_str = raw_str.split(var_name).second;
-        StripLeadingSpaces(var_value_str);
-        std::string var_value_string = var_value_str.str();
+        std::string var_value_string = raw_str.split(var_name).second.str();
+        const char *var_value_cstr = Args::StripSpaces(var_value_string, true, true, false);
 
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        Error error(m_interpreter.GetDebugger().SetPropertyValue (&exe_ctx,
+        Error error(m_interpreter.GetDebugger().SetPropertyValue (&m_exe_ctx,
                                                                   eVarSetOperationInsertAfter,
                                                                   var_name,
-                                                                  var_value_string.c_str()));
+                                                                  var_value_cstr));
         if (error.Fail())
         {
             result.AppendError (error.AsCString());
@@ -1084,7 +1052,6 @@ protected:
         }
 
         const char *var_name = cmd_args.GetArgumentAtIndex (0);
-        std::string var_name_string;
         if ((var_name == NULL) || (var_name[0] == '\0'))
         {
             result.AppendError ("'settings append' command requires a valid variable name; No value supplied");
@@ -1092,21 +1059,18 @@ protected:
             return false;
         }
 
-        var_name_string = var_name;
         // Do not perform cmd_args.Shift() since StringRef is manipulating the
         // raw character string later on.
 
         // Split the raw command into var_name and value pair.
         llvm::StringRef raw_str(command);
-        llvm::StringRef var_value_str = raw_str.split(var_name).second;
-        StripLeadingSpaces(var_value_str);
-        std::string var_value_string = var_value_str.str();
+        std::string var_value_string = raw_str.split(var_name).second.str();
+        const char *var_value_cstr = Args::StripSpaces(var_value_string, true, true, false);
 
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        Error error(m_interpreter.GetDebugger().SetPropertyValue (&exe_ctx,
+        Error error(m_interpreter.GetDebugger().SetPropertyValue (&m_exe_ctx,
                                                                   eVarSetOperationAppend,
                                                                   var_name,
-                                                                  var_value_string.c_str()));
+                                                                  var_value_cstr));
         if (error.Fail())
         {
             result.AppendError (error.AsCString());
@@ -1196,8 +1160,7 @@ protected:
             return false;
         }
         
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        Error error (m_interpreter.GetDebugger().SetPropertyValue (&exe_ctx,
+        Error error (m_interpreter.GetDebugger().SetPropertyValue (&m_exe_ctx,
                                                                    eVarSetOperationClear,
                                                                    var_name,
                                                                    NULL));

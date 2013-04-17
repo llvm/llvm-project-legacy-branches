@@ -58,7 +58,7 @@ ThreadPlanStepOverBreakpoint::ValidatePlan (Stream *error)
 }
 
 bool
-ThreadPlanStepOverBreakpoint::PlanExplainsStop ()
+ThreadPlanStepOverBreakpoint::PlanExplainsStop (Event *event_ptr)
 {
     StopInfoSP stop_info_sp = GetPrivateStopReason();
     if (stop_info_sp)
@@ -99,7 +99,7 @@ ThreadPlanStepOverBreakpoint::WillResume (StateType resume_state, bool current_p
     {
         BreakpointSiteSP bp_site_sp (m_thread.GetProcess()->GetBreakpointSiteList().FindByAddress (m_breakpoint_addr));
         if (bp_site_sp  && bp_site_sp->IsEnabled())
-            m_thread.GetProcess()->DisableBreakpoint (bp_site_sp.get());
+            m_thread.GetProcess()->DisableBreakpointSite (bp_site_sp.get());
     }
     return true;
 }
@@ -109,7 +109,7 @@ ThreadPlanStepOverBreakpoint::WillStop ()
 {
     BreakpointSiteSP bp_site_sp (m_thread.GetProcess()->GetBreakpointSiteList().FindByAddress (m_breakpoint_addr));
     if (bp_site_sp)
-        m_thread.GetProcess()->EnableBreakpoint (bp_site_sp.get());
+        m_thread.GetProcess()->EnableBreakpointSite (bp_site_sp.get());
     return true;
 }
 
@@ -126,13 +126,13 @@ ThreadPlanStepOverBreakpoint::MischiefManaged ()
     }
     else
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log)
             log->Printf("Completed step over breakpoint plan.");
         // Otherwise, re-enable the breakpoint we were stepping over, and we're done.
         BreakpointSiteSP bp_site_sp (m_thread.GetProcess()->GetBreakpointSiteList().FindByAddress (m_breakpoint_addr));
         if (bp_site_sp)
-            m_thread.GetProcess()->EnableBreakpoint (bp_site_sp.get());
+            m_thread.GetProcess()->EnableBreakpointSite (bp_site_sp.get());
         ThreadPlan::MischiefManaged ();
         return true;
     }

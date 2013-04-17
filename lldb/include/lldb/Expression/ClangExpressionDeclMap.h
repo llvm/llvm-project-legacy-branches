@@ -69,6 +69,9 @@ public:
     ///     If true, inhibits the normal deallocation of the memory for
     ///     the result persistent variable, and instead marks the variable
     ///     as persisting.
+    ///
+    /// @param[in] exe_ctx
+    ///     The execution context to use when parsing.
     //------------------------------------------------------------------
     ClangExpressionDeclMap (bool keep_result_in_memory,
                             ExecutionContext &exe_ctx);
@@ -85,11 +88,16 @@ public:
     ///     The execution context to use when finding types for variables.
     ///     Also used to find a "scratch" AST context to store result types.
     ///
+    /// @param[in] materializer
+    ///     If non-NULL, the materializer to populate with information about
+    ///     the variables to use
+    ///
     /// @return
     ///     True if parsing is possible; false if it is unsafe to continue.
     //------------------------------------------------------------------
     bool
-    WillParse (ExecutionContext &exe_ctx);
+    WillParse (ExecutionContext &exe_ctx,
+               Materializer *materializer);
     
     //------------------------------------------------------------------
     /// [Used by ClangExpressionParser] For each variable that had an unknown
@@ -674,6 +682,7 @@ private:
             m_sym_ctx(),
             m_persistent_vars(NULL),
             m_enable_lookups(false),
+            m_materializer(NULL),
             m_decl_map(decl_map)
         {
         }
@@ -693,6 +702,7 @@ private:
         ClangPersistentVariables   *m_persistent_vars;  ///< The persistent variables for the process.
         bool                        m_enable_lookups;   ///< Set to true during parsing if we have found the first "$__lldb" name.
         TargetInfo                  m_target_info;      ///< Basic information about the target.
+        Materializer               *m_materializer;     ///< If non-NULL, the materializer to use when reporting used variables.
     private:
         ClangExpressionDeclMap     &m_decl_map;
         DISALLOW_COPY_AND_ASSIGN (ParserVars);
@@ -796,6 +806,16 @@ private:
     DisableMaterialVars()
     {
         m_material_vars.reset();
+    }
+    
+    //----------------------------------------------------------------------
+    /// Get this parser's ID for use in extracting parser- and JIT-specific
+    /// data from persistent variables.
+    //----------------------------------------------------------------------
+    uint64_t
+    GetParserID()
+    {
+        return (uint64_t)this;
     }
     
     //------------------------------------------------------------------
@@ -1007,16 +1027,23 @@ private:
     ///
     /// @param[in] type
     ///     The type that needs to be created.
-    ///
-    /// @param[in] add_method
-    ///     True if a method with signature void $__lldb_expr(void*)
-    ///     should be added to the C++ class type passed in
     //------------------------------------------------------------------
     void 
     AddOneType (NameSearchContext &context, 
                 TypeFromUser &type,
-                unsigned int current_id,
-                bool add_method);
+                unsigned int current_id);
+    
+    //------------------------------------------------------------------
+    /// Copy a C++ class type into the parser's AST context and add a
+    /// member function declaration to it for the expression.
+    ///
+    /// @param[in] type
+    ///     The type that needs to be created.
+    //------------------------------------------------------------------
+
+    TypeFromParser
+    CopyClassType(TypeFromUser &type,
+                  unsigned int current_id);
     
     //------------------------------------------------------------------
     /// Actually do the task of materializing or dematerializing the struct.
@@ -1092,6 +1119,51 @@ private:
                                         lldb::addr_t stack_frame_top,
                                         lldb::addr_t stack_frame_bottom,
                                         Error &err);
+    
+    //------------------------------------------------------------------
+    /// Create a temporary buffer in the target process to store the value
+    /// of a persistent variable that would otherwise not be accessible in
+    /// memory (e.g., register values or constants).
+    ///
+    /// @param[in] process
+    ///     The process to use when allocating the memory.
+    ///
+    /// @param[in] expr_var
+    ///     The variable whose live data will hold this buffer.
+    ///
+    /// @param[in] err
+    ///     An Error to populate with any messages related to
+    ///     allocating the memory.
+    ///
+    /// @return
+    ///     True on success; false otherwise.
+    //------------------------------------------------------------------
+    bool
+    CreateLiveMemoryForExpressionVariable (Process &process,
+                                           lldb::ClangExpressionVariableSP &expr_var,
+                                           Error &err);
+    
+    //------------------------------------------------------------------
+    /// Delete a temporary buffer created with
+    /// CreateLiveMemoryForExpressionVariable.
+    ///
+    /// @param[in] process
+    ///     The process to use when deallocating the memory.
+    ///
+    /// @param[in] expr_var
+    ///     The variable whose live data will hold this buffer.
+    ///
+    /// @param[in] err
+    ///     An Error to populate with any messages related to
+    ///     allocating the memory.
+    ///
+    /// @return
+    ///     True on success; false otherwise.
+    //------------------------------------------------------------------
+    bool
+    DeleteLiveMemoryForExpressionVariable (Process &process,
+                                           lldb::ClangExpressionVariableSP &expr_var,
+                                           Error &err);
     
     //------------------------------------------------------------------
     /// Actually do the task of materializing or dematerializing a 

@@ -34,19 +34,95 @@
 using namespace lldb;
 using namespace lldb_private;
 
+class CommandObjectProcessLaunchOrAttach : public CommandObjectParsed
+{
+public:
+    CommandObjectProcessLaunchOrAttach (CommandInterpreter &interpreter,
+                                       const char *name,
+                                       const char *help,
+                                       const char *syntax,
+                                       uint32_t flags,
+                                       const char *new_process_action) :
+        CommandObjectParsed (interpreter, name, help, syntax, flags),
+        m_new_process_action (new_process_action) {}
+    
+    virtual ~CommandObjectProcessLaunchOrAttach () {}
+protected:
+    bool
+    StopProcessIfNecessary (Process *&process, StateType &state, CommandReturnObject &result)
+    {
+        state = eStateInvalid;
+        if (process)
+        {
+            state = process->GetState();
+            
+            if (process->IsAlive() && state != eStateConnected)
+            {       
+                char message[1024];
+                if (process->GetState() == eStateAttaching)
+                    ::snprintf (message, sizeof(message), "There is a pending attach, abort it and %s?", m_new_process_action.c_str());
+                else if (process->GetShouldDetach())
+                    ::snprintf (message, sizeof(message), "There is a running process, detach from it and %s?", m_new_process_action.c_str());
+                else
+                    ::snprintf (message, sizeof(message), "There is a running process, kill it and %s?", m_new_process_action.c_str());
+        
+                if (!m_interpreter.Confirm (message, true))
+                {
+                    result.SetStatus (eReturnStatusFailed);
+                    return false;
+                }
+                else
+                {
+                    if (process->GetShouldDetach())
+                    {
+                        Error detach_error (process->Detach());
+                        if (detach_error.Success())
+                        {
+                            result.SetStatus (eReturnStatusSuccessFinishResult);
+                            process = NULL;
+                        }
+                        else
+                        {
+                            result.AppendErrorWithFormat ("Failed to detach from process: %s\n", detach_error.AsCString());
+                            result.SetStatus (eReturnStatusFailed);
+                        }
+                    }
+                    else
+                    {
+                        Error destroy_error (process->Destroy());
+                        if (destroy_error.Success())
+                        {
+                            result.SetStatus (eReturnStatusSuccessFinishResult);
+                            process = NULL;
+                        }
+                        else
+                        {
+                            result.AppendErrorWithFormat ("Failed to kill process: %s\n", destroy_error.AsCString());
+                            result.SetStatus (eReturnStatusFailed);
+                        }
+                    }
+                }
+            }
+        }
+        return result.Succeeded();
+    }
+    std::string m_new_process_action;
+};
 //-------------------------------------------------------------------------
 // CommandObjectProcessLaunch
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessLaunch
-class CommandObjectProcessLaunch : public CommandObjectParsed
+class CommandObjectProcessLaunch : public CommandObjectProcessLaunchOrAttach
 {
 public:
 
     CommandObjectProcessLaunch (CommandInterpreter &interpreter) :
-        CommandObjectParsed (interpreter,
-                             "process launch",
-                             "Launch the executable in the debugger.",
-                             NULL),
+        CommandObjectProcessLaunchOrAttach (interpreter,
+                                            "process launch",
+                                            "Launch the executable in the debugger.",
+                                            NULL,
+                                            eFlagRequiresTarget,
+                                            "restart"),
         m_options (interpreter)
     {
         CommandArgumentEntry arg;
@@ -68,7 +144,7 @@ public:
     {
     }
 
-    int
+    virtual int
     HandleArgumentCompletion (Args &input,
                               int &cursor_index,
                               int &cursor_char_position,
@@ -111,13 +187,6 @@ protected:
         Debugger &debugger = m_interpreter.GetDebugger();
         Target *target = debugger.GetSelectedTarget().get();
         Error error;
-
-        if (target == NULL)
-        {
-            result.AppendError ("invalid target, create a debug target using the 'target create' command");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
         // If our listener is NULL, users aren't allows to launch
         char filename[PATH_MAX];
         const Module *exe_module = target->GetExecutableModulePointer();
@@ -130,39 +199,10 @@ protected:
         }
         
         StateType state = eStateInvalid;
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
-        if (process)
-        {
-            state = process->GetState();
-            
-            if (process->IsAlive() && state != eStateConnected)
-            {       
-                char message[1024];
-                if (process->GetState() == eStateAttaching)
-                    ::strncpy (message, "There is a pending attach, abort it and launch a new process?", sizeof(message));
-                else
-                    ::strncpy (message, "There is a running process, kill it and restart?", sizeof(message));
+        Process *process = m_exe_ctx.GetProcessPtr();
         
-                if (!m_interpreter.Confirm (message, true))
-                {
-                    result.SetStatus (eReturnStatusFailed);
-                    return false;
-                }
-                else
-                {
-                    Error destroy_error (process->Destroy());
-                    if (destroy_error.Success())
-                    {
-                        result.SetStatus (eReturnStatusSuccessFinishResult);
-                    }
-                    else
-                    {
-                        result.AppendErrorWithFormat ("Failed to kill process: %s\n", destroy_error.AsCString());
-                        result.SetStatus (eReturnStatusFailed);
-                    }
-                }
-            }
-        }
+        if (!StopProcessIfNecessary(process, state, result))
+            return false;
         
         const char *target_settings_argv0 = target->GetArg0();
         
@@ -205,6 +245,11 @@ protected:
         if (environment.GetArgumentCount() > 0)
             m_options.launch_info.GetEnvironmentEntries ().AppendArguments (environment);
 
+        // Get the value of synchronous execution here.  If you wait till after you have started to
+        // run, then you could have hit a breakpoint, whose command might switch the value, and
+        // then you'll pick up that incorrect value.
+        bool synchronous_execution = m_interpreter.GetSynchronous ();
+
         // Finalize the file actions, and if none were given, default to opening
         // up a pseudo terminal
         const bool default_to_use_pty = true;
@@ -218,35 +263,34 @@ protected:
                 m_options.launch_info.GetFlags().Clear (eLaunchFlagLaunchInTTY);
             }
         }
+        
+        if (!m_options.launch_info.GetArchitecture().IsValid())
+            m_options.launch_info.GetArchitecture() = target->GetArchitecture();
+
+        PlatformSP platform_sp (target->GetPlatform());
+        
+        if (platform_sp && platform_sp->CanDebugProcess ())
+        {
+            process = target->GetPlatform()->DebugProcess (m_options.launch_info, 
+                                                           debugger,
+                                                           target,
+                                                           debugger.GetListener(),
+                                                           error).get();
+        }
         else
         {
-            if (!m_options.launch_info.GetArchitecture().IsValid())
-                m_options.launch_info.GetArchitecture() = target->GetArchitecture();
-
-            PlatformSP platform_sp (target->GetPlatform());
-            
-            if (platform_sp && platform_sp->CanDebugProcess ())
-            {
-                process = target->GetPlatform()->DebugProcess (m_options.launch_info, 
-                                                               debugger,
-                                                               target,
-                                                               debugger.GetListener(),
-                                                               error).get();
-            }
-            else
-            {
-                const char *plugin_name = m_options.launch_info.GetProcessPluginName();
-                process = target->CreateProcess (debugger.GetListener(), plugin_name, NULL).get();
-                if (process)
-                    error = process->Launch (m_options.launch_info);
-            }
-
-            if (process == NULL)
-            {
-                result.SetError (error, "failed to launch or debug process");
-                return false;
-            }
+            const char *plugin_name = m_options.launch_info.GetProcessPluginName();
+            process = target->CreateProcess (debugger.GetListener(), plugin_name, NULL).get();
+            if (process)
+                error = process->Launch (m_options.launch_info);
         }
+
+        if (process == NULL)
+        {
+            result.SetError (error, "failed to launch or debug process");
+            return false;
+        }
+
              
         if (error.Success())
         {
@@ -264,7 +308,6 @@ protected:
                     error = process->Resume();
                     if (error.Success())
                     {
-                        bool synchronous_execution = m_interpreter.GetSynchronous ();
                         if (synchronous_execution)
                         {
                             state = process->WaitForProcessToStop (NULL);
@@ -334,7 +377,7 @@ protected:
 // CommandObjectProcessAttach
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessAttach
-class CommandObjectProcessAttach : public CommandObjectParsed
+class CommandObjectProcessAttach : public CommandObjectProcessLaunchOrAttach
 {
 public:
 
@@ -452,10 +495,10 @@ public:
                         match_info.SetNameMatchType(eNameMatchStartsWith);
                     }
                     platform_sp->FindProcesses (match_info, process_infos);
-                    const uint32_t num_matches = process_infos.GetSize();
+                    const size_t num_matches = process_infos.GetSize();
                     if (num_matches > 0)
                     {
-                        for (uint32_t i=0; i<num_matches; ++i)
+                        for (size_t i=0; i<num_matches; ++i)
                         {
                             matches.AppendString (process_infos.GetProcessNameAtIndex(i), 
                                                   process_infos.GetProcessNameLengthAtIndex(i));
@@ -477,10 +520,12 @@ public:
     };
 
     CommandObjectProcessAttach (CommandInterpreter &interpreter) :
-        CommandObjectParsed (interpreter,
-                             "process attach",
-                             "Attach to a process.",
-                             "process attach <cmd-options>"),
+        CommandObjectProcessLaunchOrAttach (interpreter,
+                                            "process attach",
+                                            "Attach to a process.",
+                                            "process attach <cmd-options>",
+                                            0,
+                                            "attach"),
         m_options (interpreter)
     {
     }
@@ -505,20 +550,12 @@ protected:
         // and the target actually stopping.  So even if the interpreter is set to be asynchronous, we wait for the stop
         // ourselves here.
         
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         StateType state = eStateInvalid;
-        if (process)
-        {
-            state = process->GetState();
-            if (process->IsAlive() && state != eStateConnected)
-            {
-                result.AppendErrorWithFormat ("Process %" PRIu64 " is currently being debugged, kill the process before attaching.\n",
-                                              process->GetID());
-                result.SetStatus (eReturnStatusFailed);
-                return false;
-            }
-        }
-
+        Process *process = m_exe_ctx.GetProcessPtr();
+        
+        if (!StopProcessIfNecessary (process, state, result))
+            return false;
+        
         if (target == NULL)
         {
             // If there isn't a current target create one.
@@ -686,7 +723,10 @@ public:
                              "process continue",
                              "Continue execution of all threads in the current process.",
                              "process continue",
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
+                             eFlagRequiresProcess       |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   ),
         m_options(interpreter)
     {
     }
@@ -754,19 +794,10 @@ protected:
     };
     
     bool
-    DoExecute (Args& command,
-             CommandReturnObject &result)
+    DoExecute (Args& command, CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+        Process *process = m_exe_ctx.GetProcessPtr();
         bool synchronous_execution = m_interpreter.GetSynchronous ();
-
-        if (process == NULL)
-        {
-            result.AppendError ("no process to continue");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-         }
-
         StateType state = process->GetState();
         if (state == eStateStopped)
         {
@@ -785,12 +816,12 @@ protected:
                     StopInfoSP stop_info_sp = sel_thread_sp->GetStopInfo();
                     if (stop_info_sp && stop_info_sp->GetStopReason() == eStopReasonBreakpoint)
                     {
-                        uint64_t bp_site_id = stop_info_sp->GetValue();
+                        lldb::break_id_t bp_site_id = (lldb::break_id_t)stop_info_sp->GetValue();
                         BreakpointSiteSP bp_site_sp(process->GetBreakpointSiteList().FindByID(bp_site_id));
                         if (bp_site_sp)
                         {
-                            uint32_t num_owners = bp_site_sp->GetNumberOfOwners();
-                            for (uint32_t i = 0; i < num_owners; i++)
+                            const size_t num_owners = bp_site_sp->GetNumberOfOwners();
+                            for (size_t i = 0; i < num_owners; i++)
                             {
                                 Breakpoint &bp_ref = bp_site_sp->GetOwnerAtIndex(i)->GetBreakpoint();
                                 if (!bp_ref.IsInternal())
@@ -878,6 +909,8 @@ public:
                              "process detach",
                              "Detach from the current process being debugged.",
                              "process detach",
+                             eFlagRequiresProcess      |
+                             eFlagTryTargetAPILock     |
                              eFlagProcessMustBeLaunched)
     {
     }
@@ -888,17 +921,9 @@ public:
 
 protected:
     bool
-    DoExecute (Args& command,
-             CommandReturnObject &result)
+    DoExecute (Args& command, CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
-        if (process == NULL)
-        {
-            result.AppendError ("must have a valid process in order to detach");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
-
+        Process *process = m_exe_ctx.GetProcessPtr();
         result.AppendMessageWithFormat ("Detaching from process %" PRIu64 "\n", process->GetID());
         Error error (process->Detach());
         if (error.Success())
@@ -1008,7 +1033,7 @@ protected:
         
         TargetSP target_sp (m_interpreter.GetDebugger().GetSelectedTarget());
         Error error;        
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+        Process *process = m_exe_ctx.GetProcessPtr();
         if (process)
         {
             if (process->IsAlive())
@@ -1134,7 +1159,10 @@ public:
                              "process load",
                              "Load a shared library into the current process.",
                              "process load <filename> [<filename> ...]",
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+                             eFlagRequiresProcess       |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   )
     {
     }
 
@@ -1147,15 +1175,9 @@ protected:
     DoExecute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
-        if (process == NULL)
-        {
-            result.AppendError ("must have a valid process in order to load a shared library");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
+        Process *process = m_exe_ctx.GetProcessPtr();
 
-        const uint32_t argc = command.GetArgumentCount();
+        const size_t argc = command.GetArgumentCount();
         
         for (uint32_t i=0; i<argc; ++i)
         {
@@ -1194,7 +1216,10 @@ public:
                              "process unload",
                              "Unload a shared library from the current process using the index returned by a previous call to \"process load\".",
                              "process unload <index>",
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+                             eFlagRequiresProcess       |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   )
     {
     }
 
@@ -1207,15 +1232,9 @@ protected:
     DoExecute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
-        if (process == NULL)
-        {
-            result.AppendError ("must have a valid process in order to load a shared library");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
+        Process *process = m_exe_ctx.GetProcessPtr();
 
-        const uint32_t argc = command.GetArgumentCount();
+        const size_t argc = command.GetArgumentCount();
         
         for (uint32_t i=0; i<argc; ++i)
         {
@@ -1260,7 +1279,8 @@ public:
         CommandObjectParsed (interpreter,
                              "process signal",
                              "Send a UNIX signal to the current process being debugged.",
-                             NULL)
+                             NULL,
+                             eFlagRequiresProcess | eFlagTryTargetAPILock)
     {
         CommandArgumentEntry arg;
         CommandArgumentData signal_arg;
@@ -1285,13 +1305,7 @@ protected:
     DoExecute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
-        if (process == NULL)
-        {
-            result.AppendError ("no process to signal");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
+        Process *process = m_exe_ctx.GetProcessPtr();
 
         if (command.GetArgumentCount() == 1)
         {
@@ -1348,6 +1362,8 @@ public:
                              "process interrupt",
                              "Interrupt the current process being debugged.",
                              "process interrupt",
+                             eFlagRequiresProcess      |
+                             eFlagTryTargetAPILock     |
                              eFlagProcessMustBeLaunched)
     {
     }
@@ -1361,7 +1377,7 @@ protected:
     DoExecute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+        Process *process = m_exe_ctx.GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("no process to halt");
@@ -1411,6 +1427,8 @@ public:
                              "process kill",
                              "Terminate the current process being debugged.",
                              "process kill",
+                             eFlagRequiresProcess      |
+                             eFlagTryTargetAPILock     |
                              eFlagProcessMustBeLaunched)
     {
     }
@@ -1424,7 +1442,7 @@ protected:
     DoExecute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+        Process *process = m_exe_ctx.GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("no process to kill");
@@ -1469,7 +1487,7 @@ public:
                              "process status",
                              "Show the current status and location of executing process.",
                              "process status",
-                             0)
+                             eFlagRequiresProcess | eFlagTryTargetAPILock)
     {
     }
 
@@ -1483,27 +1501,18 @@ public:
     {
         Stream &strm = result.GetOutputStream();
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        Process *process = exe_ctx.GetProcessPtr();
-        if (process)
-        {
-            const bool only_threads_with_stop_reason = true;
-            const uint32_t start_frame = 0;
-            const uint32_t num_frames = 1;
-            const uint32_t num_frames_with_source = 1;
-            process->GetStatus(strm);
-            process->GetThreadStatus (strm, 
-                                      only_threads_with_stop_reason, 
-                                      start_frame,
-                                      num_frames,
-                                      num_frames_with_source);
-            
-        }
-        else
-        {
-            result.AppendError ("No process.");
-            result.SetStatus (eReturnStatusFailed);
-        }
+        // No need to check "process" for validity as eFlagRequiresProcess ensures it is valid        
+        Process *process = m_exe_ctx.GetProcessPtr();
+        const bool only_threads_with_stop_reason = true;
+        const uint32_t start_frame = 0;
+        const uint32_t num_frames = 1;
+        const uint32_t num_frames_with_source = 1;
+        process->GetStatus(strm);
+        process->GetThreadStatus (strm, 
+                                  only_threads_with_stop_reason, 
+                                  start_frame,
+                                  num_frames,
+                                  num_frames_with_source);
         return result.Succeeded();
     }
 };

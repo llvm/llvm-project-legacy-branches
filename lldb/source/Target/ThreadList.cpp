@@ -60,6 +60,10 @@ ThreadList::operator = (const ThreadList& rhs)
 
 ThreadList::~ThreadList()
 {
+    // Clear the thread list. Clear will take the mutex lock
+    // which will ensure that if anyone is using the list
+    // they won't get it removed while using it.
+    Clear();
 }
 
 
@@ -128,6 +132,29 @@ ThreadList::FindThreadByID (lldb::tid_t tid, bool can_update)
 }
 
 ThreadSP
+ThreadList::RemoveThreadByID (lldb::tid_t tid, bool can_update)
+{
+    Mutex::Locker locker(m_threads_mutex);
+    
+    if (can_update)
+        m_process->UpdateThreadListIfNeeded();
+    
+    ThreadSP thread_sp;
+    uint32_t idx = 0;
+    const uint32_t num_threads = m_threads.size();
+    for (idx = 0; idx < num_threads; ++idx)
+    {
+        if (m_threads[idx]->GetID() == tid)
+        {
+            thread_sp = m_threads[idx];
+            m_threads.erase(m_threads.begin()+idx);
+            break;
+        }
+    }
+    return thread_sp;
+}
+
+ThreadSP
 ThreadList::GetThreadSPForThreadPtr (Thread *thread_ptr)
 {
     ThreadSP thread_sp;
@@ -175,10 +202,9 @@ ThreadList::FindThreadByIndexID (uint32_t index_id, bool can_update)
 bool
 ThreadList::ShouldStop (Event *event_ptr)
 {
-    bool should_stop = false;    
     // Running events should never stop, obviously...
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     // The ShouldStop method of the threads can do a whole lot of work,
     // running breakpoint commands & conditions, etc.  So we don't want
@@ -205,15 +231,31 @@ ThreadList::ShouldStop (Event *event_ptr)
         log->Printf ("ThreadList::%s: %" PRIu64 " threads", __FUNCTION__, (uint64_t)m_threads.size());
     }
 
+    bool did_anybody_stop_for_a_reason = false;
+    bool should_stop = false;    
+    
     for (pos = threads_copy.begin(); pos != end; ++pos)
     {
         ThreadSP thread_sp(*pos);
+        
+        did_anybody_stop_for_a_reason |= thread_sp->ThreadStoppedForAReason();
         
         const bool thread_should_stop = thread_sp->ShouldStop(event_ptr);
         if (thread_should_stop)
             should_stop |= true;
     }
 
+    // We should never get a stop for which no thread had a stop reason, but sometimes we do see this -
+    // for instance when we first connect to a remote stub.  In that case we should stop, since we can't figure out
+    // the right thing to do and stopping gives the user control over what to do in this instance.
+    
+    if (!should_stop && !did_anybody_stop_for_a_reason)
+    {
+        should_stop = true;
+        if (log)
+            log->Printf ("ThreadList::%s we stopped but no threads had a stop reason, overriding should_stop and stopping.", __FUNCTION__);
+    }
+    
     if (log)
         log->Printf ("ThreadList::%s overall should_stop = %i", __FUNCTION__, should_stop);
 
@@ -238,7 +280,7 @@ ThreadList::ShouldReportStop (Event *event_ptr)
     m_process->UpdateThreadListIfNeeded();
     collection::iterator pos, end = m_threads.end();
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     if (log)
         log->Printf ("ThreadList::%s %" PRIu64 " threads", __FUNCTION__, (uint64_t)m_threads.size());
@@ -293,7 +335,7 @@ ThreadList::ShouldReportRun (Event *event_ptr)
     // Run through the threads and ask whether we should report this event.
     // The rule is NO vote wins over everything, a YES vote wins over no opinion.
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     
     for (pos = m_threads.begin(); pos != end; ++pos)
     {
@@ -347,7 +389,7 @@ ThreadList::RefreshStateAfterStop ()
 
     m_process->UpdateThreadListIfNeeded();
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     if (log && log->GetVerbose())
         log->Printf ("Turning off notification of new threads while single stepping a thread.");
 
@@ -402,14 +444,14 @@ ThreadList::WillResume ()
 
     if (wants_solo_run)
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log && log->GetVerbose())
             log->Printf ("Turning on notification of new threads while single stepping a thread.");
         m_process->StartNoticingNewThreads();
     }
     else
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log && log->GetVerbose())
             log->Printf ("Turning off notification of new threads while single stepping a thread.");
         m_process->StopNoticingNewThreads();

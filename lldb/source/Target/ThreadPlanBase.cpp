@@ -68,7 +68,7 @@ ThreadPlanBase::ValidatePlan (Stream *error)
 }
 
 bool
-ThreadPlanBase::PlanExplainsStop ()
+ThreadPlanBase::PlanExplainsStop (Event *event_ptr)
 {
     // The base plan should defer to its tracer, since by default it
     // always handles the stop.
@@ -84,7 +84,7 @@ ThreadPlanBase::ShouldStop (Event *event_ptr)
     m_stop_vote = eVoteYes;
     m_run_vote = eVoteYes;
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     StopInfoSP stop_info_sp = GetPrivateStopReason();
     if (stop_info_sp)
@@ -101,7 +101,7 @@ ThreadPlanBase::ShouldStop (Event *event_ptr)
 
         case eStopReasonBreakpoint:
         case eStopReasonWatchpoint:
-            if (stop_info_sp->ShouldStop(event_ptr))
+            if (stop_info_sp->ShouldStopSynchronous(event_ptr))
             {
                 // If we are going to stop for a breakpoint, then unship the other plans
                 // at this point.  Don't force the discard, however, so Master plans can stay

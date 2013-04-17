@@ -19,6 +19,7 @@ class StaticVariableTestCase(TestBase):
         self.buildDsym()
         self.static_variable_commands()
 
+    @expectedFailureLinux # PR-15261: lldb on Linux does not display the size of (class or file)static arrays
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test that file and class static variables display correctly."""
@@ -26,8 +27,8 @@ class StaticVariableTestCase(TestBase):
         self.static_variable_commands()
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
-    #rdar://problem/9980907
-    @expectedFailureClang
+    @expectedFailureClang(9980907)
+    @expectedFailureGcc(9980907)
     @python_api_test
     @dsym_test
     def test_with_dsym_and_python_api(self):
@@ -35,8 +36,8 @@ class StaticVariableTestCase(TestBase):
         self.buildDsym()
         self.static_variable_python()
 
-    #rdar://problem/9980907
-    @expectedFailureClang
+    @expectedFailureClang(9980907)
+    @expectedFailureGcc(9980907)
     @python_api_test
     @dwarf_test
     def test_with_dwarf_and_python_api(self):

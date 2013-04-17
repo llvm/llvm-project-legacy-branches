@@ -40,10 +40,11 @@ public:
 
     static lldb_private::ObjectContainer *
     CreateInstance (const lldb::ModuleSP &module_sp,
-                    lldb::DataBufferSP& dataSP,
+                    lldb::DataBufferSP& data_sp,
+                    lldb::offset_t data_offset,
                     const lldb_private::FileSpec *file,
-                    lldb::addr_t offset,
-                    lldb::addr_t length);
+                    lldb::offset_t offset,
+                    lldb::offset_t length);
 
     static bool
     MagicBytesMatch (const lldb_private::DataExtractor &data);
@@ -52,10 +53,11 @@ public:
     // Member Functions
     //------------------------------------------------------------------
     ObjectContainerBSDArchive (const lldb::ModuleSP &module_sp,
-                               lldb::DataBufferSP& dataSP,
+                               lldb::DataBufferSP& data_sp,
+                               lldb::offset_t data_offset,
                                const lldb_private::FileSpec *file,
-                               lldb::addr_t offset,
-                               lldb::addr_t length);
+                               lldb::offset_t offset,
+                               lldb::offset_t length);
 
     virtual
     ~ObjectContainerBSDArchive();
@@ -97,8 +99,8 @@ protected:
         void
         Clear();
 
-        uint32_t
-        Extract (const lldb_private::DataExtractor& data, uint32_t offset);
+        lldb::offset_t
+        Extract (const lldb_private::DataExtractor& data, lldb::offset_t offset);
 
         lldb_private::ConstString       ar_name;        // name
         uint32_t        ar_date;        // modification time
@@ -106,8 +108,8 @@ protected:
         uint16_t        ar_gid;         // group id
         uint16_t        ar_mode;        // octal file permissions
         uint32_t        ar_size;        // size in bytes
-        uint32_t        ar_file_offset; // file offset in bytes from the beginning of the file of the object data
-        uint32_t        ar_file_size;   // length of the object data
+        lldb::offset_t  ar_file_offset; // file offset in bytes from the beginning of the file of the object data
+        lldb::offset_t  ar_file_size;   // length of the object data
 
         typedef std::vector<Object>         collection;
         typedef collection::iterator        iterator;
@@ -138,7 +140,8 @@ protected:
                                      lldb_private::DataExtractor &data);
 
         Archive (const lldb_private::ArchSpec &arch,
-                 const lldb_private::TimeValue &mod_time);
+                 const lldb_private::TimeValue &mod_time,
+                 lldb_private::DataExtractor &data);
 
         ~Archive ();
 
@@ -149,7 +152,7 @@ protected:
         }
 
         size_t
-        ParseObjects (lldb_private::DataExtractor &data);
+        ParseObjects ();
 
         Object *
         FindObject (const lldb_private::ConstString &object_name);
@@ -169,15 +172,22 @@ protected:
         bool
         HasNoExternalReferences() const;
 
-    protected:
+        lldb_private::DataExtractor &
+        GetData ()
+        {
+            return m_data;
+        }
 
+    protected:
+        typedef lldb_private::UniqueCStringMap<uint32_t> ObjectNameToIndexMap;
         //----------------------------------------------------------------------
         // Member Variables
         //----------------------------------------------------------------------
         lldb_private::ArchSpec m_arch;
         lldb_private::TimeValue m_time;
         Object::collection m_objects;
-        lldb_private::UniqueCStringMap<uint32_t> m_object_name_to_index_map;
+        ObjectNameToIndexMap m_object_name_to_index_map;
+        lldb_private::DataExtractor m_data; ///< The data for this object container so we don't lose data if the .a files gets modified
     };
 
     void

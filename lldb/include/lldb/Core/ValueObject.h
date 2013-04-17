@@ -232,6 +232,8 @@ public:
         lldb::TypeSummaryImplSP m_summary_sp;
         std::string m_root_valobj_name;
         bool m_hide_root_type;
+        bool m_hide_name;
+        bool m_hide_value;
         
         DumpValueObjectOptions() :
             m_max_ptr_depth(0),
@@ -248,7 +250,9 @@ public:
             m_format (lldb::eFormatDefault),
             m_summary_sp(),
             m_root_valobj_name(),
-            m_hide_root_type(false)  // <rdar://problem/11505459> provide a special compact display for "po",
+            m_hide_root_type(false),  // provide a special compact display for "po"
+            m_hide_name(false), // provide a special compact display for "po"
+            m_hide_value(false) // provide a special compact display for "po"
         {}
         
         static const DumpValueObjectOptions
@@ -274,7 +278,9 @@ public:
             m_format(rhs.m_format),
             m_summary_sp(rhs.m_summary_sp),
             m_root_valobj_name(rhs.m_root_valobj_name),
-            m_hide_root_type(rhs.m_hide_root_type)
+            m_hide_root_type(rhs.m_hide_root_type),
+            m_hide_name(rhs.m_hide_name),
+            m_hide_value(rhs.m_hide_value)
         {}
         
         DumpValueObjectOptions&
@@ -372,12 +378,16 @@ public:
                 SetUseSyntheticValue(false);
                 SetOmitSummaryDepth(UINT32_MAX);
                 SetIgnoreCap(true);
+                SetHideName(false);
+                SetHideValue(false);
             }
             else
             {
                 SetUseSyntheticValue(true);
                 SetOmitSummaryDepth(0);
                 SetIgnoreCap(false);
+                SetHideName(false);
+                SetHideValue(false);
             }
             return *this;
         }
@@ -412,7 +422,20 @@ public:
             m_hide_root_type = hide_root_type;
             return *this;
         }
+        
+        DumpValueObjectOptions&
+        SetHideName (bool hide_name = false)
+        {
+            m_hide_name = hide_name;
+            return *this;
+        }
 
+        DumpValueObjectOptions&
+        SetHideValue (bool hide_value = false)
+        {
+            m_hide_value = hide_value;
+            return *this;
+        }        
     };
 
     class EvaluationPoint
@@ -579,7 +602,7 @@ public:
     //------------------------------------------------------------------
     // Sublasses must implement the functions below.
     //------------------------------------------------------------------
-    virtual size_t
+    virtual uint64_t
     GetByteSize() = 0;
 
     virtual lldb::ValueType
@@ -596,6 +619,9 @@ public:
 
     virtual lldb::LanguageType
     GetObjectRuntimeLanguage();
+
+    virtual uint32_t
+    GetTypeInfo (lldb::clang_type_t *pointee_or_element_clang_type = NULL);
 
     virtual bool
     IsPointerType ();
@@ -712,12 +738,10 @@ public:
     // value is from an executable file and might have its data in
     // sections of the file. This can be used for variables.
     virtual lldb::ModuleSP
-    GetModule()
-    {
-        if (m_parent)
-            return m_parent->GetModule();
-        return lldb::ModuleSP();
-    }
+    GetModule();
+    
+    virtual ValueObject*
+    GetRoot ();
     
     virtual bool
     GetDeclaration (Declaration &decl);
@@ -732,15 +756,36 @@ public:
     GetName() const;
 
     virtual lldb::ValueObjectSP
-    GetChildAtIndex (uint32_t idx, bool can_create);
+    GetChildAtIndex (size_t idx, bool can_create);
 
+    // this will always create the children if necessary
+#ifdef _POSIX_SOURCE
+    lldb::ValueObjectSP
+    GetChildAtIndexPath (const std::initializer_list<size_t> &idxs,
+                         size_t* index_of_error = NULL);
+#endif
+    
+    lldb::ValueObjectSP
+    GetChildAtIndexPath (const std::vector<size_t> &idxs,
+                         size_t* index_of_error = NULL);
+    
+#ifdef _POSIX_SOURCE
+    lldb::ValueObjectSP
+    GetChildAtIndexPath (const std::initializer_list< std::pair<size_t, bool> > &idxs,
+                         size_t* index_of_error = NULL);
+#endif
+
+    lldb::ValueObjectSP
+    GetChildAtIndexPath (const std::vector< std::pair<size_t, bool> > &idxs,
+                         size_t* index_of_error = NULL);
+    
     virtual lldb::ValueObjectSP
     GetChildMemberWithName (const ConstString &name, bool can_create);
 
-    virtual uint32_t
+    virtual size_t
     GetIndexOfChildWithName (const ConstString &name);
 
-    uint32_t
+    size_t
     GetNumChildren ();
 
     const Value &
@@ -791,10 +836,7 @@ public:
     UpdateValueIfNeeded (bool update_format = true);
     
     bool
-    UpdateValueIfNeeded (lldb::DynamicValueType use_dynamic, bool update_format = true);
-    
-    bool
-    UpdateFormatsIfNeeded(lldb::DynamicValueType use_dynamic = lldb::eNoDynamicValues);
+    UpdateFormatsIfNeeded();
 
     lldb::ValueObjectSP
     GetSP ()
@@ -816,20 +858,17 @@ public:
     GetSyntheticChild (const ConstString &key) const;
     
     lldb::ValueObjectSP
-    GetSyntheticArrayMember (int32_t index, bool can_create);
+    GetSyntheticArrayMember (size_t index, bool can_create);
 
     lldb::ValueObjectSP
-    GetSyntheticArrayMemberFromPointer (int32_t index, bool can_create);
+    GetSyntheticArrayMemberFromPointer (size_t index, bool can_create);
     
     lldb::ValueObjectSP
-    GetSyntheticArrayMemberFromArray (int32_t index, bool can_create);
+    GetSyntheticArrayMemberFromArray (size_t index, bool can_create);
     
     lldb::ValueObjectSP
     GetSyntheticBitFieldChild (uint32_t from, uint32_t to, bool can_create);
-    
-    lldb::ValueObjectSP
-    GetSyntheticArrayRangeChild (uint32_t from, uint32_t to, bool can_create);
-    
+
     lldb::ValueObjectSP
     GetSyntheticExpressionPathChild(const char* expression, bool can_create);
     
@@ -838,6 +877,9 @@ public:
     
     virtual lldb::ValueObjectSP
     GetDynamicValue (lldb::DynamicValueType valueType);
+    
+    lldb::DynamicValueType
+    GetDynamicValueType ();
     
     virtual lldb::ValueObjectSP
     GetStaticValue ();
@@ -946,7 +988,7 @@ public:
     bool
     IsCStringContainer (bool check_pointer = false);
     
-    void
+    size_t
     ReadPointedString (Stream& s,
                        Error& error,
                        uint32_t max_length = 0,
@@ -958,8 +1000,11 @@ public:
                     uint32_t item_idx = 0,
 					uint32_t item_count = 1);
     
-    virtual size_t
+    virtual uint64_t
     GetData (DataExtractor& data);
+    
+    virtual bool
+    SetData (DataExtractor &data, Error &error);
 
     bool
     GetIsConstant () const
@@ -974,12 +1019,7 @@ public:
     }
 
     lldb::Format
-    GetFormat () const
-    {
-        if (m_parent && m_format == lldb::eFormatDefault)
-            return m_parent->GetFormat();
-        return m_format;
-    }
+    GetFormat () const;
     
     void
     SetFormat (lldb::Format format)
@@ -992,7 +1032,7 @@ public:
     lldb::TypeSummaryImplSP
     GetSummaryFormat()
     {
-        UpdateFormatsIfNeeded(m_last_format_mgr_dynamic);
+        UpdateFormatsIfNeeded();
         return m_type_summary_sp;
     }
     
@@ -1013,7 +1053,7 @@ public:
     lldb::TypeFormatImplSP
     GetValueFormat()
     {
-        UpdateFormatsIfNeeded(m_last_format_mgr_dynamic);
+        UpdateFormatsIfNeeded();
         return m_type_format_sp;
     }
     
@@ -1029,7 +1069,7 @@ public:
     lldb::SyntheticChildrenSP
     GetSyntheticChildren()
     {
-        UpdateFormatsIfNeeded(m_last_format_mgr_dynamic);
+        UpdateFormatsIfNeeded();
         return m_synthetic_children_sp;
     }
 
@@ -1058,15 +1098,7 @@ public:
     }
     
     AddressType
-    GetAddressTypeOfChildren()
-    {
-        if (m_address_type_of_ptr_or_ref_children == eAddressTypeInvalid)
-        {
-            if (m_parent)
-                return m_parent->GetAddressTypeOfChildren();
-        }
-        return m_address_type_of_ptr_or_ref_children;
-    }
+    GetAddressTypeOfChildren();
     
     void
     SetHasCompleteType()
@@ -1100,13 +1132,13 @@ protected:
     {
     public:
         ChildrenManager() :
-        m_mutex(Mutex::eMutexTypeRecursive),
-        m_children(),
-        m_children_count(0)
+            m_mutex(Mutex::eMutexTypeRecursive),
+            m_children(),
+            m_children_count(0)
         {}
         
         bool
-        HasChildAtIndex (uint32_t idx)
+        HasChildAtIndex (size_t idx)
         {
             Mutex::Locker locker(m_mutex);
             ChildrenIterator iter = m_children.find(idx);
@@ -1115,7 +1147,7 @@ protected:
         }
         
         ValueObject*
-        GetChildAtIndex (uint32_t idx)
+        GetChildAtIndex (size_t idx)
         {
             Mutex::Locker locker(m_mutex);
             ChildrenIterator iter = m_children.find(idx);
@@ -1127,7 +1159,7 @@ protected:
         }
         
         void
-        SetChildAtIndex (uint32_t idx, ValueObject* valobj)
+        SetChildAtIndex (size_t idx, ValueObject* valobj)
         {
             ChildrenPair pair(idx,valobj); // we do not need to be mutex-protected to make a pair
             Mutex::Locker locker(m_mutex);
@@ -1135,12 +1167,12 @@ protected:
         }
         
         void
-        SetChildrenCount (uint32_t count)
+        SetChildrenCount (size_t count)
         {
             m_children_count = count;
         }
         
-        uint32_t
+        size_t
         GetChildrenCount ()
         {
             return m_children_count;
@@ -1155,18 +1187,19 @@ protected:
         }
         
     private:
-        typedef std::map<uint32_t, ValueObject*> ChildrenMap;
+        typedef std::map<size_t, ValueObject*> ChildrenMap;
         typedef ChildrenMap::iterator ChildrenIterator;
         typedef ChildrenMap::value_type ChildrenPair;
         Mutex m_mutex;
         ChildrenMap m_children;
-        uint32_t m_children_count;
+        size_t m_children_count;
     };
 
     //------------------------------------------------------------------
     // Classes that inherit from ValueObject can see and modify these
     //------------------------------------------------------------------
     ValueObject  *      m_parent;       // The parent value object, or NULL if this has no parent
+    ValueObject  *      m_root;         // The root of the hierarchy for this ValueObject (or NULL if never calculated)
     EvaluationPoint     m_update_point; // Stores both the stop id and the full context at which this value was last 
                                         // updated.  When we are asked to update the value object, we check whether
                                         // the context & stop id are the same before updating.
@@ -1201,7 +1234,6 @@ protected:
 
     lldb::Format                m_format;
     uint32_t                    m_last_format_mgr_revision;
-    lldb::DynamicValueType      m_last_format_mgr_dynamic;
     lldb::TypeSummaryImplSP     m_type_summary_sp;
     lldb::TypeFormatImplSP      m_type_format_sp;
     lldb::SyntheticChildrenSP   m_synthetic_children_sp;
@@ -1215,7 +1247,6 @@ protected:
                         m_is_deref_of_parent:1,
                         m_is_array_item_for_pointer:1,
                         m_is_bitfield_for_scalar:1,
-                        m_is_expression_path_child:1,
                         m_is_child_at_offset:1,
                         m_is_getting_summary:1,
                         m_did_calculate_complete_objc_class_type:1;
@@ -1256,20 +1287,32 @@ protected:
     virtual void
     CalculateDynamicValue (lldb::DynamicValueType use_dynamic);
     
+    virtual lldb::DynamicValueType
+    GetDynamicValueTypeImpl ()
+    {
+        return lldb::eNoDynamicValues;
+    }
+    
+    virtual bool
+    HasDynamicValueTypeInfo ()
+    {
+        return false;
+    }
+    
     virtual void
     CalculateSyntheticValue (bool use_synthetic = true);
     
     // Should only be called by ValueObject::GetChildAtIndex()
     // Returns a ValueObject managed by this ValueObject's manager.
     virtual ValueObject *
-    CreateChildAtIndex (uint32_t idx, bool synthetic_array_member, int32_t synthetic_index);
+    CreateChildAtIndex (size_t idx, bool synthetic_array_member, int32_t synthetic_index);
 
     // Should only be called by ValueObject::GetNumChildren()
-    virtual uint32_t
+    virtual size_t
     CalculateNumChildren() = 0;
 
     void
-    SetNumChildren (uint32_t num_children);
+    SetNumChildren (size_t num_children);
 
     void
     SetValueDidChange (bool value_changed);

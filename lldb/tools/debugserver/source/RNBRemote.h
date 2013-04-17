@@ -79,9 +79,9 @@ public:
         insert_access_watch_bp,         // 'Z4'
         remove_access_watch_bp,         // 'z4'
 
+        query_monitor,                  // 'qRcmd'
         query_current_thread_id,        // 'qC'
         query_get_pid,                  // 'qGetPid'
-        query_memory_crc,               // 'qCRC:'
         query_thread_ids_first,         // 'qfThreadInfo'
         query_thread_ids_subsequent,    // 'qsThreadInfo'
         query_thread_extra_info,        // 'qThreadExtraInfo'
@@ -114,7 +114,7 @@ public:
         sync_thread_state,              // 'QSyncThreadState:'
         memory_region_info,             // 'qMemoryRegionInfo:'
         get_profile_data,               // 'qGetProfileData'
-        set_enable_profiling,           // 'QSetAsyncEnableProfiling'
+        set_enable_profiling,           // 'QSetEnableAsyncProfiling'
         watchpoint_support_info,        // 'qWatchpointSupportInfo:'
         allocate_memory,                // '_M'
         deallocate_memory,              // '_m'
@@ -166,6 +166,7 @@ public:
     rnb_err_t HandlePacket_A (const char *p);
     rnb_err_t HandlePacket_H (const char *p);
     rnb_err_t HandlePacket_qC (const char *p);
+    rnb_err_t HandlePacket_qRcmd (const char *p);
     rnb_err_t HandlePacket_qGetPid (const char *p);
     rnb_err_t HandlePacket_qLaunchSuccess (const char *p);
     rnb_err_t HandlePacket_qRegisterInfo (const char *p);
@@ -215,7 +216,7 @@ public:
     rnb_err_t HandlePacket_DeallocateMemory (const char *p);
     rnb_err_t HandlePacket_MemoryRegionInfo (const char *p);
     rnb_err_t HandlePacket_GetProfileData(const char *p);
-    rnb_err_t HandlePacket_SetAsyncEnableProfiling(const char *p);
+    rnb_err_t HandlePacket_SetEnableAsyncProfiling(const char *p);
     rnb_err_t HandlePacket_WatchpointSupportInfo (const char *p);
 
     rnb_err_t HandlePacket_stop_process (const char *p);

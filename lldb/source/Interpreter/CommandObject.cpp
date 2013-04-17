@@ -171,7 +171,7 @@ CommandObject::ParseOptions
         Error error;
         options->NotifyOptionParsingStarting();
 
-        // ParseOptions calls getopt_long, which always skips the zero'th item in the array and starts at position 1,
+        // ParseOptions calls getopt_long_only, which always skips the zero'th item in the array and starts at position 1,
         // so we need to push a dummy value into position zero.
         args.Unshift("dummy_string");
         error = args.ParseOptions (*options);
@@ -210,8 +210,77 @@ CommandObject::ParseOptions
 
 
 bool
-CommandObject::CheckFlags (CommandReturnObject &result)
+CommandObject::CheckRequirements (CommandReturnObject &result)
 {
+#ifdef LLDB_CONFIGURATION_DEBUG
+    // Nothing should be stored in m_exe_ctx between running commands as m_exe_ctx
+    // has shared pointers to the target, process, thread and frame and we don't
+    // want any CommandObject instances to keep any of these objects around
+    // longer than for a single command. Every command should call
+    // CommandObject::Cleanup() after it has completed
+    assert (m_exe_ctx.GetTargetPtr() == NULL);
+    assert (m_exe_ctx.GetProcessPtr() == NULL);
+    assert (m_exe_ctx.GetThreadPtr() == NULL);
+    assert (m_exe_ctx.GetFramePtr() == NULL);
+#endif
+
+    // Lock down the interpreter's execution context prior to running the
+    // command so we guarantee the selected target, process, thread and frame
+    // can't go away during the execution
+    m_exe_ctx = m_interpreter.GetExecutionContext();
+
+    const uint32_t flags = GetFlags().Get();
+    if (flags & (eFlagRequiresTarget   |
+                 eFlagRequiresProcess  |
+                 eFlagRequiresThread   |
+                 eFlagRequiresFrame    |
+                 eFlagTryTargetAPILock ))
+    {
+
+        if ((flags & eFlagRequiresTarget) && !m_exe_ctx.HasTargetScope())
+        {
+            result.AppendError (GetInvalidTargetDescription());
+            return false;
+        }
+
+        if ((flags & eFlagRequiresProcess) && !m_exe_ctx.HasProcessScope())
+        {
+            result.AppendError (GetInvalidProcessDescription());
+            return false;
+        }
+        
+        if ((flags & eFlagRequiresThread) && !m_exe_ctx.HasThreadScope())
+        {
+            result.AppendError (GetInvalidThreadDescription());
+            return false;
+        }
+        
+        if ((flags & eFlagRequiresFrame) && !m_exe_ctx.HasFrameScope())
+        {
+            result.AppendError (GetInvalidFrameDescription());
+            return false;
+        }
+        
+        if ((flags & eFlagRequiresRegContext) && (m_exe_ctx.GetRegisterContext() == NULL))
+        {
+            result.AppendError (GetInvalidRegContextDescription());
+            return false;
+        }
+
+        if (flags & eFlagTryTargetAPILock)
+        {
+            Target *target = m_exe_ctx.GetTargetPtr();
+            if (target)
+            {
+                if (m_api_locker.TryLock (target->GetAPIMutex(), NULL) == false)
+                {
+                    result.AppendError ("failed to get API lock");
+                    return false;
+                }
+            }
+        }
+    }
+
     if (GetFlags().AnySet (CommandObject::eFlagProcessMustBeLaunched | CommandObject::eFlagProcessMustBePaused))
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
@@ -265,6 +334,14 @@ CommandObject::CheckFlags (CommandReturnObject &result)
     return true;
 }
 
+void
+CommandObject::Cleanup ()
+{
+    m_exe_ctx.Clear();
+    m_api_locker.Unlock();
+}
+
+
 class CommandDictCommandPartialMatch
 {
     public:
@@ -276,13 +353,9 @@ class CommandDictCommandPartialMatch
         {
             // A NULL or empty string matches everything.
             if (m_match_str == NULL || *m_match_str == '\0')
-                return 1;
+                return true;
 
-            size_t found = map_element.first.find (m_match_str, 0);
-            if (found == std::string::npos)
-                return 0;
-            else
-                return found == 0;
+            return map_element.first.find (m_match_str, 0) == 0;
         }
 
     private:
@@ -345,7 +418,7 @@ CommandObject::HandleCompletion
 
 
             // I stick an element on the end of the input, because if the last element is
-            // option that requires an argument, getopt_long will freak out.
+            // option that requires an argument, getopt_long_only will freak out.
 
             input.AppendArgument ("<FAKE-VALUE>");
 
@@ -890,14 +963,16 @@ CommandObjectParsed::Execute (const char *args_string, CommandReturnObject &resu
                 cmd_args.ReplaceArgumentAtIndex (i, m_interpreter.ProcessEmbeddedScriptCommands (tmp_str));
         }
 
-        if (!CheckFlags(result))
-            return false;
-            
-        if (!ParseOptions (cmd_args, result))
-            return false;
-
+        if (CheckRequirements(result))
+        {
+            if (ParseOptions (cmd_args, result))
+            {
         // Call the command-specific version of 'Execute', passing it the already processed arguments.
         handled = DoExecute (cmd_args, result);
+    }
+        }
+
+        Cleanup();
     }
     return handled;
 }
@@ -918,10 +993,10 @@ CommandObjectRaw::Execute (const char *args_string, CommandReturnObject &result)
     }
     if (!handled)
     {
-        if (!CheckFlags(result))
-            return false;
-        else
+        if (CheckRequirements(result))
             handled = DoExecute (args_string, result);
+        
+        Cleanup();
     }
     return handled;
 }
@@ -944,6 +1019,7 @@ CommandObject::ArgumentTableEntry
 CommandObject::g_arguments_data[] =
 {
     { eArgTypeAddress, "address", CommandCompletions::eNoCompletion, { NULL, false }, "A valid address in the target program's execution space." },
+    { eArgTypeAddressOrExpression, "address-expression", CommandCompletions::eNoCompletion, { NULL, false }, "An expression that resolves to an address." },
     { eArgTypeAliasName, "alias-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of an abbreviation (alias) for a debugger command." },
     { eArgTypeAliasOptions, "options-for-aliased-command", CommandCompletions::eNoCompletion, { NULL, false }, "Command options to be used as part of an alias (abbreviation) definition.  (See 'help commands alias' for more information.)" },
     { eArgTypeArchitecture, "arch", CommandCompletions::eArchitectureCompletion, { arch_helper, true }, "The architecture name, e.g. i386 or x86_64." },
@@ -955,6 +1031,7 @@ CommandObject::g_arguments_data[] =
     { eArgTypeCommandName, "cmd-name", CommandCompletions::eNoCompletion, { NULL, false }, "A debugger command (may be multiple words), without any options or arguments." },
     { eArgTypeCount, "count", CommandCompletions::eNoCompletion, { NULL, false }, "An unsigned integer." },
     { eArgTypeDirectoryName, "directory", CommandCompletions::eDiskDirectoryCompletion, { NULL, false }, "A directory name." },
+    { eArgTypeDisassemblyFlavor, "disassembly-flavor", CommandCompletions::eNoCompletion, { NULL, false }, "A disassembly flavor recognized by your disassembly plugin.  Currently the only valid options are \"att\" and \"intel\" for Intel targets" },
     { eArgTypeEndAddress, "end-address", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeExpression, "expr", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeExpressionPath, "expr-path", CommandCompletions::eNoCompletion, { ExprPathHelpTextCallback, true }, NULL },

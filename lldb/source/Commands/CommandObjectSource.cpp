@@ -201,6 +201,9 @@ class CommandObjectSourceList : public CommandObjectParsed
             case 'b':
                 show_bp_locs = true;
                 break;
+            case 'r':
+                reverse = true;
+                break;
            default:
                 error.SetErrorStringWithFormat("unrecognized short option '%c'", short_option);
                 break;
@@ -217,8 +220,9 @@ class CommandObjectSourceList : public CommandObjectParsed
             symbol_name.clear();
             address = LLDB_INVALID_ADDRESS;
             start_line = 0;
-            num_lines = 10;
+            num_lines = 0;
             show_bp_locs = false;
+            reverse = false;
             modules.clear();
         }
 
@@ -238,6 +242,7 @@ class CommandObjectSourceList : public CommandObjectParsed
         uint32_t num_lines;
         STLStringArray modules;        
         bool show_bp_locs;
+        bool reverse;
     };
  
 public:   
@@ -245,21 +250,10 @@ public:
         CommandObjectParsed (interpreter,
                              "source list",
                              "Display source code (as specified) based on the current executable's debug info.",
-                             NULL),
+                             NULL,
+                             eFlagRequiresTarget), 
         m_options (interpreter)
     {
-        CommandArgumentEntry arg;
-        CommandArgumentData file_arg;
-        
-        // Define the first (and only) variant of this arg.
-        file_arg.arg_type = eArgTypeFilename;
-        file_arg.arg_repetition = eArgRepeatOptional;
-        
-        // There is only one variant this argument could be; put it into the argument entry.
-        arg.push_back (file_arg);
-        
-        // Push the data for the first argument into the m_arguments vector.
-        m_arguments.push_back (arg);
     }
 
     ~CommandObjectSourceList ()
@@ -276,14 +270,36 @@ public:
     virtual const char *
     GetRepeatCommand (Args &current_command_args, uint32_t index)
     {
-        return m_cmd_name.c_str();
+        // This is kind of gross, but the command hasn't been parsed yet so we can't look at the option
+        // values for this invocation...  I have to scan the arguments directly.
+        size_t num_args = current_command_args.GetArgumentCount();
+        bool is_reverse = false;
+        for (size_t i = 0 ; i < num_args; i++)
+        {
+            const char *arg = current_command_args.GetArgumentAtIndex(i);
+            if (arg && (strcmp(arg, "-r") == 0 || strcmp(arg, "--reverse") == 0))
+            {
+                is_reverse = true;
+            }
+        }
+        if (is_reverse)
+        {
+            if (m_reverse_name.empty())
+            {
+                m_reverse_name = m_cmd_name;
+                m_reverse_name.append (" -r");
+            }
+            return m_reverse_name.c_str();
+        }
+        else
+            return m_cmd_name.c_str();
     }
 
 protected:
     bool
     DoExecute (Args& command, CommandReturnObject &result)
     {
-        const int argc = command.GetArgumentCount();
+        const size_t argc = command.GetArgumentCount();
 
         if (argc != 0)
         {
@@ -292,18 +308,7 @@ protected:
             return false;
         }
 
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        Target *target = exe_ctx.GetTargetPtr();
-
-        if (target == NULL)
-            target = m_interpreter.GetDebugger().GetSelectedTarget().get();
-            
-        if (target == NULL)
-        {
-            result.AppendError ("invalid target, create a debug target using the 'target create' command");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
+        Target *target = m_exe_ctx.GetTargetPtr();
 
         SymbolContextList sc_list;
         if (!m_options.symbol_name.empty())
@@ -315,10 +320,14 @@ protected:
             bool append = true;
             size_t num_matches = 0;
             
-            if (m_options.modules.size() > 0)
+            if (m_options.num_lines == 0)
+                m_options.num_lines = 10;
+
+            const size_t num_modules = m_options.modules.size();
+            if (num_modules > 0)
             {
                 ModuleList matching_modules;
-                for (unsigned i = 0, e = m_options.modules.size(); i != e; i++)
+                for (size_t i = 0; i < num_modules; ++i)
                 {
                     FileSpec module_file_spec(m_options.modules[i].c_str(), false);
                     if (module_file_spec)
@@ -414,23 +423,26 @@ protected:
                 }
             }
             
-                
             // This is a little hacky, but the first line table entry for a function points to the "{" that 
             // starts the function block.  It would be nice to actually get the function
             // declaration in there too.  So back up a bit, but not further than what you're going to display.
-            size_t lines_to_back_up = m_options.num_lines >= 10 ? 5 : m_options.num_lines/2;
+            uint32_t extra_lines;
+            if (m_options.num_lines >= 10)
+                extra_lines = 5;
+            else
+                extra_lines = m_options.num_lines/2;
             uint32_t line_no;
-            if (start_line <= lines_to_back_up)
+            if (start_line <= extra_lines)
                 line_no = 1;
             else
-                line_no = start_line - lines_to_back_up;
+                line_no = start_line - extra_lines;
                 
             // For fun, if the function is shorter than the number of lines we're supposed to display, 
             // only display the function...
             if (end_line != 0)
             {
                 if (m_options.num_lines > end_line - line_no)
-                    m_options.num_lines = end_line - line_no;
+                    m_options.num_lines = end_line - line_no + extra_lines;
             }
             
             char path_buf[PATH_MAX];
@@ -440,13 +452,13 @@ protected:
             {
                 const bool show_inlines = true;
                 m_breakpoint_locations.Reset (start_file, 0, show_inlines);
-                SearchFilter target_search_filter (exe_ctx.GetTargetSP());
+                SearchFilter target_search_filter (m_exe_ctx.GetTargetSP());
                 target_search_filter.Search (m_breakpoint_locations);
             }
             else
                 m_breakpoint_locations.Clear();
 
-            result.AppendMessageWithFormat("File: %s.\n", path_buf);
+            result.AppendMessageWithFormat("File: %s\n", path_buf);
             target->GetSourceManager().DisplaySourceLinesWithLineNumbers (start_file,
                                                                           line_no,
                                                                           0,
@@ -470,13 +482,13 @@ protected:
                 // The target isn't loaded yet, we need to lookup the file address
                 // in all modules
                 const ModuleList &module_list = target->GetImages();
-                const uint32_t num_modules = module_list.GetSize();
-                for (uint32_t i=0; i<num_modules; ++i)
+                const size_t num_modules = module_list.GetSize();
+                for (size_t i=0; i<num_modules; ++i)
                 {
                     ModuleSP module_sp (module_list.GetModuleAtIndex(i));
                     if (module_sp && module_sp->ResolveFileAddress(m_options.address, so_addr))
                     {
-                        sc.Clear();
+                        sc.Clear(true);
                         if (module_sp->ResolveSymbolContextForAddress (so_addr, eSymbolContextEverything, sc) & eSymbolContextLineEntry)
                             sc_list.Append(sc);
                     }
@@ -499,7 +511,7 @@ protected:
                     ModuleSP module_sp (so_addr.GetModule());
                     if (module_sp)
                     {
-                        sc.Clear();
+                        sc.Clear(true);
                         if (module_sp->ResolveSymbolContextForAddress (so_addr, eSymbolContextEverything, sc) & eSymbolContextLineEntry)
                         {
                             sc_list.Append(sc);
@@ -541,12 +553,15 @@ protected:
                     bool show_module = true;
                     bool show_inlined_frames = true;
                     sc.DumpStopContext(&result.GetOutputStream(),
-                                       exe_ctx.GetBestExecutionContextScope(),
+                                       m_exe_ctx.GetBestExecutionContextScope(),
                                        sc.line_entry.range.GetBaseAddress(),
                                        show_fullpaths,
                                        show_module,
                                        show_inlined_frames);
                     result.GetOutputStream().EOL();
+
+                    if (m_options.num_lines == 0)
+                        m_options.num_lines = 10;
                     
                     size_t lines_to_back_up = m_options.num_lines >= 10 ? 5 : m_options.num_lines/2;
 
@@ -570,13 +585,18 @@ protected:
             if (m_options.start_line == 0)
             {
                 if (target->GetSourceManager().DisplayMoreWithLineNumbers (&result.GetOutputStream(),
-                                                                                               GetBreakpointLocations ()))
+                                                                           m_options.num_lines,
+                                                                           m_options.reverse,
+                                                                           GetBreakpointLocations ()))
                 {
                     result.SetStatus (eReturnStatusSuccessFinishResult);
                 }
             }
             else
             {
+                if (m_options.num_lines == 0)
+                    m_options.num_lines = 10;
+
                 if (m_options.show_bp_locs)
                 {
                     SourceManager::FileSP last_file_sp (target->GetSourceManager().GetLastFile ());
@@ -593,8 +613,8 @@ protected:
 
                 if (target->GetSourceManager().DisplaySourceLinesWithLineNumbersUsingLastFile(
                             m_options.start_line,   // Line to display
-                            0,                      // Lines before line to display
-                            m_options.num_lines,    // Lines after line to display
+                            m_options.num_lines,    // Lines after line to
+                            UINT32_MAX,             // Don't mark "line"
                             "",                     // Don't mark "line"
                             &result.GetOutputStream(),
                             GetBreakpointLocations ()))
@@ -615,7 +635,7 @@ protected:
             if (m_options.modules.size() > 0)
             {
                 ModuleList matching_modules;
-                for (unsigned i = 0, e = m_options.modules.size(); i != e; i++)
+                for (size_t i = 0, e = m_options.modules.size(); i < e; ++i)
                 {
                     FileSpec module_file_spec(m_options.modules[i].c_str(), false);
                     if (module_file_spec)
@@ -693,6 +713,9 @@ protected:
                     else
                         m_breakpoint_locations.Clear();
 
+                    if (m_options.num_lines == 0)
+                        m_options.num_lines = 10;
+                    
                     target->GetSourceManager().DisplaySourceLinesWithLineNumbers (sc.comp_unit,
                                                                                   m_options.start_line,
                                                                                   0,
@@ -724,6 +747,7 @@ protected:
     }
     CommandOptions m_options;
     FileLineResolver m_breakpoint_locations;
+    std::string    m_reverse_name;
 
 };
 
@@ -737,7 +761,8 @@ CommandObjectSourceList::CommandOptions::g_option_table[] =
 { LLDB_OPT_SET_1  , false, "file",   'f', required_argument, NULL, CommandCompletions::eSourceFileCompletion, eArgTypeFilename,    "The file from which to display source."},
 { LLDB_OPT_SET_1  , false, "line",   'l', required_argument, NULL, 0, eArgTypeLineNum,    "The line number at which to start the display source."},
 { LLDB_OPT_SET_2  , false, "name",   'n', required_argument, NULL, CommandCompletions::eSymbolCompletion, eArgTypeSymbol,    "The name of a function whose source to display."},
-{ LLDB_OPT_SET_3  , false, "address",'a', required_argument, NULL, 0, eArgTypeAddress, "Lookup the address and display the source information for the corresponding file and line."},
+{ LLDB_OPT_SET_3  , false, "address",'a', required_argument, NULL, 0, eArgTypeAddressOrExpression, "Lookup the address and display the source information for the corresponding file and line."},
+{ LLDB_OPT_SET_4, false, "reverse", 'r', no_argument, NULL, 0, eArgTypeNone, "Reverse the listing to look backwards from the last displayed block of source."},
 { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 

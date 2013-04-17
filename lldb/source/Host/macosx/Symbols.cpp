@@ -58,7 +58,7 @@ SkinnyMachOFileContainsArchAndUUID
     const lldb_private::UUID *uuid,   // the UUID we are looking for
     off_t file_offset,
     DataExtractor& data,
-    uint32_t data_offset,
+    lldb::offset_t data_offset,
     const uint32_t magic
 )
 {
@@ -116,7 +116,7 @@ SkinnyMachOFileContainsArchAndUUID
 
     for (i=0; i<ncmds; i++)
     {
-        const uint32_t cmd_offset = data_offset;    // Save this data_offset in case parsing of the segment goes awry!
+        const lldb::offset_t cmd_offset = data_offset;    // Save this data_offset in case parsing of the segment goes awry!
         uint32_t cmd        = data.GetU32(&data_offset);
         uint32_t cmd_size   = data.GetU32(&data_offset);
         if (cmd == LoadCommandUUID)
@@ -124,18 +124,6 @@ SkinnyMachOFileContainsArchAndUUID
             lldb_private::UUID file_uuid (data.GetData(&data_offset, 16), 16);
             if (file_uuid == *uuid)
                 return true;
-
-            // Emit some warning messages since the UUIDs do not match!
-            char path_buf[PATH_MAX];
-            path_buf[0] = '\0';
-            const char *path = file_spec.GetPath(path_buf, PATH_MAX) ? path_buf
-                                                                     : file_spec.GetFilename().AsCString();
-            StreamString ss_m_uuid, ss_o_uuid;
-            uuid->Dump(&ss_m_uuid);
-            file_uuid.Dump(&ss_o_uuid);
-            Host::SystemLog (Host::eSystemLogWarning, 
-                             "warning: UUID mismatch detected between binary (%s) and:\n\t'%s' (%s)\n", 
-                             ss_m_uuid.GetData(), path, ss_o_uuid.GetData());
             return false;
         }
         data_offset = cmd_offset + cmd_size;
@@ -151,7 +139,7 @@ UniversalMachOFileContainsArchAndUUID
     const lldb_private::UUID *uuid,
     off_t file_offset,
     DataExtractor& data,
-    uint32_t data_offset,
+    lldb::offset_t data_offset,
     const uint32_t magic
 )
 {
@@ -189,7 +177,7 @@ UniversalMachOFileContainsArchAndUUID
         DataExtractor arch_data;
         DataBufferSP data_buffer_sp (file_spec.ReadFileContents (file_offset + arch_offset, 0x1000));
         arch_data.SetData(data_buffer_sp);
-        uint32_t arch_data_offset = 0;
+        lldb::offset_t arch_data_offset = 0;
         uint32_t arch_magic = arch_data.GetU32(&arch_data_offset);
 
         switch (arch_magic)
@@ -222,7 +210,7 @@ FileAtPathContainsArchAndUUID
     {
         data.SetData(data_buffer_sp);
 
-        uint32_t data_offset = 0;
+        lldb::offset_t data_offset = 0;
         uint32_t magic = data.GetU32(&data_offset);
 
         switch (magic)
@@ -701,7 +689,7 @@ Symbols::DownloadObjectAndSymbolFile (ModuleSpec &module_spec, bool force_lookup
                 g_dsym_for_uuid_exe_exists = dsym_for_uuid_exe_spec.Exists();
                 if (!g_dsym_for_uuid_exe_exists)
                 {
-                    int bufsize;
+                    long bufsize;
                     if ((bufsize = sysconf(_SC_GETPW_R_SIZE_MAX)) != -1)
                     {
                         char buffer[bufsize];
@@ -770,7 +758,7 @@ Symbols::DownloadObjectAndSymbolFile (ModuleSpec &module_spec, bool force_lookup
                     
                     CFCReleaser<CFDictionaryRef> plist((CFDictionaryRef)::CFPropertyListCreateFromXMLData (NULL, data.get(), kCFPropertyListImmutable, NULL));
                     
-                    if (CFGetTypeID (plist.get()) == CFDictionaryGetTypeID ())
+                    if (plist.get() && CFGetTypeID (plist.get()) == CFDictionaryGetTypeID ())
                     {
                         if (uuid_cstr)
                         {

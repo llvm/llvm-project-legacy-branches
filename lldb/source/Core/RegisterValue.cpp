@@ -301,7 +301,7 @@ RegisterValue::SetType (const RegisterInfo *reg_info)
 }
 
 Error
-RegisterValue::SetValueFromData (const RegisterInfo *reg_info, DataExtractor &src, uint32_t src_offset, bool partial_data_ok)
+RegisterValue::SetValueFromData (const RegisterInfo *reg_info, DataExtractor &src, lldb::offset_t src_offset, bool partial_data_ok)
 {
     Error error;
     
@@ -981,12 +981,11 @@ RegisterValue::SetBytes (const void *bytes, size_t length, lldb::ByteOrder byte_
     // m_data.buffer.bytes, or make it something that is allocated on
     // the heap. Since the data buffer is in a union, we can't make it
     // a collection class like SmallVector...
-    assert (length <= sizeof (m_data.buffer.bytes));
     if (bytes && length > 0)
     {
+        assert (length <= sizeof (m_data.buffer.bytes) && "Storing too many bytes in a RegisterValue.");
         m_type = eTypeBytes;
         m_data.buffer.length = length;
-        assert (length < sizeof (m_data.buffer.bytes));
         memcpy (m_data.buffer.bytes, bytes, length);
         m_data.buffer.byte_order = byte_order;
     }

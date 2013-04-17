@@ -9,6 +9,38 @@
 
 #include "lldb/lldb-python.h"
 
+// C includes
+#include <errno.h>
+#include <limits.h>
+
+#ifdef __unix__
+#include <dlfcn.h>
+#include <grp.h>
+#include <netdb.h>
+#include <pwd.h>
+#include <sys/sysctl.h>
+#include <unistd.h>
+#include <sys/types.h>
+#endif
+
+#if defined (__APPLE__)
+
+#include <dispatch/dispatch.h>
+#include <libproc.h>
+#include <mach-o/dyld.h>
+#include <mach/mach_port.h>
+
+#elif defined (__linux__)
+
+#include <sys/wait.h>
+
+#elif defined (__FreeBSD__)
+
+#include <sys/wait.h>
+#include <pthread_np.h>
+
+#endif
+
 #include "lldb/Host/Host.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/ConstString.h"
@@ -28,38 +60,9 @@
 #include "llvm/Support/MachO.h"
 #include "llvm/ADT/Twine.h"
 
-#include <errno.h>
-#include <limits.h>
-
-#ifdef __unix__
-#include <dlfcn.h>
-#include <grp.h>
-#include <netdb.h>
-#include <pwd.h>
-#endif
-
-#include <sys/types.h>
-
-#if defined (__APPLE__)
-
-#include <dispatch/dispatch.h>
-#include <libproc.h>
-#include <mach-o/dyld.h>
-#include <mach/mach_port.h>
-#include <sys/sysctl.h>
 
 
-#elif defined (__linux__)
 
-#include <sys/wait.h>
-
-#elif defined (__FreeBSD__)
-
-#include <sys/wait.h>
-#include <sys/sysctl.h>
-#include <pthread_np.h>
-
-#endif
 
 using namespace lldb;
 using namespace lldb_private;
@@ -136,7 +139,7 @@ private:
 static thread_result_t
 MonitorChildProcessThreadFunction (void *arg)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     const char *function = __FUNCTION__;
     if (log)
         log->Printf ("%s (arg = %p) thread starting...", function, arg);
@@ -151,7 +154,7 @@ MonitorChildProcessThreadFunction (void *arg)
     delete info;
 
     int status = -1;
-    const int options = 0;
+    const int options = __WALL;
 
 #ifndef _WIN32
     while (1)
@@ -162,7 +165,8 @@ MonitorChildProcessThreadFunction (void *arg)
 
         // Wait for all child processes
         ::pthread_testcancel ();
-        const lldb::pid_t wait_pid = ::waitpid (pid, &status, options);
+        // Get signals from all children with same process group of pid
+        const lldb::pid_t wait_pid = ::waitpid (-1*pid, &status, options);
         ::pthread_testcancel ();
 
         if (wait_pid == -1)
@@ -172,7 +176,7 @@ MonitorChildProcessThreadFunction (void *arg)
             else
                 break;
         }
-        else if (wait_pid == pid)
+        else if (wait_pid > 0)
         {
             bool exited = false;
             int signal = 0;
@@ -187,14 +191,17 @@ MonitorChildProcessThreadFunction (void *arg)
             {
                 exit_status = WEXITSTATUS(status);
                 status_cstr = "EXITED";
-                exited = true;
+                if (wait_pid == pid)
+                    exited = true;
             }
             else if (WIFSIGNALED(status))
             {
                 signal = WTERMSIG(status);
                 status_cstr = "SIGNALED";
-                exited = true;
-                exit_status = -1;
+                if (wait_pid == pid) {
+                    exited = true;
+                    exit_status = -1;
+                }
             }
             else
             {
@@ -221,7 +228,7 @@ MonitorChildProcessThreadFunction (void *arg)
                 {
                     bool callback_return = false;
                     if (callback)
-                        callback_return = callback (callback_baton, pid, exited, signal, exit_status);
+                        callback_return = callback (callback_baton, wait_pid, exited, signal, exit_status);
                     
                     // If our process exited, then this thread should exit
                     if (exited)
@@ -576,7 +583,7 @@ ThreadCreateTrampoline (thread_arg_t arg)
     thread_func_t thread_fptr = info->thread_fptr;
     thread_arg_t thread_arg = info->thread_arg;
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
     if (log)
         log->Printf("thread created");
     
@@ -658,101 +665,44 @@ Host::ThreadJoin (lldb::thread_t thread, thread_result_t *thread_result_ptr, Err
 #endif
 }
 
-// rdar://problem/8153284
-// Fixed a crasher where during shutdown, loggings attempted to access the
-// thread name but the static map instance had already been destructed.
-// So we are using a ThreadSafeSTLMap POINTER, initializing it with a
-// pthread_once action.  That map will get leaked.
-//
-// Another approach is to introduce a static guard object which monitors its
-// own destruction and raises a flag, but this incurs more overhead.
 
-#ifndef _WIN32
-static pthread_once_t g_thread_map_once = PTHREAD_ONCE_INIT;
-#else
-static unsigned int g_thread_map_once = 0;
-#endif
-static ThreadSafeSTLMap<uint64_t, std::string> *g_thread_names_map_ptr;
-
-static void
-InitThreadNamesMap()
-{
-    g_thread_names_map_ptr = new ThreadSafeSTLMap<uint64_t, std::string>();
-}
-
-//------------------------------------------------------------------
-// Control access to a static file thread name map using a single
-// static function to avoid a static constructor.
-//------------------------------------------------------------------
-static const char *
-ThreadNameAccessor (bool get, lldb::pid_t pid, lldb::tid_t tid, const char *name)
-{
-#ifndef _WIN32
-    int success = ::pthread_once (&g_thread_map_once, InitThreadNamesMap);
-    if (success != 0)
-        return NULL;
-#else
-    if (InterlockedExchange(&g_thread_map_once, 1) == 0)
-        InitThreadNamesMap();
-#endif
-    
-    uint64_t pid_tid = ((uint64_t)pid << 32) | (uint64_t)tid;
-
-    if (get)
-    {
-        // See if the thread name exists in our thread name pool
-        std::string value;
-        bool found_it = g_thread_names_map_ptr->GetValueForKey (pid_tid, value);
-        if (found_it)
-            return value.c_str();
-        else
-            return NULL;
-    }
-    else if (name)
-    {
-        // Set the thread name
-        g_thread_names_map_ptr->SetValueForKey (pid_tid, std::string(name));
-    }
-    return NULL;
-}
-
-const char *
+std::string
 Host::GetThreadName (lldb::pid_t pid, lldb::tid_t tid)
 {
-    const char *name = ThreadNameAccessor (true, pid, tid, NULL);
-    if (name == NULL)
-    {
+    std::string thread_name;
 #if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
-        // We currently can only get the name of a thread in the current process.
-        if (pid == Host::GetCurrentProcessID())
+    // We currently can only get the name of a thread in the current process.
+    if (pid == Host::GetCurrentProcessID())
+    {
+        char pthread_name[1024];
+        if (::pthread_getname_np (::pthread_from_mach_thread_np (tid), pthread_name, sizeof(pthread_name)) == 0)
         {
-            char pthread_name[1024];
-            if (::pthread_getname_np (::pthread_from_mach_thread_np (tid), pthread_name, sizeof(pthread_name)) == 0)
+            if (pthread_name[0])
             {
-                if (pthread_name[0])
-                {
-                    // Set the thread in our string pool
-                    ThreadNameAccessor (false, pid, tid, pthread_name);
-                    // Get our copy of the thread name string
-                    name = ThreadNameAccessor (true, pid, tid, NULL);
-                }
-            }
-            
-            if (name == NULL)
-            {
-                dispatch_queue_t current_queue = ::dispatch_get_current_queue ();
-                if (current_queue != NULL)
-                    name = dispatch_queue_get_label (current_queue);
+                thread_name = pthread_name;
             }
         }
-#endif
+        else
+        {
+            dispatch_queue_t current_queue = ::dispatch_get_current_queue ();
+            if (current_queue != NULL)
+            {
+                const char *queue_name = dispatch_queue_get_label (current_queue);
+                if (queue_name && queue_name[0])
+                {
+                    thread_name = queue_name;
+                }
+            }
+        }
     }
-    return name;
+#endif
+    return thread_name;
 }
 
 void
 Host::SetThreadName (lldb::pid_t pid, lldb::tid_t tid, const char *name)
 {
+#if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
     lldb::pid_t curr_pid = Host::GetCurrentProcessID();
     lldb::tid_t curr_tid = Host::GetCurrentThreadID();
     if (pid == LLDB_INVALID_PROCESS_ID)
@@ -761,14 +711,12 @@ Host::SetThreadName (lldb::pid_t pid, lldb::tid_t tid, const char *name)
     if (tid == LLDB_INVALID_THREAD_ID)
         tid = curr_tid;
 
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
     // Set the pthread name if possible
     if (pid == curr_pid && tid == curr_tid)
     {
         ::pthread_setname_np (name);
     }
 #endif
-    ThreadNameAccessor (false, pid, tid, name);
 }
 
 FileSpec
@@ -1516,6 +1464,52 @@ Host::RunShellCommand (const char *command,
     // it can delete "shell_info" in case we timed out and were not able to kill
     // the process...
     return error;
+}
+
+
+uint32_t
+Host::GetNumberCPUS ()
+{
+    static uint32_t g_num_cores = UINT32_MAX;
+    if (g_num_cores == UINT32_MAX)
+    {
+#if defined(__APPLE__) or defined (__linux__)
+
+        g_num_cores = ::sysconf(_SC_NPROCESSORS_ONLN);
+        
+#elif defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
+        
+        // Header file for this might need to be included at the top of this file
+        SYSTEM_INFO system_info;
+        ::GetSystemInfo (&system_info);
+        g_num_cores = system_info.dwNumberOfProcessors;
+        
+#else
+        
+        // Assume POSIX support if a host specific case has not been supplied above
+        g_num_cores = 0;
+        int num_cores = 0;
+        size_t num_cores_len = sizeof(num_cores);
+        int mib[] = { CTL_HW, HW_AVAILCPU };
+        
+        /* get the number of CPUs from the system */
+        if (sysctl(mib, sizeof(mib)/sizeof(int), &num_cores, &num_cores_len, NULL, 0) == 0 && (num_cores > 0))
+        {
+            g_num_cores = num_cores;
+        }
+        else
+        {
+            mib[1] = HW_NCPU;
+            num_cores_len = sizeof(num_cores);
+            if (sysctl(mib, sizeof(mib)/sizeof(int), &num_cores, &num_cores_len, NULL, 0) == 0 && (num_cores > 0))
+            {
+                if (num_cores > 0)
+                    g_num_cores = num_cores;
+            }
+        }
+#endif
+    }
+    return g_num_cores;
 }
 
 

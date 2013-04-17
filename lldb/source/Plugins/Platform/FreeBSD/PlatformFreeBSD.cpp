@@ -13,7 +13,9 @@
 
 // C Includes
 #include <stdio.h>
+#ifdef _POSIX_SOURCE	
 #include <sys/utsname.h>
+#endif
 
 // C++ Includes
 // Other libraries and framework includes
@@ -645,6 +647,10 @@ PlatformFreeBSD::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 void
 PlatformFreeBSD::GetStatus (Stream &strm)
 {
+#ifdef _WIN32
+	strm << "Windows";
+	return;
+#else
     struct utsname un;
 
     if (uname(&un)) {
@@ -654,4 +660,5 @@ PlatformFreeBSD::GetStatus (Stream &strm)
 
     strm << "Host: " << un.sysname << ' ' << un.release << ' ' << un.version << '\n';
     Platform::GetStatus(strm);
+#endif
 }

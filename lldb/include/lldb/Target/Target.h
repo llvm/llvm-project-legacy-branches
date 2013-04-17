@@ -24,7 +24,6 @@
 #include "lldb/Core/Event.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/UserSettingsController.h"
-#include "lldb/Core/SourceManager.h"
 #include "lldb/Expression/ClangPersistentVariables.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/OptionValueBoolean.h"
@@ -78,6 +77,12 @@ public:
     
     void
     SetDisableSTDIO (bool b);
+    
+    const char *
+    GetDisassemblyFlavor() const;
+
+//    void
+//    SetDisassemblyFlavor(const char *flavor);
     
     InlineStrategy
     GetInlineStrategy () const;
@@ -138,7 +143,10 @@ public:
     
     const char *
     GetExpressionPrefixContentsAsCString ();
-
+    
+    bool
+    GetUseFastStepping() const;
+    
 };
 
 typedef STD_SHARED_PTR(TargetProperties) TargetPropertiesSP;
@@ -151,6 +159,7 @@ public:
         m_execution_policy(eExecutionPolicyOnlyWhenNeeded),
         m_coerce_to_id(false),
         m_unwind_on_error(true),
+        m_ignore_breakpoints (false),
         m_keep_in_memory(false),
         m_run_others(true),
         m_use_dynamic(lldb::eNoDynamicValues),
@@ -193,6 +202,19 @@ public:
     SetUnwindOnError (bool unwind = false)
     {
         m_unwind_on_error = unwind;
+        return *this;
+    }
+    
+    bool
+    DoesIgnoreBreakpoints () const
+    {
+        return m_ignore_breakpoints;
+    }
+    
+    EvaluateExpressionOptions&
+    SetIgnoreBreakpoints (bool ignore = false)
+    {
+        m_ignore_breakpoints = ignore;
         return *this;
     }
     
@@ -252,6 +274,7 @@ private:
     ExecutionPolicy m_execution_policy;
     bool m_coerce_to_id;
     bool m_unwind_on_error;
+    bool m_ignore_breakpoints;
     bool m_keep_in_memory;
     bool m_run_others;
     lldb::DynamicValueType m_use_dynamic;
@@ -279,7 +302,8 @@ public:
         eBroadcastBitBreakpointChanged  = (1 << 0),
         eBroadcastBitModulesLoaded      = (1 << 1),
         eBroadcastBitModulesUnloaded    = (1 << 2),
-        eBroadcastBitWatchpointChanged  = (1 << 3)
+        eBroadcastBitWatchpointChanged  = (1 << 3),
+        eBroadcastBitSymbolsLoaded      = (1 << 4)
     };
     
     // These two functions fill out the Broadcaster interface:
@@ -644,6 +668,9 @@ public:
     void
     ModulesDidUnload (ModuleList &module_list);
     
+    void
+    SymbolsDidLoad (ModuleList &module_list);
+    
     //------------------------------------------------------------------
     /// Gets the module for the main executable.
     ///
@@ -831,7 +858,13 @@ public:
                 size_t dst_len,
                 Error &error,
                 lldb::addr_t *load_addr_ptr = NULL);
-
+    
+    size_t
+    ReadCStringFromMemory (const Address& addr, std::string &out_str, Error &error);
+    
+    size_t
+    ReadCStringFromMemory (const Address& addr, char *dst, size_t dst_max_len, Error &result_error);
+    
     size_t
     ReadScalarIntegerFromMemory (const Address& addr, 
                                  bool prefer_file_cache,
@@ -1090,10 +1123,7 @@ public:
     }
 
     SourceManager &
-    GetSourceManager ()
-    {
-        return m_source_manager;
-    }
+    GetSourceManager ();
 
     //------------------------------------------------------------------
     // Methods.
@@ -1134,7 +1164,7 @@ protected:
     std::auto_ptr<ClangASTImporter> m_ast_importer_ap;
     ClangPersistentVariables m_persistent_variables;      ///< These are the persistent variables associated with this process for the expression parser.
 
-    SourceManager m_source_manager;
+    std::auto_ptr<SourceManager> m_source_manager_ap;
 
     typedef std::map<lldb::user_id_t, StopHookSP> StopHookCollection;
     StopHookCollection      m_stop_hooks;

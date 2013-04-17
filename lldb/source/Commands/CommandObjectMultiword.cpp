@@ -34,7 +34,8 @@ CommandObjectMultiword::CommandObjectMultiword
     const char *syntax,
     uint32_t flags
 ) :
-    CommandObject (interpreter, name, help, syntax, flags)
+    CommandObject (interpreter, name, help, syntax, flags),
+    m_can_be_removed(false)
 {
 }
 
@@ -100,7 +101,6 @@ CommandObjectMultiword::LoadSubCommand
     if (pos == m_subcommand_dict.end())
     {
         m_subcommand_dict[name] = cmd_obj;
-        m_interpreter.CrossRegisterCommand (name, GetCommandName());
     }
     else
         success = false;
@@ -143,7 +143,7 @@ CommandObjectMultiword::Execute(const char *args_string, CommandReturnObject &re
                 else
                 {
                     std::string error_msg;
-                    int num_subcmd_matches = matches.GetSize();
+                    const size_t num_subcmd_matches = matches.GetSize();
                     if (num_subcmd_matches > 0)
                         error_msg.assign ("ambiguous command ");
                     else
@@ -158,14 +158,14 @@ CommandObjectMultiword::Execute(const char *args_string, CommandReturnObject &re
                     if (num_subcmd_matches > 0)
                     {
                         error_msg.append (" Possible completions:");
-                        for (int i = 0; i < num_subcmd_matches; i++)
+                        for (size_t i = 0; i < num_subcmd_matches; i++)
                         {
                             error_msg.append ("\n\t");
                             error_msg.append (matches.GetStringAtIndex (i));
                         }
                     }
                     error_msg.append ("\n");
-                    result.AppendRawError (error_msg.c_str(), error_msg.size());
+                    result.AppendRawError (error_msg.c_str());
                     result.SetStatus (eReturnStatusFailed);
                 }
             }
@@ -362,23 +362,6 @@ CommandObjectProxy::GetHelpLong ()
     if (proxy_command)
         return proxy_command->GetHelpLong();
     return NULL;
-}
-
-void
-CommandObjectProxy::AddObject (const char *obj_name)
-{
-    CommandObject *proxy_command = GetProxyCommandObject();
-    if (proxy_command)
-        return proxy_command->AddObject (obj_name);
-}
-
-bool
-CommandObjectProxy::IsCrossRefObject ()
-{
-    CommandObject *proxy_command = GetProxyCommandObject();
-    if (proxy_command)
-        return proxy_command->IsCrossRefObject();
-    return false;
 }
 
 bool

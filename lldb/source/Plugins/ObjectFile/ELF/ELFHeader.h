@@ -123,7 +123,7 @@ struct ELFHeader
     ///    True if the ELFSectionHeader was successfully read and false
     ///    otherwise.
     bool
-    Parse(lldb_private::DataExtractor &data, uint32_t *offset);
+    Parse(lldb_private::DataExtractor &data, lldb::offset_t *offset);
 
     //--------------------------------------------------------------------------
     /// Examines at most EI_NIDENT bytes starting from the given pointer and
@@ -181,7 +181,7 @@ struct ELFSectionHeader
     ///    True if the ELFSectionHeader was successfully read and false
     ///    otherwise.
     bool
-    Parse(const lldb_private::DataExtractor &data, uint32_t *offset);
+    Parse(const lldb_private::DataExtractor &data, lldb::offset_t *offset);
 };
 
 //------------------------------------------------------------------------------
@@ -216,7 +216,7 @@ struct ELFProgramHeader
     ///    True if the ELFProgramHeader was successfully read and false
     ///    otherwise.
     bool
-    Parse(const lldb_private::DataExtractor &data, uint32_t *offset);
+    Parse(const lldb_private::DataExtractor &data, lldb::offset_t *offset);
 };
 
 //------------------------------------------------------------------------------
@@ -244,6 +244,16 @@ struct ELFSymbol
         st_info = (binding << 4) + (type & 0x0F);
     }
 
+    static const char *
+    bindingToCString(unsigned char binding);
+
+    static const char *
+    typeToCString(unsigned char type);
+
+    static const char *
+    sectionIndexToCString(elf_half shndx,
+                          const lldb_private::SectionList *section_list);
+
     /// Parse an ELFSymbol entry from the given DataExtractor starting at
     /// position \p offset.  The address size of the DataExtractor determines if
     /// a 32 or 64 bit object is to be parsed.
@@ -259,7 +269,13 @@ struct ELFSymbol
     /// @return
     ///    True if the ELFSymbol was successfully read and false otherwise.
     bool
-    Parse(const lldb_private::DataExtractor &data, uint32_t *offset);
+    Parse(const lldb_private::DataExtractor &data, lldb::offset_t *offset);
+    
+    void
+    Dump (lldb_private::Stream *s,
+          uint32_t idx,
+          const lldb_private::DataExtractor *strtab_data,
+          const lldb_private::SectionList *section_list);
 };
 
 //------------------------------------------------------------------------------
@@ -292,7 +308,7 @@ struct ELFDynamic
     ///    True if the ELFDynamic entry was successfully read and false
     ///    otherwise.
     bool
-    Parse(const lldb_private::DataExtractor &data, uint32_t *offset);
+    Parse(const lldb_private::DataExtractor &data, lldb::offset_t *offset);
 };
 
 //------------------------------------------------------------------------------
@@ -320,7 +336,7 @@ struct ELFRel
     /// @return
     ///    True if the ELFRel entry was successfully read and false otherwise.
     bool
-    Parse(const lldb_private::DataExtractor &data, uint32_t *offset);
+    Parse(const lldb_private::DataExtractor &data, lldb::offset_t *offset);
 
     /// Returns the type when the given entry represents a 32-bit relocation.
     static unsigned
@@ -379,7 +395,7 @@ struct ELFRela
     /// @return
     ///    True if the ELFRela entry was successfully read and false otherwise.
     bool
-    Parse(const lldb_private::DataExtractor &data, uint32_t *offset);
+    Parse(const lldb_private::DataExtractor &data, lldb::offset_t *offset);
 
     /// Returns the type when the given entry represents a 32-bit relocation.
     static unsigned

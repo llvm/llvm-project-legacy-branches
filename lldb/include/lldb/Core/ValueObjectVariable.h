@@ -31,7 +31,7 @@ public:
     virtual
     ~ValueObjectVariable();
 
-    virtual size_t
+    virtual uint64_t
     GetByteSize();
 
     virtual ConstString
@@ -40,7 +40,7 @@ public:
     virtual ConstString
     GetQualifiedTypeName();
 
-    virtual uint32_t
+    virtual size_t
     CalculateNumChildren();
 
     virtual lldb::ValueType

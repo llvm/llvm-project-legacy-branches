@@ -59,7 +59,7 @@ public:
     // Callback definitions for abstracted plug-in log access.
     //------------------------------------------------------------------
     typedef void (*DisableCallback) (const char **categories, Stream *feedback_strm);
-    typedef lldb::LogSP (*EnableCallback) (lldb::StreamSP &log_stream_sp,
+    typedef Log * (*EnableCallback) (lldb::StreamSP &log_stream_sp,
                                            uint32_t log_options,
                                            const char **categories,
                                            Stream *feedback_strm);
@@ -117,7 +117,7 @@ public:
     //------------------------------------------------------------------
     Log ();
 
-    Log (lldb::StreamSP &stream_sp);
+    Log (const lldb::StreamSP &stream_sp);
 
     ~Log ();
 
@@ -175,6 +175,12 @@ public:
     bool
     GetDebug() const;
 
+    void
+    SetStream (const lldb::StreamSP &stream_sp)
+    {
+        m_stream_sp = stream_sp;
+    }
+
 protected:
     //------------------------------------------------------------------
     // Member variables
@@ -216,7 +222,7 @@ public:
     ListCategories (Stream *strm) = 0;
 
 protected:
-    lldb::LogSP m_log_sp;
+    std::unique_ptr<Log> m_log_ap;
 
 private:
     DISALLOW_COPY_AND_ASSIGN (LogChannel);

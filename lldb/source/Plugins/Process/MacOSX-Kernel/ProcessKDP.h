@@ -141,9 +141,6 @@ public:
     DoSignal (int signal);
     
     virtual lldb_private::Error
-    WillDestroy ();
-    
-    virtual lldb_private::Error
     DoDestroy ();
     
     virtual void
@@ -174,10 +171,10 @@ public:
     // Process Breakpoints
     //----------------------------------------------------------------------
     virtual lldb_private::Error
-    EnableBreakpoint (lldb_private::BreakpointSite *bp_site);
+    EnableBreakpointSite (lldb_private::BreakpointSite *bp_site);
     
     virtual lldb_private::Error
-    DisableBreakpoint (lldb_private::BreakpointSite *bp_site);
+    DisableBreakpointSite (lldb_private::BreakpointSite *bp_site);
     
     //----------------------------------------------------------------------
     // Process Watchpoints
@@ -257,7 +254,6 @@ protected:
     CommunicationKDP m_comm;
     lldb_private::Broadcaster m_async_broadcaster;
     lldb::thread_t m_async_thread;
-    bool m_destroy_in_process;
     std::string m_dyld_plugin_name;
     lldb::addr_t m_kernel_load_addr;
     lldb::CommandObjectSP m_command_sp;

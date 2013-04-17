@@ -24,10 +24,6 @@ UserID::~UserID ()
 Stream&
 lldb_private::operator << (Stream& strm, const UserID& uid)
 {
-#ifdef _WIN32
-    strm.Printf("{0xllu}", uid.GetID());
-#else
     strm.Printf("{0x%8.8" PRIx64 "}", uid.GetID());
-#endif
     return strm;
 }

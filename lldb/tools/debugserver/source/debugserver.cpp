@@ -93,7 +93,7 @@ RNBRunLoopGetStartModeFromRemote (RNBRemote* remote)
 
             if (set_events & RNBContext::event_read_thread_exiting)
             {
-                RNBLogSTDERR ("error: packet read thread exited.");
+                RNBLogSTDERR ("error: packet read thread exited.\n");
                 return eRNBRunLoopModeExit;
             }
 
@@ -108,10 +108,13 @@ RNBRunLoopGetStartModeFromRemote (RNBRemote* remote)
                 if (type == RNBRemote::vattach || type == RNBRemote::vattachwait || type == RNBRemote::vattachorwait)
                 {
                     if (err == rnb_success)
+                    {
+                        RNBLogSTDOUT ("Attach succeeded, ready to debug.\n");
                         return eRNBRunLoopModeInferiorExecuting;
+                    }
                     else
                     {
-                        RNBLogSTDERR ("error: attach failed.");
+                        RNBLogSTDERR ("error: attach failed.\n");
                         return eRNBRunLoopModeExit;
                     }
                 }
@@ -127,7 +130,7 @@ RNBRunLoopGetStartModeFromRemote (RNBRemote* remote)
                 }
                 else if (err == rnb_not_connected)
                 {
-                    RNBLogSTDERR ("error: connection lost.");
+                    RNBLogSTDERR ("error: connection lost.\n");
                     return eRNBRunLoopModeExit;
                 }
                 else
@@ -568,6 +571,7 @@ RNBRunLoopInferiorExecuting (RNBRemote *remote)
                     // in its current state and listen for another connection...
                     if (ctx.ProcessStateRunning())
                     {
+                        DNBLog ("debugserver's event read thread is exiting, killing the inferior process.");
                         DNBProcessKill (ctx.ProcessID());
                     }
                 }
@@ -681,13 +685,13 @@ PortWasBoundCallback (const void *baton, in_port_t port)
 }
 
 static int
-StartListening (RNBRemote *remote, int listen_port, const char *unix_socket_name)
+StartListening (RNBRemote *remote, int listen_port, const char *unix_socket_name, bool localhost_only)
 {
     if (!remote->Comm().IsConnected())
     {
         if (listen_port != 0)
             RNBLogSTDOUT ("Listening to port %i...\n", listen_port);
-        if (remote->Comm().Listen(listen_port, PortWasBoundCallback, unix_socket_name) != rnb_success)
+        if (remote->Comm().Listen(listen_port, PortWasBoundCallback, unix_socket_name, localhost_only) != rnb_success)
         {
             RNBLogSTDERR ("Failed to get connection from a remote gdb process.\n");
             return 0;
@@ -756,7 +760,7 @@ show_usage_and_exit (int exit_code)
 
 
 //----------------------------------------------------------------------
-// option descriptors for getopt_long()
+// option descriptors for getopt_long_only()
 //----------------------------------------------------------------------
 static struct option g_long_options[] =
 {
@@ -783,6 +787,7 @@ static struct option g_long_options[] =
     { "working-dir",        required_argument,  NULL,               'W' },  // The working directory that the inferior process should have (only if debugserver launches the process)
     { "platform",           required_argument,  NULL,               'p' },  // Put this executable into a remote platform mode
     { "unix-socket",        required_argument,  NULL,               'u' },  // If we need to handshake with our parent process, an option will be passed down that specifies a unix socket name to use
+    { "open-connection",    no_argument,        NULL,               'H' },  // If debugserver is listening to a TCP port, allow connections from any host (as opposed to just "localhost" connections)
     { NULL,                 0,                  NULL,               0   }
 };
 
@@ -838,6 +843,7 @@ main (int argc, char *argv[])
     useconds_t waitfor_interval = 1000;     // Time in usecs between process lists polls when waiting for a process by name, default 1 msec.
     useconds_t waitfor_duration = 0;        // Time in seconds to wait for a process by name, 0 means wait forever.
     bool no_stdio = false;
+    bool localhost_only = true;
 
 #if !defined (DNBLOG_ENABLED)
     compile_options += "(no-logging) ";
@@ -874,7 +880,7 @@ main (int argc, char *argv[])
     }
     // NULL terminate the short option string.
     short_options[short_options_idx++] = '\0';
-    while ((ch = getopt_long(argc, argv, short_options, g_long_options, &long_option_index)) != -1)
+    while ((ch = getopt_long_only(argc, argv, short_options, g_long_options, &long_option_index)) != -1)
     {
         DNBLogDebug("option: ch == %c (0x%2.2x) --%s%c%s\n",
                     ch, (uint8_t)ch,
@@ -1077,7 +1083,10 @@ main (int argc, char *argv[])
             case 'u':
                 unix_socket_name.assign (optarg);
                 break;
-                
+
+            case 'H':
+                localhost_only = false;
+                break;
         }
     }
     
@@ -1097,7 +1106,7 @@ main (int argc, char *argv[])
 //        fprintf(stderr, "error: no architecture was specified\n");
 //        exit (8);
 //    }
-    // Skip any options we consumed with getopt_long
+    // Skip any options we consumed with getopt_long_only
     argc -= optind;
     argv += optind;
 
@@ -1283,7 +1292,7 @@ main (int argc, char *argv[])
 #endif
                 if (listen_port != INT32_MAX)
                 {
-                    if (!StartListening (remote, listen_port, unix_socket_name.c_str()))
+                    if (!StartListening (remote, listen_port, unix_socket_name.c_str(), localhost_only))
                         mode = eRNBRunLoopModeExit;
                 }
                 else if (str[0] == '/')
@@ -1328,6 +1337,7 @@ main (int argc, char *argv[])
 
                     ctx.SetLaunchFlavor(launch_flavor);
                     bool ignore_existing = false;
+                    RNBLogSTDOUT ("Waiting to attach to process %s...\n", waitfor_pid_name.c_str());
                     nub_process_t pid = DNBProcessAttachWait (waitfor_pid_name.c_str(), launch_flavor, ignore_existing, timeout_ptr, waitfor_interval, err_str, sizeof(err_str));
                     g_pid = pid;
 
@@ -1336,7 +1346,7 @@ main (int argc, char *argv[])
                         ctx.LaunchStatus().SetError(-1, DNBError::Generic);
                         if (err_str[0])
                             ctx.LaunchStatus().SetErrorString(err_str);
-                        RNBLogSTDERR ("error: failed to attach to process named: \"%s\" %s", waitfor_pid_name.c_str(), err_str);
+                        RNBLogSTDERR ("error: failed to attach to process named: \"%s\" %s\n", waitfor_pid_name.c_str(), err_str);
                         mode = eRNBRunLoopModeExit;
                     }
                     else
@@ -1367,6 +1377,7 @@ main (int argc, char *argv[])
                         timeout_ptr = &attach_timeout_abstime;
                     }
 
+                    RNBLogSTDOUT ("Attaching to process %s...\n", attach_pid_name.c_str());
                     nub_process_t pid = DNBProcessAttachByName (attach_pid_name.c_str(), timeout_ptr, err_str, sizeof(err_str));
                     g_pid = pid;
                     if (pid == INVALID_NUB_PROCESS)
@@ -1374,7 +1385,7 @@ main (int argc, char *argv[])
                         ctx.LaunchStatus().SetError(-1, DNBError::Generic);
                         if (err_str[0])
                             ctx.LaunchStatus().SetErrorString(err_str);
-                        RNBLogSTDERR ("error: failed to attach to process named: \"%s\" %s", waitfor_pid_name.c_str(), err_str);
+                        RNBLogSTDERR ("error: failed to attach to process named: \"%s\" %s\n", waitfor_pid_name.c_str(), err_str);
                         mode = eRNBRunLoopModeExit;
                     }
                     else
@@ -1386,7 +1397,7 @@ main (int argc, char *argv[])
                 }
                 else
                 {
-                    RNBLogSTDERR ("error: asked to attach with empty name and invalid PID.");
+                    RNBLogSTDERR ("error: asked to attach with empty name and invalid PID.\n");
                     mode = eRNBRunLoopModeExit;
                 }
 
@@ -1394,7 +1405,7 @@ main (int argc, char *argv[])
                 {
                     if (listen_port != INT32_MAX)
                     {
-                        if (!StartListening (remote, listen_port, unix_socket_name.c_str()))
+                        if (!StartListening (remote, listen_port, unix_socket_name.c_str(), localhost_only))
                             mode = eRNBRunLoopModeExit;
                     }
                     else if (str[0] == '/')
@@ -1403,7 +1414,7 @@ main (int argc, char *argv[])
                             mode = eRNBRunLoopModeExit;
                     }
                     if (mode != eRNBRunLoopModeExit)
-                        RNBLogSTDOUT ("Got a connection, waiting for debugger instructions for process %d.\n", attach_pid);
+                        RNBLogSTDOUT ("Waiting for debugger instructions for process %d.\n", attach_pid);
                 }
                 break;
 
@@ -1419,7 +1430,7 @@ main (int argc, char *argv[])
                     {
                         if (listen_port != INT32_MAX)
                         {
-                            if (!StartListening (remote, listen_port, unix_socket_name.c_str()))
+                            if (!StartListening (remote, listen_port, unix_socket_name.c_str(), localhost_only))
                                 mode = eRNBRunLoopModeExit;
                         }
                         else if (str[0] == '/')
@@ -1429,7 +1440,7 @@ main (int argc, char *argv[])
                         }
 
                         if (mode != eRNBRunLoopModeExit)
-                            RNBLogSTDOUT ("Got a connection, waiting for debugger instructions.\n");
+                            RNBLogSTDOUT ("Got a connection, launched process %s.\n", argv_sub_zero);
                     }
                     else
                     {
@@ -1446,7 +1457,7 @@ main (int argc, char *argv[])
             case eRNBRunLoopModePlatformMode:
                 if (listen_port != INT32_MAX)
                 {
-                    if (!StartListening (remote, listen_port, unix_socket_name.c_str()))
+                    if (!StartListening (remote, listen_port, unix_socket_name.c_str(), localhost_only))
                         mode = eRNBRunLoopModeExit;
                 }
                 else if (str[0] == '/')
@@ -1468,6 +1479,7 @@ main (int argc, char *argv[])
 
     remote->StopReadRemoteDataThread ();
     remote->Context().SetProcessID(INVALID_NUB_PROCESS);
+    RNBLogSTDOUT ("Exiting.\n");
 
     return 0;
 }

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "DNB.h"
+#include <inttypes.h>
 #include <mach/mach.h>
 #include <signal.h>
 #include <spawn.h>
@@ -156,14 +157,20 @@ MachProcess::GetThreadAtIndex (nub_size_t thread_idx) const
     return m_thread_list.ThreadIDAtIndex(thread_idx);
 }
 
+nub_thread_t
+MachProcess::GetThreadIDForMachPortNumber (thread_t mach_port_number) const
+{
+    return m_thread_list.GetThreadIDByMachPortNumber (mach_port_number);
+}
+
 nub_bool_t
 MachProcess::SyncThreadState (nub_thread_t tid)
 {
     MachThreadSP thread_sp(m_thread_list.GetThreadByID(tid));
     if (!thread_sp)
         return false;
-    kern_return_t kret = ::thread_abort_safely(thread_sp->ThreadID());
-    DNBLogThreadedIf (LOG_THREAD, "thread = 0x%4.4x calling thread_abort_safely (tid) => %u (GetGPRState() for stop_count = %u)", thread_sp->ThreadID(), kret, thread_sp->Process()->StopCount());
+    kern_return_t kret = ::thread_abort_safely(thread_sp->MachPortNumber());
+    DNBLogThreadedIf (LOG_THREAD, "thread = 0x%8.8" PRIx32 " calling thread_abort_safely (tid) => %u (GetGPRState() for stop_count = %u)", thread_sp->MachPortNumber(), kret, thread_sp->Process()->StopCount());
 
     if (kret == KERN_SUCCESS)
         return true;
@@ -176,6 +183,12 @@ nub_thread_t
 MachProcess::GetCurrentThread ()
 {
     return m_thread_list.CurrentThreadID();
+}
+
+nub_thread_t
+MachProcess::GetCurrentThreadMachPort ()
+{
+    return m_thread_list.GetMachPortNumberByThreadID(m_thread_list.CurrentThreadID());
 }
 
 nub_thread_t
@@ -308,14 +321,20 @@ MachProcess::StartSTDIOThread()
 }
 
 void
-MachProcess::SetAsyncEnableProfiling(bool enable, uint64_t interval_usec)
+MachProcess::SetEnableAsyncProfiling(bool enable, uint64_t interval_usec, DNBProfileDataScanType scan_type)
 {
     m_profile_enabled = enable;
     m_profile_interval_usec = interval_usec;
+    m_profile_scan_type = scan_type;
     
-    if (m_profile_enabled && (m_profile_thread == 0))
+    if (m_profile_enabled && (m_profile_thread == NULL))
     {
         StartProfileThread();
+    }
+    else if (!m_profile_enabled && m_profile_thread)
+    {
+        pthread_join(m_profile_thread, NULL);
+        m_profile_thread = NULL;
     }
 }
 
@@ -350,10 +369,10 @@ MachProcess::Resume (const DNBThreadResumeActions& thread_actions)
     }
     else if (state == eStateRunning)
     {
-        DNBLogThreadedIf(LOG_PROCESS, "Resume() - task 0x%x is running, ignoring...", m_task.TaskPort());
+        DNBLog("Resume() - task 0x%x is already running, ignoring...", m_task.TaskPort());
         return true;
     }
-    DNBLogThreadedIf(LOG_PROCESS, "Resume() - task 0x%x can't continue, ignoring...", m_task.TaskPort());
+    DNBLog("Resume() - task 0x%x has state %s, can't continue...", m_task.TaskPort(), DNBStateAsString(state));
     return false;
 }
 
@@ -371,6 +390,21 @@ MachProcess::Kill (const struct timespec *timeout_abstime)
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::Kill() DoSIGSTOP() ::ptrace (PT_KILL, pid=%u, 0, 0) => 0x%8.8x (%s)", m_pid, err.Error(), err.AsString());
     m_thread_actions = DNBThreadResumeActions (eStateRunning, 0);
     PrivateResume ();
+    
+    // Try and reap the process without touching our m_events since
+    // we want the code above this to still get the eStateExited event
+    const uint32_t reap_timeout_usec = 1000000;    // Wait 1 second and try to reap the process
+    const uint32_t reap_interval_usec = 10000;  //
+    uint32_t reap_time_elapsed;
+    for (reap_time_elapsed = 0;
+         reap_time_elapsed < reap_timeout_usec;
+         reap_time_elapsed += reap_interval_usec)
+    {
+        if (GetState() == eStateExited)
+            break;
+        usleep(reap_interval_usec);
+    }
+    DNBLog ("Waited %u ms for process to be reaped (state = %s)", reap_time_elapsed/1000, DNBStateAsString(GetState()));
     return true;
 }
 
@@ -645,13 +679,18 @@ MachProcess::ReplyToAllExceptions ()
             DNBLogThreadedIf(LOG_EXCEPTIONS, "Replying to exception %u...", (uint32_t)std::distance(begin, pos));
             int thread_reply_signal = 0;
 
-            const DNBThreadResumeAction *action = m_thread_actions.GetActionForThread (pos->state.thread_port, false);
+            nub_thread_t tid = m_thread_list.GetThreadIDByMachPortNumber (pos->state.thread_port);
+            const DNBThreadResumeAction *action = NULL;
+            if (tid != INVALID_NUB_THREAD)
+            {
+                action = m_thread_actions.GetActionForThread (tid, false);
+            }
 
             if (action)
             {
                 thread_reply_signal = action->signal;
                 if (thread_reply_signal)
-                    m_thread_actions.SetSignalHandledForThread (pos->state.thread_port);
+                    m_thread_actions.SetSignalHandledForThread (tid);
             }
 
             DNBError err (pos->Reply(this, thread_reply_signal));
@@ -1394,7 +1433,7 @@ MachProcess::ProfileThread(void *arg)
         nub_state_t state = proc->GetState();
         if (state == eStateRunning)
         {
-            std::string data = proc->Task().GetProfileData();
+            std::string data = proc->Task().GetProfileData(proc->GetProfileScanType());
             if (!data.empty())
             {
                 proc->SignalAsyncProfileData(data.c_str());
@@ -1489,7 +1528,8 @@ MachProcess::PrepareForAttach (const char *path, nub_launch_flavor_t launch_flav
         return NULL;
 
     const char *app_ext = strstr(path, ".app");
-    if (app_ext == NULL)
+    const bool is_app = app_ext != NULL && (app_ext[4] == '\0' || app_ext[4] == '/');
+    if (!is_app)
     {
         DNBLogThreadedIf(LOG_PROCESS, "MachProcess::PrepareForAttach(): path '%s' doesn't contain .app, we can't tell springboard to wait for launch...", path);
         return NULL;
@@ -1634,8 +1674,22 @@ MachProcess::LaunchForDebug
 
     case eLaunchFlavorSpringBoard:
         {
-            const char *app_ext = strstr(path, ".app");
-            if (app_ext && (app_ext[4] == '\0' || app_ext[4] == '/'))
+            //  .../whatever.app/whatever ?  
+            //  Or .../com.apple.whatever.app/whatever -- be careful of ".app" in "com.apple.whatever" here
+            const char *app_ext = strstr (path, ".app/");
+            if (app_ext == NULL)
+            {
+                // .../whatever.app ?
+                int len = strlen (path);
+                if (len > 5)
+                {
+                    if (strcmp (path + len - 4, ".app") == 0)
+                    {
+                        app_ext = path + len - 4;
+                    }
+                }
+            }
+            if (app_ext)
             {
                 std::string app_bundle_path(path, app_ext + strlen(".app"));
                 if (SBLaunchForDebug (app_bundle_path.c_str(), argv, envp, no_stdio, launch_err) != 0)
@@ -2189,19 +2243,6 @@ MachProcess::SBForkChildForPTraceDebugging (const char *app_bundle_path, char co
 
     std::string bundleID;
     CFString::UTF8(bundleIDCFStr, bundleID);
-
-    CFData argv_data(NULL);
-
-    if (launch_argv.get())
-    {
-        if (argv_data.Serialize(launch_argv.get(), kCFPropertyListBinaryFormat_v1_0) == NULL)
-        {
-            DNBLogThreadedIf(LOG_PROCESS, "%s() error: failed to serialize launch arg array...", __FUNCTION__);
-            return INVALID_NUB_PROCESS;
-        }
-    }
-
-    DNBLogThreadedIf(LOG_PROCESS, "%s() serialized launch arg array", __FUNCTION__);
 
     // Find SpringBoard
     SBSApplicationLaunchError sbs_error = 0;

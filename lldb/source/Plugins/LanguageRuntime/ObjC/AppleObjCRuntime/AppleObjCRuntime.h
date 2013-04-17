@@ -96,6 +96,10 @@ public:
     
     virtual bool
     ExceptionBreakpointsExplainStop (lldb::StopInfoSP stop_reason);
+    
+    virtual lldb::SearchFilterSP
+    CreateExceptionSearchFilter ();
+    
 protected:
     Address *
     GetPrintForDebuggerAddr();

@@ -68,7 +68,7 @@ DWARFCompileUnit::Clear()
 }
 
 bool
-DWARFCompileUnit::Extract(const DataExtractor &debug_info, uint32_t* offset_ptr)
+DWARFCompileUnit::Extract(const DataExtractor &debug_info, lldb::offset_t *offset_ptr)
 {
     Clear();
 
@@ -103,7 +103,7 @@ DWARFCompileUnit::Extract(const DataExtractor &debug_info, uint32_t* offset_ptr)
 
 
 dw_offset_t
-DWARFCompileUnit::Extract(dw_offset_t offset, const DataExtractor& debug_info_data, const DWARFAbbreviationDeclarationSet* abbrevs)
+DWARFCompileUnit::Extract(lldb::offset_t offset, const DataExtractor& debug_info_data, const DWARFAbbreviationDeclarationSet* abbrevs)
 {
     Clear();
 
@@ -167,17 +167,17 @@ DWARFCompileUnit::ExtractDIEsIfNeeded (bool cu_die_only)
 
     // Set the offset to that of the first DIE and calculate the start of the
     // next compilation unit header.
-    uint32_t offset = GetFirstDIEOffset();
-    uint32_t next_cu_offset = GetNextCompileUnitOffset();
+    lldb::offset_t offset = GetFirstDIEOffset();
+    lldb::offset_t next_cu_offset = GetNextCompileUnitOffset();
 
     DWARFDebugInfoEntry die;
         // Keep a flat array of the DIE for binary lookup by DIE offset
     if (!cu_die_only)
     {
-        LogSP log (LogChannelDWARF::GetLogIfAny(DWARF_LOG_DEBUG_INFO | DWARF_LOG_LOOKUPS));
+        Log *log (LogChannelDWARF::GetLogIfAny(DWARF_LOG_DEBUG_INFO | DWARF_LOG_LOOKUPS));
         if (log)
         {
-            m_dwarf2Data->GetObjectFile()->GetModule()->LogMessageVerboseBacktrace (log.get(),
+            m_dwarf2Data->GetObjectFile()->GetModule()->LogMessageVerboseBacktrace (log,
                                                                                     "DWARFCompileUnit::ExtractDIEsIfNeeded () for compile unit at .debug_info[0x%8.8x]",
                                                                                     GetOffset());
         }
@@ -273,7 +273,7 @@ DWARFCompileUnit::ExtractDIEsIfNeeded (bool cu_die_only)
     // unit header).
     if (offset > next_cu_offset)
     {
-        m_dwarf2Data->GetObjectFile()->GetModule()->ReportWarning ("DWARF compile unit extends beyond its bounds cu 0x%8.8x at 0x%8.8x\n", 
+        m_dwarf2Data->GetObjectFile()->GetModule()->ReportWarning ("DWARF compile unit extends beyond its bounds cu 0x%8.8x at 0x%8.8" PRIx64 "\n",
                                                                    GetOffset(), 
                                                                    offset);
     }
@@ -288,7 +288,7 @@ DWARFCompileUnit::ExtractDIEsIfNeeded (bool cu_die_only)
         DWARFDebugInfoEntry::collection exact_size_die_array (m_die_array.begin(), m_die_array.end());
         exact_size_die_array.swap (m_die_array);
     }
-    LogSP log (LogChannelDWARF::GetLogIfAll (DWARF_LOG_DEBUG_INFO | DWARF_LOG_VERBOSE));
+    Log *log (LogChannelDWARF::GetLogIfAll (DWARF_LOG_DEBUG_INFO | DWARF_LOG_VERBOSE));
     if (log)
     {
         StreamString strm;
@@ -414,7 +414,7 @@ DWARFCompileUnit::BuildAddressRangeTable (SymbolFileDWARF* dwarf2Data,
                 {
                     const LineTable::FileAddressRanges::Entry &range = file_ranges.GetEntryRef(idx);
                     debug_aranges->AppendRange(GetOffset(), range.GetRangeBase(), range.GetRangeEnd());
-                    printf ("0x%8.8x: [0x%16.16llx - 0x%16.16llx)\n", GetOffset(), range.GetRangeBase(), range.GetRangeEnd());
+                    printf ("0x%8.8x: [0x%16.16" PRIx64 " - 0x%16.16" PRIx64 ")\n", GetOffset(), range.GetRangeBase(), range.GetRangeEnd());
                 }
             }
         }
@@ -434,11 +434,11 @@ DWARFCompileUnit::GetFunctionAranges ()
     if (m_func_aranges_ap.get() == NULL)
     {
         m_func_aranges_ap.reset (new DWARFDebugAranges());
-        LogSP log (LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_ARANGES));
+        Log *log (LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_ARANGES));
 
         if (log)
         {
-            m_dwarf2Data->GetObjectFile()->GetModule()->LogMessage (log.get(), 
+            m_dwarf2Data->GetObjectFile()->GetModule()->LogMessage (log,
                                                                     "DWARFCompileUnit::GetFunctionAranges() for compile unit at .debug_info[0x%8.8x]",
                                                                     GetOffset());
         }
@@ -609,11 +609,11 @@ DWARFCompileUnit::Index (const uint32_t cu_idx,
 
     const uint8_t *fixed_form_sizes = DWARFFormValue::GetFixedFormSizesForAddressSize (GetAddressByteSize());
 
-    LogSP log (LogChannelDWARF::GetLogIfAll (DWARF_LOG_LOOKUPS));
+    Log *log (LogChannelDWARF::GetLogIfAll (DWARF_LOG_LOOKUPS));
     
     if (log)
     {
-        m_dwarf2Data->GetObjectFile()->GetModule()->LogMessage (log.get(), 
+        m_dwarf2Data->GetObjectFile()->GetModule()->LogMessage (log, 
                                                                 "DWARFCompileUnit::Index() for compile unit at .debug_info[0x%8.8x]",
                                                                 GetOffset());
     }
@@ -764,28 +764,22 @@ DWARFCompileUnit::Index (const uint32_t cu_idx,
                 {
                     // Note, this check is also done in ParseMethodName, but since this is a hot loop, we do the
                     // simple inlined check outside the call.
-                    if (ObjCLanguageRuntime::IsPossibleObjCMethodName(name))
+                    ObjCLanguageRuntime::MethodName objc_method(name, true);
+                    if (objc_method.IsValid(true))
                     {
-                        ConstString objc_class_name;
-                        ConstString objc_selector_name;
-                        ConstString objc_fullname_no_category_name;
-                        ConstString objc_class_name_no_category;
-                        if (ObjCLanguageRuntime::ParseMethodName (name,
-                                                                  &objc_class_name,
-                                                                  &objc_selector_name,
-                                                                  &objc_fullname_no_category_name,
-                                                                  &objc_class_name_no_category))
-                        {
-                            func_fullnames.Insert (ConstString(name), die.GetOffset());
-                            if (objc_class_name)
-                                objc_class_selectors.Insert(objc_class_name, die.GetOffset());
-                            if (objc_class_name_no_category)
-                                objc_class_selectors.Insert(objc_class_name_no_category, die.GetOffset());
-                            if (objc_selector_name)
-                                func_selectors.Insert (objc_selector_name, die.GetOffset());
-                            if (objc_fullname_no_category_name)
-                                func_fullnames.Insert (objc_fullname_no_category_name, die.GetOffset());
-                        }
+                        ConstString objc_class_name_with_category (objc_method.GetClassNameWithCategory());
+                        ConstString objc_selector_name (objc_method.GetSelector());
+                        ConstString objc_fullname_no_category_name (objc_method.GetFullNameWithoutCategory(true));
+                        ConstString objc_class_name_no_category (objc_method.GetClassName());
+                        func_fullnames.Insert (ConstString(name), die.GetOffset());
+                        if (objc_class_name_with_category)
+                            objc_class_selectors.Insert(objc_class_name_with_category, die.GetOffset());
+                        if (objc_class_name_no_category && objc_class_name_no_category != objc_class_name_with_category)
+                            objc_class_selectors.Insert(objc_class_name_no_category, die.GetOffset());
+                        if (objc_selector_name)
+                            func_selectors.Insert (objc_selector_name, die.GetOffset());
+                        if (objc_fullname_no_category_name)
+                            func_fullnames.Insert (objc_fullname_no_category_name, die.GetOffset());
                     }
                     // If we have a mangled name, then the DW_AT_name attribute
                     // is usually the method name without the class or any parameters
@@ -964,15 +958,16 @@ DWARFCompileUnit::ParseProducerInfo ()
             }
             else if (strstr(producer_cstr, "clang"))
             {
-                RegularExpression clang_regex("clang-([0-9]+)\\.([0-9]+)\\.([0-9]+)");
-                if (clang_regex.Execute (producer_cstr, 3))
+                static RegularExpression g_clang_version_regex("clang-([0-9]+)\\.([0-9]+)\\.([0-9]+)");
+                RegularExpression::Match regex_match(3);
+                if (g_clang_version_regex.Execute (producer_cstr, &regex_match))
                 {
                     std::string str;
-                    if (clang_regex.GetMatchAtIndex (producer_cstr, 1, str))
+                    if (regex_match.GetMatchAtIndex (producer_cstr, 1, str))
                         m_producer_version_major = Args::StringToUInt32(str.c_str(), UINT32_MAX, 10);
-                    if (clang_regex.GetMatchAtIndex (producer_cstr, 2, str))
+                    if (regex_match.GetMatchAtIndex (producer_cstr, 2, str))
                         m_producer_version_minor = Args::StringToUInt32(str.c_str(), UINT32_MAX, 10);
-                    if (clang_regex.GetMatchAtIndex (producer_cstr, 3, str))
+                    if (regex_match.GetMatchAtIndex (producer_cstr, 3, str))
                         m_producer_version_update = Args::StringToUInt32(str.c_str(), UINT32_MAX, 10);
                 }
                 m_producer = eProducerClang;

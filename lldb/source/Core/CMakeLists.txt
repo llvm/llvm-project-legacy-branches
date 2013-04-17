@@ -16,12 +16,10 @@ add_lldb_library(lldbCore
   ConnectionSharedMemory.cpp
   ConstString.cpp
   cxa_demangle.cpp  
-  CXXFormatterFunctions.cpp
   DataBufferHeap.cpp
   DataBufferMemoryMap.cpp
   DataEncoder.cpp
   DataExtractor.cpp
-  DataVisualization.cpp
   Debugger.cpp
   Disassembler.cpp
   DynamicLoader.cpp
@@ -30,8 +28,6 @@ add_lldb_library(lldbCore
   Event.cpp
   FileLineResolver.cpp
   FileSpecList.cpp
-  FormatClasses.cpp
-  FormatManager.cpp
   History.cpp
   InputReader.cpp
   InputReaderEZ.cpp
@@ -78,3 +74,12 @@ add_lldb_library(lldbCore
   VMRange.cpp
   Windows.cpp
   )
+
+#FIXME: Below we append -frtti to cxa_demangle.cpp (and let the compiler choose to ignore the
+#       -fno-rtti that is added due to LLVM_NO_RTTI at the top of this file.) It would be
+#       better to replace -fno-rtti with -frtti rather than just appending the latter option.
+set_property(
+  SOURCE cxa_demangle.cpp
+  PROPERTY COMPILE_FLAGS -frtti
+  )
+

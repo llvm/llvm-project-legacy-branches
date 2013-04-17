@@ -55,10 +55,11 @@ UnwindAssemblyInstEmulation::GetNonCallSiteUnwindPlanFromAssembly (AddressRange&
         thread.CalculateExecutionContext(exe_ctx);
         DisassemblerSP disasm_sp (Disassembler::DisassembleRange (m_arch,
                                                                   NULL,
+                                                                  NULL,
                                                                   exe_ctx,
                                                                   range));
         
-        LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+        Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
 
         if (disasm_sp)
         {
@@ -396,7 +397,7 @@ UnwindAssemblyInstEmulation::ReadMemory (EmulateInstruction *instruction,
                                          void *dst,
                                          size_t dst_len)
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
 
     if (log && log->GetVerbose ())
     {
@@ -437,7 +438,7 @@ UnwindAssemblyInstEmulation::WriteMemory (EmulateInstruction *instruction,
                         instruction->GetArchitecture ().GetByteOrder(), 
                         instruction->GetArchitecture ().GetAddressByteSize());
 
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
 
     if (log && log->GetVerbose ())
     {
@@ -544,7 +545,7 @@ UnwindAssemblyInstEmulation::ReadRegister (EmulateInstruction *instruction,
 {
     bool synthetic = GetRegisterValue (*reg_info, reg_value);
 
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
     
     if (log && log->GetVerbose ())
     {
@@ -574,7 +575,7 @@ UnwindAssemblyInstEmulation::WriteRegister (EmulateInstruction *instruction,
                                             const RegisterInfo *reg_info,
                                             const RegisterValue &reg_value)
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
 
     if (log && log->GetVerbose ())
     {

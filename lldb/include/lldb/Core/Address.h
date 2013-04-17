@@ -302,7 +302,7 @@ public:
     ///     the address is currently not loaded.
     //------------------------------------------------------------------
     lldb::addr_t
-    GetCallableLoadAddress (Target *target) const;
+    GetCallableLoadAddress (Target *target, bool is_indirect = false) const;
 
     //------------------------------------------------------------------
     /// Get the load address as an opcode load address.
@@ -392,12 +392,6 @@ public:
     //------------------------------------------------------------------
     bool
     ResolveAddressUsingFileSections (lldb::addr_t addr, const SectionList *sections);
-
-    bool
-    IsLinkedAddress () const;
-
-    void
-    ResolveLinkedAddress ();
 
     //------------------------------------------------------------------
     /// Set the address to represent \a load_addr.

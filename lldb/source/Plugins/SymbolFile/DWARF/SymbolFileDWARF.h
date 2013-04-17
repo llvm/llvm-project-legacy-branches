@@ -22,6 +22,7 @@
 #include "clang/AST/ExternalASTSource.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/ClangForward.h"
@@ -337,6 +338,10 @@ protected:
     class DelayedAddObjCClassProperty;
     typedef std::vector <DelayedAddObjCClassProperty> DelayedPropertyList;
     
+    bool                    ClassOrStructIsVirtual (
+                                DWARFCompileUnit* dwarf_cu,
+                                const DWARFDebugInfoEntry *parent_die);
+
     size_t                  ParseChildMembers(
                                 const lldb_private::SymbolContext& sc,
                                 DWARFCompileUnit* dwarf_cu,
@@ -367,6 +372,7 @@ protected:
     size_t                  ParseChildEnumerators(
                                 const lldb_private::SymbolContext& sc,
                                 lldb::clang_type_t enumerator_qual_type,
+                                bool is_signed,
                                 uint32_t enumerator_byte_size,
                                 DWARFCompileUnit* dwarf_cu,
                                 const DWARFDebugInfoEntry *enum_die);
@@ -532,11 +538,16 @@ protected:
                            const lldb_private::ConstString &selector);
 
     bool
-    CopyUniqueClassMethodTypes (lldb_private::Type *class_type,
+    CopyUniqueClassMethodTypes (SymbolFileDWARF *class_symfile,
+                                lldb_private::Type *class_type,
                                 DWARFCompileUnit* src_cu,
                                 const DWARFDebugInfoEntry *src_class_die,
                                 DWARFCompileUnit* dst_cu,
-                                const DWARFDebugInfoEntry *dst_class_die);
+                                const DWARFDebugInfoEntry *dst_class_die,
+                                llvm::SmallVectorImpl <const DWARFDebugInfoEntry *> &failures);
+
+    bool
+    FixupAddress (lldb_private::Address &addr);
 
     lldb::ModuleWP                  m_debug_map_module_wp;
     SymbolFileDWARFDebugMap *       m_debug_map_symfile;

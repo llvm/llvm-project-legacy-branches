@@ -56,7 +56,7 @@ ClangASTSource::StartTranslationUnit(ASTConsumer *Consumer)
 }
 
 // The core lookup interface.
-DeclContext::lookup_result 
+bool
 ClangASTSource::FindExternalVisibleDeclsByName
 (
     const DeclContext *decl_ctx, 
@@ -64,10 +64,16 @@ ClangASTSource::FindExternalVisibleDeclsByName
 ) 
 {
     if (!m_ast_context)
-        return SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+    {
+        SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+        return false;
+    }
     
     if (GetImportInProgress())
-        return SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+    {
+        SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+        return false;
+    }
         
     std::string decl_name (clang_decl_name.getAsString());
 
@@ -83,7 +89,8 @@ ClangASTSource::FindExternalVisibleDeclsByName
             if (!identifier_info ||
                 identifier_info->getBuiltinID() != 0)
             {
-                return SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+                SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+                return false;
             }
         }
         break;
@@ -91,12 +98,14 @@ ClangASTSource::FindExternalVisibleDeclsByName
     // Operator names.  Not important for now.
     case DeclarationName::CXXOperatorName:
     case DeclarationName::CXXLiteralOperatorName:
-      return DeclContext::lookup_result();
+      SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+      return false;
             
     // Using directives found in this context.
     // Tell Sema we didn't find any or we'll end up getting asked a *lot*.
     case DeclarationName::CXXUsingDirective:
-      return SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+      SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+      return false;
             
     case DeclarationName::ObjCZeroArgSelector:
     case DeclarationName::ObjCOneArgSelector:
@@ -108,13 +117,15 @@ ClangASTSource::FindExternalVisibleDeclsByName
      
       FindObjCMethodDecls(method_search_context);
 
-      return SetExternalVisibleDeclsForName (decl_ctx, clang_decl_name, method_decls);
+      SetExternalVisibleDeclsForName (decl_ctx, clang_decl_name, method_decls);
+      return (method_decls.size() > 0);
     }
     // These aren't possible in the global context.
     case DeclarationName::CXXConstructorName:
     case DeclarationName::CXXDestructorName:
     case DeclarationName::CXXConversionFunctionName:
-      return DeclContext::lookup_result();
+      SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+      return false;
     }
 
 
@@ -128,7 +139,8 @@ ClangASTSource::FindExternalVisibleDeclsByName
         }
         else
         {               
-            return SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+            SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+            return false;
         }
     }
 
@@ -138,7 +150,8 @@ ClangASTSource::FindExternalVisibleDeclsByName
     if (m_active_lookups.find (uniqued_const_decl_name) != m_active_lookups.end())
     {
         // We are currently looking up this name...
-        return DeclContext::lookup_result();
+        SetNoExternalVisibleDeclsForName(decl_ctx, clang_decl_name);
+        return false;
     }
     m_active_lookups.insert(uniqued_const_decl_name);
 //  static uint32_t g_depth = 0;
@@ -147,16 +160,16 @@ ClangASTSource::FindExternalVisibleDeclsByName
     llvm::SmallVector<NamedDecl*, 4> name_decls;    
     NameSearchContext name_search_context(*this, name_decls, clang_decl_name, decl_ctx);
     FindExternalVisibleDecls(name_search_context);
-    DeclContext::lookup_result result (SetExternalVisibleDeclsForName (decl_ctx, clang_decl_name, name_decls));
+    SetExternalVisibleDeclsForName (decl_ctx, clang_decl_name, name_decls);
 //  --g_depth;
     m_active_lookups.erase (uniqued_const_decl_name);
-    return result;
+    return (name_decls.size() != 0);
 }
 
 void
 ClangASTSource::CompleteType (TagDecl *tag_decl)
 {    
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     static unsigned int invocation_id = 0;
     unsigned int current_id = invocation_id++;
@@ -293,7 +306,7 @@ ClangASTSource::CompleteType (TagDecl *tag_decl)
 void
 ClangASTSource::CompleteType (clang::ObjCInterfaceDecl *interface_decl)
 {    
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     if (log)
     {
@@ -354,8 +367,10 @@ clang::ExternalLoadResult
 ClangASTSource::FindExternalLexicalDecls (const DeclContext *decl_context,
                                           bool (*predicate)(Decl::Kind),
                                           llvm::SmallVectorImpl<Decl*> &decls)
-{    
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+{
+    ClangASTMetrics::RegisterLexicalQuery();
+
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     const Decl *context_decl = dyn_cast<Decl>(decl_context);
     
@@ -397,7 +412,7 @@ ClangASTSource::FindExternalLexicalDecls (const DeclContext *decl_context,
     
     if (log)
     {       
-        log->Printf("  FELD[%u] Original decl (Decl*)%p:", current_id, original_decl);
+        log->Printf("  FELD[%u] Original decl (ASTContext*)%p (Decl*)%p:", current_id, original_ctx, original_decl);
         ASTDumper(original_decl).ToLog(log, "    ");
     }
     
@@ -453,11 +468,7 @@ ClangASTSource::FindExternalLexicalDecls (const DeclContext *decl_context,
             {
                 QualType copied_field_type = copied_field->getType();
                 
-                if (const TagType *copied_field_tag_type = copied_field_type->getAs<TagType>())
-                    m_ast_importer->CompleteTagDecl(copied_field_tag_type->getDecl());
-                if (const ObjCObjectType *copied_field_object_type = copied_field_type->getAs<ObjCObjectType>())
-                    if (ObjCInterfaceDecl *copied_field_objc_interface_decl = copied_field_object_type->getInterface())
-                        m_ast_importer->CompleteObjCInterfaceDecl(copied_field_objc_interface_decl);
+                m_ast_importer->RequireCompleteType(copied_field_type);
             }
             
             decls.push_back(copied_decl);
@@ -472,9 +483,11 @@ ClangASTSource::FindExternalVisibleDecls (NameSearchContext &context)
 {
     assert (m_ast_context);
     
+    ClangASTMetrics::RegisterVisibleQuery();
+    
     const ConstString name(context.m_decl_name.getAsString().c_str());
     
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     static unsigned int invocation_id = 0;
     unsigned int current_id = invocation_id++;
@@ -565,7 +578,7 @@ ClangASTSource::FindExternalVisibleDecls (NameSearchContext &context,
 {
     assert (m_ast_context);
     
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     SymbolContextList sc_list;
     
@@ -615,9 +628,7 @@ ClangASTSource::FindExternalVisibleDecls (NameSearchContext &context,
         const ModuleList &target_images = m_target->GetImages();
         Mutex::Locker modules_locker (target_images.GetMutex());
         
-        for (uint32_t i = 0, e = target_images.GetSize();
-             i != e;
-             ++i)
+        for (size_t i = 0, e = target_images.GetSize(); i < e; ++i)
         {
             lldb::ModuleSP image = target_images.GetModuleAtIndexUnlocked(i);
             
@@ -875,7 +886,7 @@ FindObjCMethodDeclsWithOrigin (unsigned int current_id,
     if (!copied_method_decl)
         return false;
     
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     if (log)
     {
@@ -891,7 +902,7 @@ FindObjCMethodDeclsWithOrigin (unsigned int current_id,
 void
 ClangASTSource::FindObjCMethodDecls (NameSearchContext &context)
 {
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     static unsigned int invocation_id = 0;
     unsigned int current_id = invocation_id++;
@@ -1178,7 +1189,7 @@ FindObjCPropertyAndIvarDeclsWithOrigin (unsigned int current_id,
                                         ClangASTImporter *ast_importer,
                                         DeclFromUser<const ObjCInterfaceDecl> &origin_iface_decl)
 {
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
     if (origin_iface_decl.IsInvalid())
         return false;
@@ -1231,7 +1242,7 @@ FindObjCPropertyAndIvarDeclsWithOrigin (unsigned int current_id,
 void
 ClangASTSource::FindObjCPropertyAndIvarDecls (NameSearchContext &context)
 {
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
     static unsigned int invocation_id = 0;
     unsigned int current_id = invocation_id++;
@@ -1424,16 +1435,19 @@ ClangASTSource::layoutRecordType(const RecordDecl *record,
                                  BaseOffsetMap &base_offsets,
                                  BaseOffsetMap &virtual_base_offsets)
 {
+    ClangASTMetrics::RegisterRecordLayout();
+    
     static unsigned int invocation_id = 0;
     unsigned int current_id = invocation_id++;
     
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     if (log)
     {
-        log->Printf("LayoutRecordType[%u] on (RecordDecl*)%p [name = '%s']",
+        log->Printf("LayoutRecordType[%u] on (ASTContext*)%p for (RecordDecl*)%p [name = '%s']",
                     current_id,
                     m_ast_context,
+                    record,
                     record->getNameAsString().c_str());
     }
     
@@ -1455,12 +1469,15 @@ ClangASTSource::layoutRecordType(const RecordDecl *record,
     
     const ASTRecordLayout &record_layout(origin_record->getASTContext().getASTRecordLayout(origin_record.decl));
     
-    int field_idx = 0;
+    int field_idx = 0, field_count = record_layout.getFieldCount();
     
     for (RecordDecl::field_iterator fi = origin_record->field_begin(), fe = origin_record->field_end();
          fi != fe;
          ++fi)
     {
+        if (field_idx >= field_count)
+            return false; // Layout didn't go well.  Bail out.
+        
         uint64_t field_offset = record_layout.getFieldOffset(field_idx);
         
         origin_field_offsets.insert(std::pair<const FieldDecl *, uint64_t>(*fi, field_offset));
@@ -1545,7 +1562,7 @@ ClangASTSource::CompleteNamespaceMap (ClangASTImporter::NamespaceMapSP &namespac
     static unsigned int invocation_id = 0;
     unsigned int current_id = invocation_id++;
     
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     if (log)
     {
@@ -1602,9 +1619,7 @@ ClangASTSource::CompleteNamespaceMap (ClangASTImporter::NamespaceMapSP &namespac
         
         ClangNamespaceDecl null_namespace_decl;
         
-        for (uint32_t i = 0, e = target_images.GetSize();
-             i != e;
-             ++i)
+        for (size_t i = 0, e = target_images.GetSize(); i < e; ++i)
         {
             lldb::ModuleSP image = target_images.GetModuleAtIndexUnlocked(i);
             
@@ -1642,8 +1657,6 @@ ClangASTSource::AddNamespace (NameSearchContext &context, ClangASTImporter::Name
     if (!namespace_decls)
         return NULL;
     
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
-        
     const ClangNamespaceDecl &namespace_decl = namespace_decls->begin()->second;
     
     Decl *copied_decl = m_ast_importer->CopyDecl(m_ast_context, namespace_decl.GetASTContext(), namespace_decl.GetNamespaceDecl());
@@ -1652,6 +1665,11 @@ ClangASTSource::AddNamespace (NameSearchContext &context, ClangASTImporter::Name
         return NULL;
     
     NamespaceDecl *copied_namespace_decl = dyn_cast<NamespaceDecl>(copied_decl);
+    
+    if (!copied_namespace_decl)
+        return NULL;
+    
+    context.m_decls.push_back(copied_namespace_decl);
     
     m_ast_importer->RegisterNamespaceMap(copied_namespace_decl, namespace_decls);
     
@@ -1662,7 +1680,9 @@ void *
 ClangASTSource::GuardedCopyType (ASTContext *dest_context, 
                                  ASTContext *source_context,
                                  void *clang_type)
-{    
+{
+    ClangASTMetrics::RegisterLLDBImport();
+    
     SetImportInProgress(true);
     
     QualType ret_qual_type = m_ast_importer->CopyType (m_ast_context, source_context, QualType::getFromOpaquePtr(clang_type));
@@ -1693,7 +1713,6 @@ NameSearchContext::AddVarDecl(void *type)
                                              ii, 
                                              QualType::getFromOpaquePtr(type), 
                                              0, 
-                                             SC_Static, 
                                              SC_Static);
     m_decls.push_back(Decl);
     
@@ -1743,7 +1762,6 @@ NameSearchContext::AddFunDecl (void *type)
                                                           arg_qual_type,
                                                           NULL,
                                                           SC_Static,
-                                                          SC_Static,
                                                           NULL));
         }
         
@@ -1751,7 +1769,7 @@ NameSearchContext::AddFunDecl (void *type)
     }
     else
     {
-        lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
         log->Printf("Function type wasn't a FunctionProtoType");
     }
@@ -1769,8 +1787,7 @@ NameSearchContext::AddGenericFunDecl()
     proto_info.Variadic = true;
     
     QualType generic_function_type(m_ast_source.m_ast_context->getFunctionType (m_ast_source.m_ast_context->UnknownAnyTy,    // result
-                                                                                NULL,                                        // argument types
-                                                                                0,                                           // number of arguments
+                                                                                ArrayRef<QualType>(),                                        // argument types
                                                                                 proto_info));
     
     return AddFunDecl(generic_function_type.getAsOpaquePtr());
@@ -1799,6 +1816,14 @@ NameSearchContext::AddTypeDecl(void *type)
             
             return (NamedDecl*)interface_decl;
         }
+        else if (const TypedefType *typedef_type = qual_type->getAs<TypedefType>())
+        {
+            TypedefNameDecl *typedef_name_decl = typedef_type->getDecl();
+            
+            m_decls.push_back(typedef_name_decl);
+            
+            return (NamedDecl*)typedef_name_decl;
+    }
     }
     return NULL;
 }

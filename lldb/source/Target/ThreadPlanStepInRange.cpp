@@ -89,7 +89,7 @@ ThreadPlanStepInRange::GetDescription (Stream *s, lldb::DescriptionLevel level)
 bool
 ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     m_no_more_plans = false;
     
     if (log)
@@ -274,7 +274,30 @@ ThreadPlanStepInRange::FrameMatchesAvoidRegexp ()
         {
             const char *frame_function_name = sc.GetFunctionName().GetCString();
             if (frame_function_name)
-               return avoid_regexp_to_use->Execute(frame_function_name);
+            {
+                size_t num_matches = 0;
+                Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+                if (log)
+                    num_matches = 1;
+                
+                RegularExpression::Match regex_match(num_matches);
+
+                bool return_value = avoid_regexp_to_use->Execute(frame_function_name, &regex_match);
+                if (return_value)
+                {
+                    if (log)
+                    {
+                        std::string match;
+                        regex_match.GetMatchAtIndex(frame_function_name,0, match);
+                        log->Printf ("Stepping out of function \"%s\" because it matches the avoid regexp \"%s\" - match substring: \"%s\".",
+                                     frame_function_name,
+                                     avoid_regexp_to_use->GetText(),
+                                     match.c_str());
+                    }
+
+                }
+                return return_value;
+            }
         }
     }
     return false;
@@ -285,12 +308,12 @@ ThreadPlanStepInRange::DefaultShouldStopHereCallback (ThreadPlan *current_plan, 
 {
     bool should_step_out = false;
     StackFrame *frame = current_plan->GetThread().GetStackFrameAtIndex(0).get();
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     if (flags.Test(eAvoidNoDebug))
     {
         if (!frame->HasDebugInformation())
         {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
             if (log)
                 log->Printf ("Stepping out of frame with no debug info");
 
@@ -321,13 +344,18 @@ ThreadPlanStepInRange::DefaultShouldStopHereCallback (ThreadPlan *current_plan, 
                     else if (strstr (function_name, target_name) == NULL)
                         should_step_out = true;
                 }
+                if (log && should_step_out)
+                    log->Printf("Stepping out of frame %s which did not match step into target %s.",
+                                sc.GetFunctionName().AsCString(),
+                                step_in_range_plan->m_step_into_target.AsCString());
             }
         }
         
         if (!should_step_out)
         {
-                ThreadPlanStepInRange *step_in_range_plan = static_cast<ThreadPlanStepInRange *> (current_plan);
-                should_step_out = step_in_range_plan->FrameMatchesAvoidRegexp ();
+            ThreadPlanStepInRange *step_in_range_plan = static_cast<ThreadPlanStepInRange *> (current_plan);
+            // Don't log the should_step_out here, it's easier to do it in FrameMatchesAvoidRegexp.
+            should_step_out = step_in_range_plan->FrameMatchesAvoidRegexp ();
         }
     }
     
@@ -351,7 +379,7 @@ ThreadPlanStepInRange::DefaultShouldStopHereCallback (ThreadPlan *current_plan, 
 }
 
 bool
-ThreadPlanStepInRange::PlanExplainsStop ()
+ThreadPlanStepInRange::PlanExplainsStop (Event *event_ptr)
 {
     // We always explain a stop.  Either we've just done a single step, in which
     // case we'll do our ordinary processing, or we stopped for some
@@ -386,7 +414,7 @@ ThreadPlanStepInRange::PlanExplainsStop ()
         case eStopReasonExec:
         case eStopReasonThreadExiting:
             {
-                LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+                Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
                 if (log)
                     log->PutCString ("ThreadPlanStepInRange got asked if it explains the stop for some reason other than step.");
             }
@@ -408,7 +436,7 @@ ThreadPlanStepInRange::WillResume (lldb::StateType resume_state, bool current_pl
         bool step_without_resume = m_thread.DecrementCurrentInlinedDepth();
         if (step_without_resume)
         {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+            Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
             if (log)
                 log->Printf ("ThreadPlanStepInRange::WillResume: returning false, inline_depth: %d",
                              m_thread.GetCurrentInlinedDepth());

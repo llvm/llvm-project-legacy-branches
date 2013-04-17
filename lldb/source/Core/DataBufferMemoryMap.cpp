@@ -25,7 +25,10 @@
 #include "lldb/Host/File.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Core/Log.h"
+#include "lldb/lldb-private-log.h"
 
+using namespace lldb;
 using namespace lldb_private;
 
 //----------------------------------------------------------------------
@@ -71,7 +74,7 @@ DataBufferMemoryMap::GetBytes() const
 //----------------------------------------------------------------------
 // Return the number of bytes this object currently contains.
 //----------------------------------------------------------------------
-size_t
+uint64_t
 DataBufferMemoryMap::GetByteSize() const
 {
     return m_size;
@@ -86,9 +89,13 @@ DataBufferMemoryMap::Clear()
 {
     if (m_mmap_addr != NULL)
     {
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_MMAP));
+        if (log)
+            log->Printf("DataBufferMemoryMap::Clear() m_mmap_addr = %p, m_mmap_size = %zu", m_mmap_addr, m_mmap_size);
 #ifdef _WIN32
         if (m_mmap_addr)
             UnmapViewOfFile(m_mmap_addr);
+
         if (m_mmap_handle)
             CloseHandle(m_mmap_handle);
         m_mmap_handle = NULL;
@@ -112,12 +119,22 @@ DataBufferMemoryMap::Clear()
 //----------------------------------------------------------------------
 size_t
 DataBufferMemoryMap::MemoryMapFromFileSpec (const FileSpec* filespec,
-                                            off_t offset, 
-                                            size_t length,
+                                            lldb::offset_t offset,
+                                            lldb::offset_t length,
                                             bool writeable)
 {
     if (filespec != NULL)
     {
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_MMAP));
+        if (log)
+        {
+            log->Printf("DataBufferMemoryMap::MemoryMapFromFileSpec(file=\"%s/%s\", offset=0x%" PRIx64 ", length=0x%" PRIx64 ", writeable=%i",
+                        filespec->GetDirectory().GetCString(),
+                        filespec->GetFilename().GetCString(),
+                        offset,
+                        length,
+                        writeable);
+        }
         char path[PATH_MAX];
         if (filespec->GetPath(path, sizeof(path)))
         {
@@ -130,8 +147,7 @@ DataBufferMemoryMap::MemoryMapFromFileSpec (const FileSpec* filespec,
             if (error.Success())
             {
                 const bool fd_is_file = true;
-                MemoryMapFromFileDescriptor (file.GetDescriptor(), offset, length, writeable, fd_is_file);
-                return GetByteSize();
+                return MemoryMapFromFileDescriptor (file.GetDescriptor(), offset, length, writeable, fd_is_file);
             }
         }
     }
@@ -140,7 +156,15 @@ DataBufferMemoryMap::MemoryMapFromFileSpec (const FileSpec* filespec,
     return 0;
 }
 
-
+#ifdef _WIN32
+static size_t win32memmapalignment = 0;
+void LoadWin32MemMapAlignment () 
+{
+	SYSTEM_INFO data;
+	GetSystemInfo(&data);
+	win32memmapalignment = data.dwAllocationGranularity;
+}
+#endif
 //----------------------------------------------------------------------
 // The file descriptor FD is assumed to already be opened as read only
 // and the STAT structure is assumed to a valid pointer and already
@@ -155,14 +179,24 @@ DataBufferMemoryMap::MemoryMapFromFileSpec (const FileSpec* filespec,
 //----------------------------------------------------------------------
 size_t
 DataBufferMemoryMap::MemoryMapFromFileDescriptor (int fd, 
-                                                  off_t offset, 
-                                                  size_t length,
+                                                  lldb::offset_t offset, 
+                                                  lldb::offset_t length,
                                                   bool writeable,
                                                   bool fd_is_file)
 {
     Clear();
     if (fd >= 0)
     {
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_MMAP|LIBLLDB_LOG_VERBOSE));
+        if (log)
+        {
+            log->Printf("DataBufferMemoryMap::MemoryMapFromFileSpec(fd=%i, offset=0x%" PRIx64 ", length=0x%" PRIx64 ", writeable=%i, fd_is_file=%i)",
+                        fd,
+                        offset,
+                        length,
+                        writeable,
+                        fd_is_file);
+        }
         struct stat stat;
         if (::fstat(fd, &stat) == 0)
         {
@@ -190,16 +224,24 @@ DataBufferMemoryMap::MemoryMapFromFileDescriptor (int fd,
                         error.SetErrorToErrno ();
                         return 0;
                     }
-                    LPVOID data = MapViewOfFile(m_mmap_handle, writeable ? FILE_MAP_WRITE : FILE_MAP_READ, 0, offset, length);
+					if (win32memmapalignment == 0) LoadWin32MemMapAlignment();
+					lldb::offset_t realoffset = offset;
+					lldb::offset_t delta = 0;
+					if (realoffset % win32memmapalignment != 0) {
+						realoffset = realoffset / win32memmapalignment * win32memmapalignment;
+						delta = offset - realoffset;
+					}
+
+                    LPVOID data = MapViewOfFile(m_mmap_handle, writeable ? FILE_MAP_WRITE : FILE_MAP_READ, 0, realoffset, length + delta);
                     m_mmap_addr = (uint8_t *)data;
-                    m_data = m_mmap_addr;
+                    m_data = m_mmap_addr + delta;
                     if (!m_data) {
                         Error error;
                         error.SetErrorToErrno ();
                         CloseHandle(m_mmap_handle);
                         return 0;
                     }
-                    m_mmap_size = length;
+                    m_mmap_size = length + delta;
                     m_size = length;
                 }
             }
@@ -228,10 +270,10 @@ DataBufferMemoryMap::MemoryMapFromFileDescriptor (int fd,
                         flags |= MAP_FILE;
 
                     m_mmap_addr = (uint8_t *)::mmap(NULL, length, prot, flags, fd, offset);
+                    Error error;
 
                     if (m_mmap_addr == (void*)-1)
                     {
-                        Error error;
                         error.SetErrorToErrno ();
                         if (error.GetError() == EINVAL)
                         {
@@ -271,6 +313,12 @@ DataBufferMemoryMap::MemoryMapFromFileDescriptor (int fd,
                         m_mmap_size = length;
                         m_data = m_mmap_addr;
                         m_size = length;
+                    }
+                    
+                    if (log)
+                    {
+                        log->Printf("DataBufferMemoryMap::MemoryMapFromFileSpec() m_mmap_addr = %p, m_mmap_size = %zu, error = %s",
+                                    m_mmap_addr, m_mmap_size, error.AsCString());
                     }
                 }
             }

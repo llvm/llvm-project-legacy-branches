@@ -36,7 +36,7 @@ class MachThread
 {
 public:
 
-                    MachThread (MachProcess *process, thread_t thread = 0);
+                    MachThread (MachProcess *process, uint64_t unique_thread_id = 0, thread_t mach_port_number = 0);
                     ~MachThread ();
 
     MachProcess *   Process() { return m_process; }
@@ -44,11 +44,13 @@ public:
                     Process() const { return m_process; }
     nub_process_t   ProcessID() const;
     void            Dump(uint32_t index);
-    thread_t        ThreadID() const { return m_tid; }
+    uint64_t        ThreadID() const { return m_unique_id; }
+    thread_t        MachPortNumber() const { return m_mach_port_number; }
     thread_t        InferiorThreadID() const;
 
     uint32_t        SequenceID() const { return m_seq_id; }
-    static bool     ThreadIDIsValid(thread_t thread);
+    static bool     ThreadIDIsValid(uint64_t thread);       // The 64-bit system-wide unique thread identifier
+    static bool     MachPortNumberIsValid(thread_t thread); // The mach port # for this thread in debugserver namespace
     void            Resume(bool others_stopped);
     void            Suspend();
     bool            SetSuspendCountBeforeResume(bool others_stopped);
@@ -106,6 +108,8 @@ public:
         return m_arch_ap.get();
     }
 
+    static uint64_t GetGloballyUniqueThreadIDForMachPortID (thread_t mach_port_id);
+
 protected:
     static bool     GetBasicInfo(thread_t threadID, struct thread_basic_info *basic_info);
 
@@ -116,7 +120,8 @@ protected:
 //    GetDispatchQueueName();
 //
     MachProcess *                   m_process;      // The process that owns this thread
-    thread_t                        m_tid;          // The thread port for this thread
+    uint64_t                        m_unique_id;    // The globally unique ID for this thread (nub_thread_t)
+    thread_t                        m_mach_port_number;  // The mach port # for this thread in debugserver namesp.
     uint32_t                        m_seq_id;       // A Sequential ID that increments with each new thread
     nub_state_t                     m_state;        // The state of our process
     PThreadMutex                    m_state_mutex;  // Multithreaded protection for m_state
@@ -128,11 +133,9 @@ protected:
     std::auto_ptr<DNBArchProtocol>  m_arch_ap;      // Arch specific information for register state and more
     const DNBRegisterSetInfo *      m_reg_sets;      // Register set information for this thread
     nub_size_t                      m_num_reg_sets;
-#ifdef THREAD_IDENTIFIER_INFO_COUNT
     thread_identifier_info_data_t   m_ident_info;
     struct proc_threadinfo          m_proc_threadinfo;
     std::string                     m_dispatch_queue_name;
-#endif
 
 private:
     friend class MachThreadList;

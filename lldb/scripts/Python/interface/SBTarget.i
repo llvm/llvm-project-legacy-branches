@@ -239,7 +239,8 @@ public:
         eBroadcastBitBreakpointChanged  = (1 << 0),
         eBroadcastBitModulesLoaded      = (1 << 1),
         eBroadcastBitModulesUnloaded    = (1 << 2),
-        eBroadcastBitWatchpointChanged  = (1 << 3)
+        eBroadcastBitWatchpointChanged  = (1 << 3),
+        eBroadcastBitSymbolsLoaded      = (1 << 4)
     };
 
     //------------------------------------------------------------------
@@ -389,6 +390,26 @@ public:
     
     lldb::SBProcess
     Launch (lldb::SBLaunchInfo &launch_info, lldb::SBError& error);
+
+    %feature("docstring", "
+    //------------------------------------------------------------------
+    /// Load a core file
+    ///
+    /// @param[in] core_file
+    ///     File path of the core dump.
+    ///
+    /// @return
+    ///      A process object for the newly created core file.
+    //------------------------------------------------------------------
+
+    For example,
+
+        process = target.LoadCore('./a.out.core')
+
+    loads a new core file and returns the process object.
+    ") LoadCore;
+    lldb::SBProcess
+    LoadCore(const char *core_file);
     
     lldb::SBProcess
     Attach (lldb::SBAttachInfo &attach_info, lldb::SBError& error);
@@ -586,6 +607,21 @@ public:
     FindGlobalVariables (const char *name, 
                          uint32_t max_matches);
 
+     %feature("docstring", "
+    //------------------------------------------------------------------
+    /// Find the first global (or static) variable by name.
+    ///
+    /// @param[in] name
+    ///     The name of the global or static variable we are looking
+    ///     for.
+    ///
+    /// @return
+    ///     An SBValue that gets filled in with the found variable (if any).
+    //------------------------------------------------------------------
+    ") FindFirstGlobalVariable;
+    lldb::SBValue
+    FindFirstGlobalVariable (const char* name);
+
     void
     Clear ();
 
@@ -689,7 +725,13 @@ public:
     ReadInstructions (lldb::SBAddress base_addr, uint32_t count);    
 
     lldb::SBInstructionList
+    ReadInstructions (lldb::SBAddress base_addr, uint32_t count, const char *flavor_string);
+
+    lldb::SBInstructionList
     GetInstructions (lldb::SBAddress base_addr, const void *buf, size_t size);
+    
+    lldb::SBInstructionList
+    GetInstructionsWithFlavor (lldb::SBAddress base_addr, const char *flavor_string, const void *buf, size_t size);
     
     lldb::SBSymbolContextList
     FindSymbols (const char *name, lldb::SymbolType type = eSymbolTypeAny);
@@ -697,6 +739,9 @@ public:
     bool
     GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level);
     
+    lldb::addr_t
+    GetStackRedZoneSize();
+
     lldb::SBValue
     EvaluateExpression (const char *expr, const lldb::SBExpressionOptions &options);
     %pythoncode %{
@@ -727,12 +772,15 @@ public:
                             if module.file.fullpath == key:
                                 return module
                     # See if the string is a UUID
-                    the_uuid = uuid.UUID(key)
-                    if the_uuid:
-                        for idx in range(num_modules):
-                            module = self.sbtarget.GetModuleAtIndex(idx)
-                            if module.uuid == the_uuid:
-                                return module
+                    try:
+                        the_uuid = uuid.UUID(key)
+                        if the_uuid:
+                            for idx in range(num_modules):
+                                module = self.sbtarget.GetModuleAtIndex(idx)
+                                if module.uuid == the_uuid:
+                                    return module
+                    except:
+                        return None
                 elif type(key) is uuid.UUID:
                     for idx in range(num_modules):
                         module = self.sbtarget.GetModuleAtIndex(idx)

@@ -13,18 +13,32 @@
 
 using namespace lldb_private;
 
-static const char *global_defines = "#undef NULL                       \n"
-                                    "#undef Nil                        \n"
-                                    "#undef nil                        \n"
-                                    "#undef YES                        \n"
-                                    "#undef NO                         \n"
-                                    "#define NULL ((int)0)             \n"
-                                    "#define Nil ((Class)0)            \n"
-                                    "#define nil ((id)0)               \n"
-                                    "#define YES ((BOOL)1)             \n"
-                                    "#define NO ((BOOL)0)              \n"
-                                    "typedef int BOOL;                 \n"
-                                    "typedef unsigned short unichar;   \n";
+const char *
+ExpressionSourceCode::g_expression_prefix = 
+"#undef NULL\n"
+"#undef Nil\n"
+"#undef nil\n"
+"#undef YES\n"
+"#undef NO\n"
+"#define NULL (__null)\n"
+"#define Nil (__null)\n"
+"#define nil (__null)\n"
+"#define YES ((BOOL)1)\n"
+"#define NO ((BOOL)0)\n"
+"typedef signed char BOOL;\n"
+"typedef signed __INT8_TYPE__ int8_t;\n"
+"typedef unsigned __INT8_TYPE__ uint8_t;\n"
+"typedef signed __INT16_TYPE__ int16_t;\n"
+"typedef unsigned __INT16_TYPE__ uint16_t;\n"
+"typedef signed __INT32_TYPE__ int32_t;\n"
+"typedef unsigned __INT32_TYPE__ uint32_t;\n"
+"typedef signed __INT64_TYPE__ int64_t;\n"
+"typedef unsigned __INT64_TYPE__ uint64_t;\n"
+"typedef signed __INTPTR_TYPE__ intptr_t;\n"
+"typedef unsigned __INTPTR_TYPE__ uintptr_t;\n"
+"typedef __SIZE_TYPE__ size_t;\n"
+"typedef __PTRDIFF_TYPE__ ptrdiff_t;\n"
+"typedef unsigned short unichar;\n";
 
 
 bool ExpressionSourceCode::GetText (std::string &text, lldb::LanguageType wrapping_language, bool const_object, bool static_method) const
@@ -56,7 +70,7 @@ bool ExpressionSourceCode::GetText (std::string &text, lldb::LanguageType wrappi
                                "    %s;                        \n" 
                                "}                              \n",
                                m_prefix.c_str(),
-                               global_defines,
+                               g_expression_prefix,
                                m_name.c_str(),
                                m_body.c_str());
             break;
@@ -69,7 +83,7 @@ bool ExpressionSourceCode::GetText (std::string &text, lldb::LanguageType wrappi
                                "    %s;                                \n" 
                                "}                                      \n",
                                m_prefix.c_str(),
-                               global_defines,
+                               g_expression_prefix,
                                m_name.c_str(),
                                (const_object ? "const" : ""),
                                m_body.c_str());
@@ -89,7 +103,7 @@ bool ExpressionSourceCode::GetText (std::string &text, lldb::LanguageType wrappi
                                    "}                                                       \n"
                                    "@end                                                    \n",
                                    m_prefix.c_str(),
-                                   global_defines,
+                                   g_expression_prefix,
                                    m_name.c_str(),
                                    m_name.c_str(),
                                    m_body.c_str());
@@ -108,7 +122,7 @@ bool ExpressionSourceCode::GetText (std::string &text, lldb::LanguageType wrappi
                                    "}                                                      \n"
                                    "@end                                                   \n",
                                    m_prefix.c_str(),
-                                   global_defines,
+                                   g_expression_prefix,
                                    m_name.c_str(),
                                    m_name.c_str(),
                                    m_body.c_str());

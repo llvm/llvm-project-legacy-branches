@@ -20,7 +20,6 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
-#include "lldb/Interpreter/PythonDataObjects.h"
 #include "lldb/Core/RegisterValue.h"
 #include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
@@ -87,11 +86,11 @@ OperatingSystemPython::OperatingSystemPython (lldb_private::Process *process, co
     m_thread_list_valobj_sp (),
     m_register_info_ap (),
     m_interpreter (NULL),
-    m_python_object (NULL)
+    m_python_object_sp ()
 {
     if (!process)
         return;
-    lldb::TargetSP target_sp = process->CalculateTarget();
+    TargetSP target_sp = process->CalculateTarget();
     if (!target_sp)
         return;
     m_interpreter = target_sp->GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
@@ -114,9 +113,9 @@ OperatingSystemPython::OperatingSystemPython (lldb_private::Process *process, co
                     os_plugin_class_name.erase (py_extension_pos);
                 // Add ".OperatingSystemPlugIn" to the module name to get a string like "modulename.OperatingSystemPlugIn"
                 os_plugin_class_name += ".OperatingSystemPlugIn";
-                auto object_sp = m_interpreter->CreateOSPlugin(os_plugin_class_name.c_str(), process->CalculateProcess());
-                if (object_sp)
-                    m_python_object = object_sp->GetObject();
+                ScriptInterpreterObjectSP object_sp = m_interpreter->OSPlugin_CreatePluginObject(os_plugin_class_name.c_str(), process->CalculateProcess());
+                if (object_sp && object_sp->GetObject())
+                    m_python_object_sp = object_sp;
             }
         }
     }
@@ -131,18 +130,14 @@ OperatingSystemPython::GetDynamicRegisterInfo ()
 {
     if (m_register_info_ap.get() == NULL)
     {
-        if (!m_interpreter || !m_python_object)
+        if (!m_interpreter || !m_python_object_sp)
             return NULL;
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
         
         if (log)
             log->Printf ("OperatingSystemPython::GetDynamicRegisterInfo() fetching thread register definitions from python for pid %" PRIu64, m_process->GetID());
         
-        auto object_sp = m_interpreter->OSPlugin_QueryForRegisterInfo(m_interpreter->MakeScriptObject(m_python_object));
-        if (!object_sp)
-            return NULL;
-        PythonDataObject dictionary_data_obj((PyObject*)object_sp->GetObject());
-        PythonDataDictionary dictionary = dictionary_data_obj.GetDictionaryObject();
+        PythonDictionary dictionary(m_interpreter->OSPlugin_RegisterInfo(m_python_object_sp));
         if (!dictionary)
             return NULL;
         
@@ -177,10 +172,10 @@ OperatingSystemPython::GetPluginVersion()
 bool
 OperatingSystemPython::UpdateThreadList (ThreadList &old_thread_list, ThreadList &new_thread_list)
 {
-    if (!m_interpreter || !m_python_object)
+    if (!m_interpreter || !m_python_object_sp)
         return false;
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     
     // First thing we have to do is get the API lock, and the run lock.  We're going to change the thread
     // content of the process, and we're going to use python, which requires the API lock to do it.
@@ -191,50 +186,42 @@ OperatingSystemPython::UpdateThreadList (ThreadList &old_thread_list, ThreadList
     if (log)
         log->Printf ("OperatingSystemPython::UpdateThreadList() fetching thread data from python for pid %" PRIu64, m_process->GetID());
 
-    auto object_sp = m_interpreter->OSPlugin_QueryForThreadsInfo(m_interpreter->MakeScriptObject(m_python_object));
-    if (!object_sp)
-        return false;
-    PythonDataObject pyobj((PyObject*)object_sp->GetObject());
-    PythonDataArray threads_array (pyobj.GetArrayObject());
-    if (threads_array)
+    // The threads that are in "new_thread_list" upon entry are the threads from the
+    // lldb_private::Process subclass, no memory threads will be in this list.
+    
+    auto lock = m_interpreter->AcquireInterpreterLock(); // to make sure threads_list stays alive
+    PythonList threads_list(m_interpreter->OSPlugin_ThreadsInfo(m_python_object_sp));
+    if (threads_list)
     {
-//        const uint32_t num_old_threads = old_thread_list.GetSize(false);
-//        for (uint32_t i=0; i<num_old_threads; ++i)
-//        {
-//            ThreadSP old_thread_sp(old_thread_list.GetThreadAtIndex(i, false));
-//            if (old_thread_sp->GetID() < 0x10000)
-//                new_thread_list.AddThread (old_thread_sp);
-//        }
+        ThreadList core_thread_list(new_thread_list);
 
-        PythonDataString tid_pystr("tid");
-        PythonDataString name_pystr("name");
-        PythonDataString queue_pystr("queue");
-        PythonDataString state_pystr("state");
-        PythonDataString stop_reason_pystr("stop_reason");
-        PythonDataString reg_data_addr_pystr ("register_data_addr");
-        
-        const uint32_t num_threads = threads_array.GetSize();
-        for (uint32_t i=0; i<num_threads; ++i)
+        threads_list.Dump(); // REMOVE THIS
+
+        uint32_t i;
+        const uint32_t num_threads = threads_list.GetSize();
+        for (i=0; i<num_threads; ++i)
         {
-            PythonDataDictionary thread_dict(threads_array.GetItemAtIndex(i).GetDictionaryObject());
+            PythonDictionary thread_dict(threads_list.GetItemAtIndex(i));
             if (thread_dict)
             {
-                const tid_t tid = thread_dict.GetItemForKeyAsInteger (tid_pystr, LLDB_INVALID_THREAD_ID);
-                const addr_t reg_data_addr = thread_dict.GetItemForKeyAsInteger (reg_data_addr_pystr, LLDB_INVALID_ADDRESS);
-                const char *name = thread_dict.GetItemForKeyAsString (name_pystr);
-                const char *queue = thread_dict.GetItemForKeyAsString (queue_pystr);
-                //const char *state = thread_dict.GetItemForKeyAsString (state_pystr);
-                //const char *stop_reason = thread_dict.GetItemForKeyAsString (stop_reason_pystr);
-                
-                ThreadSP thread_sp (old_thread_list.FindThreadByID (tid, false));
-                if (!thread_sp)
-                    thread_sp.reset (new ThreadMemory (*m_process,
-                                                       tid,
-                                                       name,
-                                                       queue,
-                                                       reg_data_addr));
-                new_thread_list.AddThread(thread_sp);
-
+                if (thread_dict.GetItemForKey("core"))
+                {
+                    // We have some threads that are saying they are on a "core", which means
+                    // they map the threads that are gotten from the lldb_private::Process subclass
+                    // so clear the new threads list so the core threads don't show up
+                    new_thread_list.Clear();
+                    break;
+                }
+            }
+        }
+        for (i=0; i<num_threads; ++i)
+        {
+            PythonDictionary thread_dict(threads_list.GetItemAtIndex(i));
+            if (thread_dict)
+            {
+                ThreadSP thread_sp (CreateThreadFromThreadInfo (thread_dict, core_thread_list, old_thread_list, NULL));
+                if (thread_sp)
+                    new_thread_list.AddThread(thread_sp);
             }
         }
     }
@@ -245,16 +232,67 @@ OperatingSystemPython::UpdateThreadList (ThreadList &old_thread_list, ThreadList
     return new_thread_list.GetSize(false) > 0;
 }
 
+ThreadSP
+OperatingSystemPython::CreateThreadFromThreadInfo (PythonDictionary &thread_dict,
+                                                   ThreadList &core_thread_list,
+                                                   ThreadList &old_thread_list,
+                                                   bool *did_create_ptr)
+{
+    ThreadSP thread_sp;
+    if (thread_dict)
+    {
+        PythonString tid_pystr("tid");
+        const tid_t tid = thread_dict.GetItemForKeyAsInteger (tid_pystr, LLDB_INVALID_THREAD_ID);
+        if (tid != LLDB_INVALID_THREAD_ID)
+        {
+            PythonString core_pystr("core");
+            PythonString name_pystr("name");
+            PythonString queue_pystr("queue");
+            PythonString state_pystr("state");
+            PythonString stop_reason_pystr("stop_reason");
+            PythonString reg_data_addr_pystr ("register_data_addr");
+            
+            const uint32_t core_number = thread_dict.GetItemForKeyAsInteger (core_pystr, UINT32_MAX);
+            const addr_t reg_data_addr = thread_dict.GetItemForKeyAsInteger (reg_data_addr_pystr, LLDB_INVALID_ADDRESS);
+            const char *name = thread_dict.GetItemForKeyAsString (name_pystr);
+            const char *queue = thread_dict.GetItemForKeyAsString (queue_pystr);
+            //const char *state = thread_dict.GetItemForKeyAsString (state_pystr);
+            //const char *stop_reason = thread_dict.GetItemForKeyAsString (stop_reason_pystr);
+            
+            thread_sp = old_thread_list.FindThreadByID (tid, false);
+            if (!thread_sp)
+            {
+                if (did_create_ptr)
+                    *did_create_ptr = true;
+                thread_sp.reset (new ThreadMemory (*m_process,
+                                                   tid,
+                                                   name,
+                                                   queue,
+                                                   reg_data_addr));
+                
+            }
+            
+            if (core_number < core_thread_list.GetSize(false))
+            {
+                thread_sp->SetBackingThread(core_thread_list.GetThreadAtIndex(core_number, false));
+            }
+        }
+    }
+    return thread_sp;
+}
+
+
+
 void
 OperatingSystemPython::ThreadWasSelected (Thread *thread)
 {
 }
 
 RegisterContextSP
-OperatingSystemPython::CreateRegisterContextForThread (Thread *thread, lldb::addr_t reg_data_addr)
+OperatingSystemPython::CreateRegisterContextForThread (Thread *thread, addr_t reg_data_addr)
 {
     RegisterContextSP reg_ctx_sp;
-    if (!m_interpreter || !m_python_object || !thread)
+    if (!m_interpreter || !m_python_object_sp || !thread)
         return RegisterContextSP();
     
     // First thing we have to do is get the API lock, and the run lock.  We're going to change the thread
@@ -263,8 +301,9 @@ OperatingSystemPython::CreateRegisterContextForThread (Thread *thread, lldb::add
     Target &target = m_process->GetTarget();
     Mutex::Locker api_locker (target.GetAPIMutex());
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
 
+    auto lock = m_interpreter->AcquireInterpreterLock(); // to make sure python objects stays alive
     if (reg_data_addr != LLDB_INVALID_ADDRESS)
     {
         // The registers data is in contiguous memory, just create the register
@@ -280,13 +319,7 @@ OperatingSystemPython::CreateRegisterContextForThread (Thread *thread, lldb::add
         if (log)
             log->Printf ("OperatingSystemPython::CreateRegisterContextForThread (tid = 0x%" PRIx64 ") fetching register data from python", thread->GetID());
 
-        auto object_sp = m_interpreter->OSPlugin_QueryForRegisterContextData (m_interpreter->MakeScriptObject(m_python_object),
-                                                                              thread->GetID());
-        
-        if (!object_sp)
-            return RegisterContextSP();
-        
-        PythonDataString reg_context_data((PyObject*)object_sp->GetObject());
+        PythonString reg_context_data(m_interpreter->OSPlugin_RegisterContextData (m_python_object_sp, thread->GetID()));
         if (reg_context_data)
         {
             DataBufferSP data_sp (new DataBufferHeap (reg_context_data.GetString(),
@@ -314,6 +347,39 @@ OperatingSystemPython::CreateThreadStopReason (lldb_private::Thread *thread)
     StopInfoSP stop_info_sp; //(StopInfo::CreateStopReasonWithSignal (*thread, SIGSTOP));
     return stop_info_sp;
 }
+
+lldb::ThreadSP
+OperatingSystemPython::CreateThread (lldb::tid_t tid, addr_t context)
+{
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+    
+    if (log)
+        log->Printf ("OperatingSystemPython::CreateThread (tid = 0x%" PRIx64 ", context = 0x%" PRIx64 ") fetching register data from python", tid, context);
+    
+    if (m_interpreter && m_python_object_sp)
+    {
+        // First thing we have to do is get the API lock, and the run lock.  We're going to change the thread
+        // content of the process, and we're going to use python, which requires the API lock to do it.
+        // So get & hold that.  This is a recursive lock so we can grant it to any Python code called on the stack below us.
+        Target &target = m_process->GetTarget();
+        Mutex::Locker api_locker (target.GetAPIMutex());
+        
+        auto lock = m_interpreter->AcquireInterpreterLock(); // to make sure thread_info_dict stays alive
+        PythonDictionary thread_info_dict (m_interpreter->OSPlugin_CreateThread(m_python_object_sp, tid, context));
+        if (thread_info_dict)
+        {
+            ThreadList core_threads(m_process);
+            ThreadList &thread_list = m_process->GetThreadList();
+            bool did_create = false;
+            ThreadSP thread_sp (CreateThreadFromThreadInfo (thread_info_dict, core_threads, thread_list, &did_create));
+            if (did_create)
+                thread_list.AddThread(thread_sp);
+            return thread_sp;
+        }
+    }
+    return ThreadSP();
+}
+
 
 
 #endif // #ifndef LLDB_DISABLE_PYTHON

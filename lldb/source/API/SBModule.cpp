@@ -50,12 +50,14 @@ SBModule::SBModule (lldb::SBProcess &process, lldb::addr_t header_addr) :
     ProcessSP process_sp (process.GetSP());
     if (process_sp)
     {
-        const bool add_image_to_target = true;
-        const bool load_image_sections_in_target = true;
-        m_opaque_sp = process_sp->ReadModuleFromMemory (FileSpec(), 
-                                                        header_addr, 
-                                                        add_image_to_target,
-                                                        load_image_sections_in_target);
+        m_opaque_sp = process_sp->ReadModuleFromMemory (FileSpec(), header_addr);
+        if (m_opaque_sp)
+        {
+            Target &target = process_sp->GetTarget();
+            bool changed = false;
+            m_opaque_sp->SetLoadAddress(target, 0, changed);
+            target.GetImages().Append(m_opaque_sp);
+        }
     }
 }
 
@@ -86,7 +88,7 @@ SBModule::Clear()
 SBFileSpec
 SBModule::GetFileSpec () const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     SBFileSpec file_spec;
     ModuleSP module_sp (GetSP ());
@@ -105,7 +107,7 @@ SBModule::GetFileSpec () const
 lldb::SBFileSpec
 SBModule::GetPlatformFileSpec () const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     SBFileSpec file_spec;
     ModuleSP module_sp (GetSP ());
@@ -126,7 +128,7 @@ bool
 SBModule::SetPlatformFileSpec (const lldb::SBFileSpec &platform_file)
 {
     bool result = false;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     ModuleSP module_sp (GetSP ());
     if (module_sp)
@@ -153,7 +155,7 @@ SBModule::SetPlatformFileSpec (const lldb::SBFileSpec &platform_file)
 const uint8_t *
 SBModule::GetUUIDBytes () const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     const uint8_t *uuid_bytes = NULL;
     ModuleSP module_sp (GetSP ());
@@ -178,7 +180,7 @@ SBModule::GetUUIDBytes () const
 const char *
 SBModule::GetUUIDString () const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     static char uuid_string[80];
     const char * uuid_c_string = NULL;
@@ -465,19 +467,27 @@ SBModule::FindGlobalVariables (SBTarget &target, const char *name, uint32_t max_
 
         if (match_count > 0)
         {
-            ValueObjectList &value_object_list = sb_value_list.ref();
             for (uint32_t i=0; i<match_count; ++i)
             {
                 lldb::ValueObjectSP valobj_sp;
                 TargetSP target_sp (target.GetSP());
                 valobj_sp = ValueObjectVariable::Create (target_sp.get(), variable_list.GetVariableAtIndex(i));
                 if (valobj_sp)
-                    value_object_list.Append(valobj_sp);
+                    sb_value_list.Append(SBValue(valobj_sp));
             }
         }
     }
     
     return sb_value_list;
+}
+
+lldb::SBValue
+SBModule::FindFirstGlobalVariable (lldb::SBTarget &target, const char *name)
+{
+    SBValueList sb_value_list(FindGlobalVariables(target, name, 1));
+    if (sb_value_list.IsValid() && sb_value_list.GetSize() > 0)
+        return sb_value_list.GetValueAtIndex(0);
+    return SBValue();
 }
 
 lldb::SBType

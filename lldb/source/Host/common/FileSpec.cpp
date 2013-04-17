@@ -121,7 +121,7 @@ FileSpec::ResolveUsername (const char *src_path, char *dst_path, size_t dst_len)
     }
     else
     {
-        int user_name_len = first_slash - src_path - 1;
+        size_t user_name_len = first_slash - src_path - 1;
         ::memcpy (user_home, src_path + 1, user_name_len);
         user_home[user_name_len] = '\0';
         user_name = user_home;
@@ -913,8 +913,23 @@ FileSpec::EnumerateDirectory
         lldb_utility::CleanUp <DIR *, int> dir_path_dir (opendir(dir_path), NULL, closedir);
         if (dir_path_dir.is_valid())
         {
-            struct dirent* dp;
-            while ((dp = readdir(dir_path_dir.get())) != NULL)
+            
+#if _WIN32
+			long path_max = MAX_PATH;
+#else
+			long path_max = fpathconf (dirfd (dir_path_dir.get()), _PC_NAME_MAX);
+#if defined (__APPLE_) && defined (__DARWIN_MAXPATHLEN)
+            if (path_max < __DARWIN_MAXPATHLEN)
+                path_max = __DARWIN_MAXPATHLEN;
+#endif
+#endif
+            struct dirent *buf, *dp;
+            buf = (struct dirent *) malloc (offsetof (struct dirent, d_name) + path_max + 1);
+#if _WIN32
+            while (dp = readdir(dir_path_dir.get()))
+#else
+            while (buf && readdir_r(dir_path_dir.get(), buf, &dp) == 0 && dp)
+#endif
             {
                 // Only search directories
                 if (dp->d_type == DT_DIR || dp->d_type == DT_UNKNOWN)
@@ -993,7 +1008,11 @@ FileSpec::EnumerateDirectory
                     }
                 }
             }
+            if (buf)
+            {
+                free (buf);
         }
+    }
     }
     // By default when exiting a directory, we tell the parent enumeration
     // to continue enumerating.
@@ -1015,8 +1034,7 @@ FileSpec::IsSourceImplementationFile () const
     ConstString extension (GetFileNameExtension());
     if (extension)
     {
-        static RegularExpression g_source_file_regex ("^(c|m|mm|cpp|c\\+\\+|cxx|cc|cp|s|asm|f|f77|f90|f95|f03|for|ftn|fpp|ada|adb|ads)$",
-                                                      llvm::Regex::IgnoreCase);
+        static RegularExpression g_source_file_regex ("^(c|m|mm|cpp|c\\+\\+|cxx|cc|cp|s|asm|f|f77|f90|f95|f03|for|ftn|fpp|ada|adb|ads)$", 1); // IgnorCase
         return g_source_file_regex.Execute (extension.GetCString());
     }
     return false;

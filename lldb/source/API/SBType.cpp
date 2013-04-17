@@ -136,7 +136,7 @@ SBType::IsValid() const
     return m_opaque_sp->IsValid();
 }
 
-size_t
+uint64_t
 SBType::GetByteSize()
 {
     if (!IsValid())
@@ -534,7 +534,7 @@ SBTypeList::~SBTypeList()
 bool
 SBType::IsPointerType (void *opaque_type)
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     bool ret_value = ClangASTContext::IsPointerType (opaque_type);
     

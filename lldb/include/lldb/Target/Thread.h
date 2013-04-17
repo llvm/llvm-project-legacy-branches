@@ -394,8 +394,12 @@ public:
     uint32_t
     SetSelectedFrame (lldb_private::StackFrame *frame, bool broadcast = false);
 
+
     bool
     SetSelectedFrameByIndex (uint32_t frame_idx, bool broadcast = false);
+
+    bool
+    SetSelectedFrameByIndexNoisily (uint32_t frame_idx, Stream &output_stream);
 
     void
     SetDefaultFileAndLineToSelectedFrame()
@@ -411,6 +415,24 @@ public:
     
     virtual void
     ClearStackFrames ();
+
+    virtual bool
+    SetBackingThread (const lldb::ThreadSP &thread_sp)
+    {
+        return false;
+    }
+
+    virtual void
+    ClearBackingThread ()
+    {
+        // Subclasses can use this function if a thread is actually backed by
+        // another thread. This is currently used for the OperatingSystem plug-ins
+        // where they might have a thread that is in memory, yet its registers
+        // are available through the lldb_private::Thread subclass for the current
+        // lldb_private::Process class. Since each time the process stops the backing
+        // threads for memory threads can change, we need a way to clear the backing
+        // thread for all memory threads each time we stop.
+    }
 
     void
     DumpUsingSettingsFormat (Stream &strm, uint32_t frame_idx);
@@ -648,7 +670,8 @@ public:
                                     Address& function,
                                     lldb::addr_t arg,
                                     bool stop_other_threads,
-                                    bool discard_on_error = false);
+                                    bool unwind_on_error = false,
+                                    bool ignore_breakpoints = true);
                                             
     //------------------------------------------------------------------
     // Thread Plan accessors:
@@ -662,6 +685,17 @@ public:
     //------------------------------------------------------------------
     ThreadPlan *
     GetCurrentPlan ();
+    
+    //------------------------------------------------------------------
+    /// Unwinds the thread stack for the innermost expression plan currently
+    /// on the thread plan stack.
+    ///
+    /// @return
+    ///     An error if the thread plan could not be unwound.
+    //------------------------------------------------------------------
+
+    Error
+    UnwindInnermostExpression();
 
 private:
     bool

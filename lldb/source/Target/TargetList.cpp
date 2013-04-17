@@ -104,7 +104,7 @@ TargetList::CreateTarget (Debugger &debugger,
         // current architecture if we have a valid architecture.
         platform_sp = debugger.GetPlatformList().GetSelectedPlatform ();
         
-        if (arch.IsValid() && !platform_sp->IsCompatibleArchitecture(arch, &platform_arch))
+        if (arch.IsValid() && !platform_sp->IsCompatibleArchitecture(arch, false, &platform_arch))
         {
             platform_sp = Platform::GetPlatformForArchitecture(arch, &platform_arch);
         }
@@ -146,7 +146,7 @@ TargetList::CreateTarget (Debugger &debugger,
     {
         if (arch.IsValid())
         {
-            if (!platform_sp->IsCompatibleArchitecture(arch))
+            if (!platform_sp->IsCompatibleArchitecture(arch, false, NULL))
                 platform_sp = Platform::GetPlatformForArchitecture(specified_arch, &arch);
         }
     }
@@ -182,7 +182,9 @@ TargetList::CreateTarget (Debugger &debugger,
                     std::string cwd_user_exe_path (cwd);
                     cwd_user_exe_path += '/';
                     cwd_user_exe_path += user_exe_path;
-                    file.SetFile(cwd_user_exe_path.c_str(), false);
+                    FileSpec cwd_file (cwd_user_exe_path.c_str(), false);
+                    if (cwd_file.Exists())
+                        file = cwd_file;
                 }
             }
         }
