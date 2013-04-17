@@ -12,7 +12,9 @@
 
 // C Includes
 // C++ Includes
+#ifndef _WIN32
 #include <atomic>
+#endif
 #include <string>
 #include <vector>
 #include <map>
@@ -498,7 +500,11 @@ private:
     llvm::SmallVector<JittedFunction, 1>    m_jitted_functions;     ///< A vector of all functions that have been JITted into machine code
     const ConstString                       m_name;
     
+#if _WIN32
+    unsigned int                                     m_did_jit;
+#else
     std::atomic<bool>                       m_did_jit;
+#endif
 
     lldb::addr_t                            m_function_load_addr;
     lldb::addr_t                            m_function_end_load_addr;

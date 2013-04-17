@@ -1831,13 +1831,13 @@ IRForTarget::HandleObjCClass(Value *classlist_reference)
     
     Constant *class_addr = ConstantInt::get(intptr_ty, (uint64_t)class_ptr);
     
-    for (LoadInst *load_instruction : load_instructions)
+    for (auto load_instruction = load_instructions.begin(); load_instruction != load_instructions.end(); load_instruction++)
     {
-    Constant *class_bitcast = ConstantExpr::getIntToPtr(class_addr, load_instruction->getType());
+    Constant *class_bitcast = ConstantExpr::getIntToPtr(class_addr, (*load_instruction)->getType());
     
-    load_instruction->replaceAllUsesWith(class_bitcast);
+    (*load_instruction)->replaceAllUsesWith(class_bitcast);
     
-    load_instruction->eraseFromParent();
+    (*load_instruction)->eraseFromParent();
     }
     
     return true;

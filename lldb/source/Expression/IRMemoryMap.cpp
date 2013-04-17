@@ -31,17 +31,17 @@ IRMemoryMap::~IRMemoryMap ()
     
     if (process_sp)
     {
-        for (AllocationMap::value_type &allocation : m_allocations)
+        for (auto allocation = m_allocations.begin(); allocation != m_allocations.end(); allocation ++)
         {
-            if (allocation.second.m_policy == eAllocationPolicyMirror ||
-                allocation.second.m_policy == eAllocationPolicyHostOnly)
-                process_sp->DeallocateMemory(allocation.second.m_process_alloc);
+            if (allocation->second.m_policy == eAllocationPolicyMirror ||
+                allocation->second.m_policy == eAllocationPolicyHostOnly)
+                process_sp->DeallocateMemory(allocation->second.m_process_alloc);
             
             if (lldb_private::Log *log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS))
             {
                 log->Printf("IRMemoryMap::~IRMemoryMap deallocated [0x%llx..0x%llx)",
-                            (uint64_t)allocation.second.m_process_start,
-                            (uint64_t)allocation.second.m_process_start + (uint64_t)allocation.second.m_size);
+                            (uint64_t)allocation->second.m_process_start,
+                            (uint64_t)allocation->second.m_process_start + (uint64_t)allocation->second.m_size);
             }
         }
     }
@@ -55,13 +55,13 @@ IRMemoryMap::FindSpace (size_t size)
     
     lldb::addr_t remote_address = 0x1000; // skip first page of memory
     
-    for (AllocationMap::value_type &allocation : m_allocations)
+    for (auto allocation = m_allocations.begin(); allocation != m_allocations.end(); allocation++)
     {
-        if (remote_address < allocation.second.m_process_start &&
-            remote_address + size <= allocation.second.m_process_start)
+        if (remote_address < allocation->second.m_process_start &&
+            remote_address + size <= allocation->second.m_process_start)
             return remote_address;
         
-        remote_address = allocation.second.m_process_start = allocation.second.m_size;
+        remote_address = allocation->second.m_process_start = allocation->second.m_size;
     }
     
     if (remote_address + size < remote_address)
@@ -73,9 +73,9 @@ IRMemoryMap::FindSpace (size_t size)
 bool
 IRMemoryMap::ContainsHostOnlyAllocations ()
 {
-    for (AllocationMap::value_type &allocation : m_allocations)
+    for (auto allocation = m_allocations.begin(); allocation != m_allocations.end(); allocation ++)
     {
-        if (allocation.second.m_policy == eAllocationPolicyHostOnly)
+        if (allocation->second.m_policy == eAllocationPolicyHostOnly)
             return true;
     }
     

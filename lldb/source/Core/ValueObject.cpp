@@ -571,13 +571,13 @@ ValueObject::GetChildAtIndexPath (const std::vector<size_t> &idxs,
     if (idxs.size() == 0)
         return GetSP();
     ValueObjectSP root(GetSP());
-    for (size_t idx : idxs)
+    for (auto idx = idxs.begin(); idx != idxs.end(); idx++)
     {
-        root = root->GetChildAtIndex(idx, true);
+        root = root->GetChildAtIndex(*idx, true);
         if (!root)
         {
             if (index_of_error)
-                *index_of_error = idx;
+                *index_of_error = *idx;
             return root;
         }
     }
@@ -591,13 +591,13 @@ ValueObject::GetChildAtIndexPath (const std::vector< std::pair<size_t, bool> > &
     if (idxs.size() == 0)
         return GetSP();
     ValueObjectSP root(GetSP());
-    for (std::pair<size_t, bool> idx : idxs)
+    for (auto idx = idxs.begin(); idx != idxs.end(); idx++)
     {
-        root = root->GetChildAtIndex(idx.first, idx.second);
+        root = root->GetChildAtIndex(idx->first, idx->second);
         if (!root)
         {
             if (index_of_error)
-                *index_of_error = idx.first;
+                *index_of_error = idx->first;
             return root;
         }
     }

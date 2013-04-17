@@ -995,9 +995,9 @@ Materializer::Materialize (lldb::StackFrameSP &frame_sp, lldb::ClangExpressionVa
         error.SetErrorString("Couldn't dematerialize: target doesn't exist");
     }
     
-    for (EntityUP &entity_up : m_entities)
+    for (auto entity_up = m_entities.begin(); entity_up != m_entities.end(); entity_up++)
     {
-        entity_up->Materialize(frame_sp, map, process_address, error);
+        (*entity_up)->Materialize(frame_sp, map, process_address, error);
         
         if (!error.Success())
             return Dematerializer (*this, frame_sp, map, LLDB_INVALID_ADDRESS);
@@ -1006,8 +1006,8 @@ Materializer::Materialize (lldb::StackFrameSP &frame_sp, lldb::ClangExpressionVa
     if (Log *log =lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS))
     {
         log->Printf("Materializer::Materialize (frame_sp = %p, process_address = 0x%llx) materialized:", frame_sp.get(), process_address);
-        for (EntityUP &entity_up : m_entities)
-            entity_up->DumpToLog(map, process_address, log);
+        for (auto entity_up = m_entities.begin(); entity_up != m_entities.end(); entity_up++)
+            (*entity_up)->DumpToLog(map, process_address, log);
     }
         
     m_needs_dematerialize.Lock();
@@ -1032,13 +1032,13 @@ Materializer::Dematerializer::Dematerialize (Error &error, lldb::addr_t frame_to
         if (Log *log =lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS))
         {
             log->Printf("Materializer::Dematerialize (frame_sp = %p, process_address = 0x%llx) about to dematerialize:", frame_sp.get(), m_process_address);
-            for (EntityUP &entity_up : m_materializer.m_entities)
-                entity_up->DumpToLog(m_map, m_process_address, log);
+            for (auto entity_up = m_materializer.m_entities.begin(); entity_up != m_materializer.m_entities.end(); entity_up++)
+                (*entity_up)->DumpToLog(m_map, m_process_address, log);
         }
         
-        for (EntityUP &entity_up : m_materializer.m_entities)
+        for (auto entity_up = m_materializer.m_entities.begin(); entity_up != m_materializer.m_entities.end(); entity_up++)
         {
-            entity_up->Dematerialize (frame_sp, m_map, m_process_address, frame_top, frame_bottom, error);
+            (*entity_up)->Dematerialize (frame_sp, m_map, m_process_address, frame_top, frame_bottom, error);
             
             if (!error.Success())
                 break;

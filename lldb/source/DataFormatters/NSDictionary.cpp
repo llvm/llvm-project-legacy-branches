@@ -46,9 +46,9 @@ GetLLDBNSPairType (TargetSP target_sp)
 
     clang_type_t opaque_type = NULL;
     
-    for (clang::NamedDecl *named_decl : result)
+    for (auto named_decl = result.begin(); named_decl != result.end(); named_decl ++)
     {
-        if (const clang::CXXRecordDecl *record_decl = llvm::dyn_cast<clang::CXXRecordDecl>(named_decl))
+        if (const clang::CXXRecordDecl *record_decl = llvm::dyn_cast<clang::CXXRecordDecl>(*named_decl))
         {
             opaque_type = clang::QualType(record_decl->getTypeForDecl(), 0).getAsOpaquePtr();
             break;

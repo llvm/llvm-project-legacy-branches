@@ -57,8 +57,8 @@ namespace {
         void
         Append (const ValueListImpl& list)
         {
-            for (auto val : list.m_values)
-                Append (val);
+            for (auto val = list.m_values.begin(); val != list.m_values.end(); val ++)
+                Append (*val);
         }
         
         lldb::SBValue
@@ -72,10 +72,10 @@ namespace {
         lldb::SBValue
         FindValueByUID (lldb::user_id_t uid)
         {
-            for (auto val : m_values)
+            for (auto val = m_values.begin(); val != m_values.end(); val++)
             {
-                if (val.IsValid() && val.GetID() == uid)
-                    return val;
+                if (val->IsValid() && val->GetID() == uid)
+                    return *val;
             }
             return lldb::SBValue();
         }

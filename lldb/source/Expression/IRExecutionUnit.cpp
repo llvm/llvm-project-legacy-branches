@@ -111,12 +111,12 @@ IRExecutionUnit::DisassembleFunction (Stream &stream,
     lldb::addr_t func_local_addr = LLDB_INVALID_ADDRESS;
     lldb::addr_t func_remote_addr = LLDB_INVALID_ADDRESS;
         
-    for (JittedFunction &function : m_jitted_functions)
+    for (auto function = m_jitted_functions.begin(); function != m_jitted_functions.end(); function++)
     {
-        if (strstr(function.m_name.c_str(), m_name.AsCString()))
+        if (strstr(function->m_name.c_str(), m_name.AsCString()))
         {
-            func_local_addr = function.m_local_addr;
-            func_remote_addr = function.m_remote_addr;
+            func_local_addr = function->m_local_addr;
+            func_remote_addr = function->m_remote_addr;
         }
     }
     
@@ -248,7 +248,16 @@ IRExecutionUnit::GetRunnableInfo(Error &error,
         error.SetErrorString("Couldn't write the JIT compiled code into the process because the process is invalid");
         return;
     }
-    
+
+#if _WIN32
+    if (InterlockedExchange(&m_did_jit, 1))
+    {
+        func_addr = m_function_load_addr;
+        func_end = m_function_end_load_addr;
+        
+        return;
+    };
+#else
     if (m_did_jit)
     {
         func_addr = m_function_load_addr;
@@ -258,6 +267,7 @@ IRExecutionUnit::GetRunnableInfo(Error &error,
     };
     
     m_did_jit = true;
+#endif
     
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
@@ -309,8 +319,8 @@ IRExecutionUnit::GetRunnableInfo(Error &error,
     llvm::StringRef mCPU;
     llvm::SmallVector<std::string, 0> mAttrs;
     
-    for (std::string &feature : m_cpu_features)
-        mAttrs.push_back(feature);
+    for (auto feature = m_cpu_features.begin(); feature != m_cpu_features.end(); feature++)
+        mAttrs.push_back(*feature);
     
     llvm::TargetMachine *target_machine = builder.selectTarget(triple,
                                                                mArch,
@@ -362,15 +372,15 @@ IRExecutionUnit::GetRunnableInfo(Error &error,
     ReportAllocations(*m_execution_engine_ap);
     WriteData(process_sp);
             
-    for (JittedFunction &jitted_function : m_jitted_functions)
+    for (auto jitted_function = m_jitted_functions.begin(); jitted_function != m_jitted_functions.end(); jitted_function++)
     {
-        jitted_function.m_remote_addr = GetRemoteAddressForLocal (jitted_function.m_local_addr);
+        jitted_function->m_remote_addr = GetRemoteAddressForLocal (jitted_function->m_local_addr);
         
-        if (!jitted_function.m_name.compare(m_name.AsCString()))
+        if (!jitted_function->m_name.compare(m_name.AsCString()))
         {
-            AddrRange func_range = GetRemoteRangeForLocal(jitted_function.m_local_addr);
+            AddrRange func_range = GetRemoteRangeForLocal(jitted_function->m_local_addr);
             m_function_end_load_addr = func_range.first + func_range.second;
-            m_function_load_addr = jitted_function.m_remote_addr;
+            m_function_load_addr = jitted_function->m_remote_addr;
         }
     }
     
@@ -581,16 +591,16 @@ IRExecutionUnit::MemoryManager::deallocateExceptionTable(void *ET)
 lldb::addr_t
 IRExecutionUnit::GetRemoteAddressForLocal (lldb::addr_t local_address)
 {
-    for (AllocationRecord &record : m_records)
+    for (auto record = m_records.begin(); record != m_records.end(); record++)
     {
-        if (local_address >= record.m_host_address &&
-            local_address < record.m_host_address + record.m_size)
+        if (local_address >= record->m_host_address &&
+            local_address < record->m_host_address + record->m_size)
         {
-            if (record.m_process_address == LLDB_INVALID_ADDRESS)
+            if (record->m_process_address == LLDB_INVALID_ADDRESS)
                 return LLDB_INVALID_ADDRESS;
         }
         
-        return record.m_process_address + (local_address - record.m_host_address);
+        return record->m_process_address + (local_address - record->m_host_address);
     }
 
     return LLDB_INVALID_ADDRESS;
@@ -599,15 +609,15 @@ IRExecutionUnit::GetRemoteAddressForLocal (lldb::addr_t local_address)
 IRExecutionUnit::AddrRange
 IRExecutionUnit::GetRemoteRangeForLocal (lldb::addr_t local_address)
 {
-    for (AllocationRecord &record : m_records)
+    for (auto record = m_records.begin(); record != m_records.end(); record++)
     {
-        if (local_address >= record.m_host_address &&
-            local_address < record.m_host_address + record.m_size)
+        if (local_address >= record->m_host_address &&
+            local_address < record->m_host_address + record->m_size)
         {
-            if (record.m_process_address == LLDB_INVALID_ADDRESS)
+            if (record->m_process_address == LLDB_INVALID_ADDRESS)
                 return AddrRange(0, 0);
             
-            return AddrRange(record.m_process_address, record.m_size);
+            return AddrRange(record->m_process_address, record->m_size);
         }
     }
     
@@ -621,15 +631,15 @@ IRExecutionUnit::CommitAllocations (lldb::ProcessSP &process_sp)
     
     lldb_private::Error err;
     
-    for (AllocationRecord &record : m_records)
+    for (auto record = m_records.begin(); record != m_records.end(); record ++)
     {
-        if (record.m_process_address != LLDB_INVALID_ADDRESS)
+        if (record->m_process_address != LLDB_INVALID_ADDRESS)
             continue;
         
         
-        record.m_process_address = Malloc(record.m_size,
-                                          record.m_alignment,
-                                          record.m_permissions,
+        record->m_process_address = Malloc(record->m_size,
+                                          record->m_alignment,
+                                          record->m_permissions,
                                           eAllocationPolicyProcessOnly,
                                           err);
         
@@ -642,12 +652,12 @@ IRExecutionUnit::CommitAllocations (lldb::ProcessSP &process_sp)
     
     if (!ret)
     {
-        for (AllocationRecord &record : m_records)
+        for (auto record = m_records.begin(); record != m_records.end(); record ++)
         {
-            if (record.m_process_address != LLDB_INVALID_ADDRESS)
+            if (record->m_process_address != LLDB_INVALID_ADDRESS)
             {
-                Free(record.m_process_address, err);
-                record.m_process_address = LLDB_INVALID_ADDRESS;
+                Free(record->m_process_address, err);
+                record->m_process_address = LLDB_INVALID_ADDRESS;
             }
         }
     }
@@ -658,15 +668,15 @@ IRExecutionUnit::CommitAllocations (lldb::ProcessSP &process_sp)
 void
 IRExecutionUnit::ReportAllocations (llvm::ExecutionEngine &engine)
 {
-    for (AllocationRecord &record : m_records)
+    for (auto record = m_records.begin(); record != m_records.end(); record++)
     {
-        if (record.m_process_address == LLDB_INVALID_ADDRESS)
+        if (record->m_process_address == LLDB_INVALID_ADDRESS)
             continue;
         
-        if (record.m_section_id == eSectionIDInvalid)
+        if (record->m_section_id == eSectionIDInvalid)
             continue;
         
-        engine.mapSectionAddress((void*)record.m_host_address, record.m_process_address);
+        engine.mapSectionAddress((void*)record->m_host_address, record->m_process_address);
     }
     
     // Trigger re-application of relocations.
@@ -676,14 +686,14 @@ IRExecutionUnit::ReportAllocations (llvm::ExecutionEngine &engine)
 bool
 IRExecutionUnit::WriteData (lldb::ProcessSP &process_sp)
 {
-    for (AllocationRecord &record : m_records)
+    for (auto record = m_records.begin(); record != m_records.end(); record++)
     {
-        if (record.m_process_address == LLDB_INVALID_ADDRESS)
+        if (record->m_process_address == LLDB_INVALID_ADDRESS)
             return false;
         
         lldb_private::Error err;
 
-        WriteMemory (record.m_process_address, (uint8_t*)record.m_host_address, record.m_size, err);
+        WriteMemory (record->m_process_address, (uint8_t*)record->m_host_address, record->m_size, err);
     }
     
     return true;

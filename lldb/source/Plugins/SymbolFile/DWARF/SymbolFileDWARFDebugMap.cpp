@@ -72,8 +72,9 @@ SymbolFileDWARFDebugMap::CompileUnitInfo::GetFileRangeMap(SymbolFileDWARFDebugMa
     std::vector<SymbolFileDWARFDebugMap::CompileUnitInfo *> cu_infos;
     if (exe_symfile->GetCompUnitInfosForModule(oso_module, cu_infos))
     {
-        for (auto comp_unit_info : cu_infos)
+        for (auto comp_unit_info_ref = cu_infos.begin(); comp_unit_info_ref != cu_infos.end(); comp_unit_info_ref++)
         {
+            auto comp_unit_info = *comp_unit_info_ref;
             Symtab *exe_symtab = exe_symfile->GetObjectFile()->GetSymtab();
             ModuleSP oso_module_sp (oso_objfile->GetModule());
             Symtab *oso_symtab = oso_objfile->GetSymtab();
@@ -352,20 +353,20 @@ SymbolFileDWARFDebugMap::InitOSO()
             symtab->SortSymbolIndexesByValue(m_func_indexes, true);
             symtab->SortSymbolIndexesByValue(m_glob_indexes, true);
 
-            for (uint32_t sym_idx : m_func_indexes)
+            for (auto sym_idx = m_func_indexes.begin(); sym_idx != m_func_indexes.end(); sym_idx ++)
             {
-                const Symbol *symbol = symtab->SymbolAtIndex(sym_idx);
+                const Symbol *symbol = symtab->SymbolAtIndex(*sym_idx);
                 lldb::addr_t file_addr = symbol->GetAddress().GetFileAddress();
                 lldb::addr_t byte_size = symbol->GetByteSize();
-                DebugMap::Entry debug_map_entry(file_addr, byte_size, OSOEntry(sym_idx, LLDB_INVALID_ADDRESS));
+                DebugMap::Entry debug_map_entry(file_addr, byte_size, OSOEntry(*sym_idx, LLDB_INVALID_ADDRESS));
                 m_debug_map.Append(debug_map_entry);
             }
-            for (uint32_t sym_idx : m_glob_indexes)
+            for (auto sym_idx = m_glob_indexes.begin(); sym_idx != m_glob_indexes.end(); sym_idx ++)
             {
-                const Symbol *symbol = symtab->SymbolAtIndex(sym_idx);
+                const Symbol *symbol = symtab->SymbolAtIndex(*sym_idx);
                 lldb::addr_t file_addr = symbol->GetAddress().GetFileAddress();
                 lldb::addr_t byte_size = symbol->GetByteSize();
-                DebugMap::Entry debug_map_entry(file_addr, byte_size, OSOEntry(sym_idx, LLDB_INVALID_ADDRESS));
+                DebugMap::Entry debug_map_entry(file_addr, byte_size, OSOEntry(*sym_idx, LLDB_INVALID_ADDRESS));
                 m_debug_map.Append(debug_map_entry);
             }
             m_debug_map.Sort();

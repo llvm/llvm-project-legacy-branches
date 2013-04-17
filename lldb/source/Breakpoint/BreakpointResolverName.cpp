@@ -78,9 +78,9 @@ BreakpointResolverName::BreakpointResolverName (Breakpoint *bkpt,
     m_match_type (Breakpoint::Exact),
     m_skip_prologue (skip_prologue)
 {
-    for (const std::string& name : names)
+    for (auto name = names.begin(); name != names.end(); name ++)
     {
-        AddNameLookup (ConstString (name.c_str(), name.size()), name_type_mask);
+        AddNameLookup (ConstString (name->c_str(), name->size()), name_type_mask);
     }
 }
 
@@ -129,11 +129,11 @@ BreakpointResolverName::AddNameLookup (const ConstString &name, uint32_t name_ty
     {
         std::vector<ConstString> objc_names;
         objc_method.GetFullNames(objc_names, true);
-        for (ConstString objc_name : objc_names)
+        for (auto objc_name = objc_names.begin(); objc_name != objc_names.end(); objc_name++)
         {
             LookupInfo lookup;
             lookup.name = name;
-            lookup.lookup_name = objc_name;
+            lookup.lookup_name = *objc_name;
             lookup.name_type_mask = eFunctionNameTypeFull;
             lookup.match_name_after_lookup = false;
             m_lookups.push_back (lookup);
@@ -214,12 +214,12 @@ BreakpointResolverName::SearchCallback
         case Breakpoint::Exact:
             if (context.module_sp)
             {
-                for (const LookupInfo &lookup : m_lookups)
+                for (auto lookup = m_lookups.begin(); lookup != m_lookups.end(); lookup++)
                 {
                     const size_t start_func_idx = func_list.GetSize();
-                    context.module_sp->FindFunctions (lookup.lookup_name,
+                    context.module_sp->FindFunctions (lookup->lookup_name,
                                                       NULL,
-                                                      lookup.name_type_mask,
+                                                      lookup->name_type_mask,
                                                       include_symbols,
                                                       include_inlines,
                                                       append,
@@ -227,16 +227,16 @@ BreakpointResolverName::SearchCallback
                     const size_t end_func_idx = func_list.GetSize();
 
                     if (start_func_idx < end_func_idx)
-                        lookup.Prune (func_list, start_func_idx);
+                        lookup->Prune (func_list, start_func_idx);
                     // If the search filter specifies a Compilation Unit, then we don't need to bother to look in plain
                     // symbols, since all the ones from a set compilation unit will have been found above already.
                     else if (!filter_by_cu)
                     {
                         const size_t start_symbol_idx = sym_list.GetSize();
-                        context.module_sp->FindFunctionSymbols (lookup.lookup_name, lookup.name_type_mask, sym_list);
+                        context.module_sp->FindFunctionSymbols (lookup->lookup_name, lookup->name_type_mask, sym_list);
                         const size_t end_symbol_idx = sym_list.GetSize();
                         if (start_symbol_idx < end_symbol_idx)
-                            lookup.Prune (func_list, start_symbol_idx);
+                            lookup->Prune (func_list, start_symbol_idx);
                     }
                 }
             }
