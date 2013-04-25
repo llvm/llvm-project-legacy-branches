@@ -255,7 +255,8 @@ ObjectContainerBSDArchive::Initialize()
 {
     PluginManager::RegisterPlugin (GetPluginNameStatic(),
                                    GetPluginDescriptionStatic(),
-                                   CreateInstance);
+                                   CreateInstance,
+                                   GetModuleSpecifications);
 }
 
 void
@@ -312,7 +313,7 @@ ObjectContainerBSDArchive::CreateInstance
                 lldb::offset_t archive_data_offset = 0;
 
         Archive::shared_ptr archive_sp (Archive::FindCachedArchive (*file, module_sp->GetArchitecture(), module_sp->GetModificationTime()));
-                std::auto_ptr<ObjectContainerBSDArchive> container_ap(new ObjectContainerBSDArchive (module_sp,
+                std::unique_ptr<ObjectContainerBSDArchive> container_ap(new ObjectContainerBSDArchive (module_sp,
                                                                                                      archive_data_sp,
                                                                                                      archive_data_offset,
                                                                                                      file,
@@ -338,7 +339,7 @@ ObjectContainerBSDArchive::CreateInstance
             Archive::shared_ptr archive_sp (Archive::FindCachedArchive (*file, module_sp->GetArchitecture(), module_sp->GetModificationTime()));
             if (archive_sp)
             {
-                std::auto_ptr<ObjectContainerBSDArchive> container_ap(new ObjectContainerBSDArchive (module_sp, data_sp, data_offset, file, file_offset, length));
+                std::unique_ptr<ObjectContainerBSDArchive> container_ap(new ObjectContainerBSDArchive (module_sp, data_sp, data_offset, file, file_offset, length));
                 
                 if (container_ap.get())
                 {
@@ -488,3 +489,14 @@ ObjectContainerBSDArchive::GetPluginVersion()
     return 1;
 }
 
+
+size_t
+ObjectContainerBSDArchive::GetModuleSpecifications (const lldb_private::FileSpec& file,
+                                                    lldb::DataBufferSP& data_sp,
+                                                    lldb::offset_t data_offset,
+                                                    lldb::offset_t file_offset,
+                                                    lldb::offset_t length,
+                                                    lldb_private::ModuleSpecList &specs)
+{
+    return 0;
+}

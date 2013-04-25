@@ -111,7 +111,9 @@ Terminal::SetCanonical (bool enabled)
 TerminalState::TerminalState() :
     m_tty(),
     m_tflags(-1),
+#ifdef LLDB_CONFIG_TERMIOS_SUPPORTED
     m_termios_ap(),
+#endif
     m_process_group(-1)
 {
 }
@@ -128,7 +130,9 @@ TerminalState::Clear ()
 {
     m_tty.Clear();
     m_tflags = -1;
+#ifdef LLDB_CONFIG_TERMIOS_SUPPORTED
     m_termios_ap.reset();
+#endif
     m_process_group = -1;
 }
 
@@ -165,7 +169,9 @@ TerminalState::Save (int fd, bool save_process_group)
     {
         m_tty.Clear();
         m_tflags = -1;
+#ifdef LLDB_CONFIG_TERMIOS_SUPPORTED
         m_termios_ap.reset();
+#endif
         m_process_group = -1;
     }
     return IsValid();
@@ -236,7 +242,11 @@ TerminalState::TFlagsIsValid() const
 bool
 TerminalState::TTYStateIsValid() const
 {
+#ifdef LLDB_CONFIG_TERMIOS_SUPPORTED
     return m_termios_ap.get() != 0;
+#else
+    return false;
+#endif
 }
 
 //----------------------------------------------------------------------

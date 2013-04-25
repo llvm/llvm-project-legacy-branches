@@ -138,7 +138,7 @@ public:
     typedef lldb::addr_t ObjCISA;
     
     class ClassDescriptor;
-    typedef STD_SHARED_PTR(ClassDescriptor) ClassDescriptorSP;
+    typedef std::shared_ptr<ClassDescriptor> ClassDescriptorSP;
     
     // the information that we want to support retrieving from an ObjC class
     // this needs to be pure virtual since there are at least 2 different implementations
@@ -199,7 +199,8 @@ public:
         
         virtual bool
         GetTaggedPointerInfo (uint64_t* info_bits = NULL,
-                              uint64_t* value_bits = NULL) = 0;
+                              uint64_t* value_bits = NULL,
+                              uint64_t* payload = NULL) = 0;
         
         virtual uint64_t
         GetInstanceSize () = 0;
@@ -258,10 +259,10 @@ public:
     GetNonKVOClassDescriptor (ValueObject& in_value);
 
     virtual ClassDescriptorSP
-    GetClassDescriptor (const ConstString &class_name);
+    GetClassDescriptorFromClassName (const ConstString &class_name);
 
     virtual ClassDescriptorSP
-    GetClassDescriptor (ObjCISA isa);
+    GetClassDescriptorFromISA (ObjCISA isa);
 
     ClassDescriptorSP
     GetNonKVOClassDescriptor (ObjCISA isa);

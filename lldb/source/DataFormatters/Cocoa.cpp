@@ -330,12 +330,15 @@ lldb_private::formatters::NSNumberSummaryProvider (ValueObject& valobj, Stream& 
                 case 0:
                     stream.Printf("(char)%hhd",(char)value);
                     break;
+                case 1:
                 case 4:
                     stream.Printf("(short)%hd",(short)value);
                     break;
+                case 2:
                 case 8:
                     stream.Printf("(int)%d",(int)value);
                     break;
+                case 3:
                 case 12:
                     stream.Printf("(long)%" PRId64,value);
                     break;

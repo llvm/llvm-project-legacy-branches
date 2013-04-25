@@ -19,10 +19,9 @@
 using namespace lldb;
 using namespace lldb_private;
 
-namespace {
-    class ValueListImpl
-    {
-    public:
+class ValueListImpl
+{
+public:
         ValueListImpl () :
         m_values()
         {
@@ -80,11 +79,9 @@ namespace {
             return lldb::SBValue();
         }
 
-    private:
+private:
         std::vector<lldb::SBValue> m_values;
-    };
-}
-
+};
 
 SBValueList::SBValueList () :
     m_opaque_ap ()

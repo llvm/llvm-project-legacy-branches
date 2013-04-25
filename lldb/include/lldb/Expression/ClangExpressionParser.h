@@ -86,7 +86,7 @@ public:
     ///
     /// @param[in] execution_unit_ap
     ///     After parsing, ownership of the execution unit for
-    ///     for the expression is handed to this auto_ptr.
+    ///     for the expression is handed to this unique pointer.
     ///
     /// @param[in] exe_ctx
     ///     The execution context to write the function into.
@@ -112,10 +112,9 @@ public:
     Error
     PrepareForExecution (lldb::addr_t &func_addr,
                          lldb::addr_t &func_end,
-                         std::auto_ptr<IRExecutionUnit> &execution_unit_ap,
+                         std::unique_ptr<IRExecutionUnit> &execution_unit_ap,
                          ExecutionContext &exe_ctx,
-                         bool &evaluated_statically,
-                         lldb::ClangExpressionVariableSP &const_result,
+                         bool &can_interpret,
                          lldb_private::ExecutionPolicy execution_policy);
         
     //------------------------------------------------------------------
@@ -136,16 +135,15 @@ public:
                          ExecutionContext &exe_ctx);
     
 private:
-    ClangExpression                            &m_expr;                 ///< The expression to be parsed
-    
-    std::auto_ptr<llvm::LLVMContext>            m_llvm_context;         ///< The LLVM context to generate IR into
-    std::auto_ptr<clang::FileManager>           m_file_manager;         ///< The Clang file manager object used by the compiler
-    std::auto_ptr<clang::CompilerInstance>      m_compiler;             ///< The Clang compiler used to parse expressions into IR
-    std::auto_ptr<clang::Builtin::Context>      m_builtin_context;      ///< Context for Clang built-ins
-    std::auto_ptr<clang::SelectorTable>         m_selector_table;       ///< Selector table for Objective-C methods
-    std::auto_ptr<clang::ASTContext>            m_ast_context;          ///< The AST context used to hold types and names for the parser
-    std::auto_ptr<clang::CodeGenerator>         m_code_generator;       ///< The Clang object that generates IR
-    std::auto_ptr<IRExecutionUnit>              m_execution_unit;       ///< The container for the finished Module
+    ClangExpression &                       m_expr;                 ///< The expression to be parsed
+    std::unique_ptr<llvm::LLVMContext>       m_llvm_context;         ///< The LLVM context to generate IR into
+    std::unique_ptr<clang::FileManager>      m_file_manager;         ///< The Clang file manager object used by the compiler
+    std::unique_ptr<clang::CompilerInstance> m_compiler;             ///< The Clang compiler used to parse expressions into IR
+    std::unique_ptr<clang::Builtin::Context> m_builtin_context;      ///< Context for Clang built-ins
+    std::unique_ptr<clang::SelectorTable>    m_selector_table;       ///< Selector table for Objective-C methods
+    std::unique_ptr<clang::ASTContext>       m_ast_context;          ///< The AST context used to hold types and names for the parser
+    std::unique_ptr<clang::CodeGenerator>    m_code_generator;       ///< The Clang object that generates IR
+    std::unique_ptr<IRExecutionUnit>         m_execution_unit;       ///< The container for the finished Module
 };
     
 }

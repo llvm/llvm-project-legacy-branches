@@ -6,9 +6,7 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-
 #include "lldb/lldb-python.h"
-
 #include "lldb/Interpreter/OptionGroupValueObjectDisplay.h"
 
 // C Includes

@@ -65,7 +65,7 @@ public:
     %}
 
 protected:
-    std::auto_ptr<lldb_private::TypeMemberImpl> m_opaque_ap;
+    std::unique_ptr<lldb_private::TypeMemberImpl> m_opaque_ap;
 };
 
 %feature("docstring",

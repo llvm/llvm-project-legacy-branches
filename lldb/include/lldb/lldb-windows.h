@@ -163,7 +163,6 @@ extern int optreset;
 #define SIGUSR2 31	
 
 
-
 #endif  // defined(__cplusplus)
 
 

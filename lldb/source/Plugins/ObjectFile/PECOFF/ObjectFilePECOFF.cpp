@@ -16,6 +16,7 @@
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Core/FileSpecList.h"
 #include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Core/StreamFile.h"
@@ -124,7 +125,8 @@ ObjectFilePECOFF::Initialize()
     PluginManager::RegisterPlugin (GetPluginNameStatic(),
                                    GetPluginDescriptionStatic(),
                                    CreateInstance,
-                                   CreateMemoryInstance);
+                                   CreateMemoryInstance,
+                                   GetModuleSpecifications);
 }
 
 void
@@ -166,7 +168,7 @@ ObjectFilePECOFF::CreateInstance (const lldb::ModuleSP &module_sp,
         // Update the data to contain the entire file if it doesn't already
         if (data_sp->GetByteSize() < length)
             data_sp = file->MemoryMapFileContents(file_offset, length);
-        std::auto_ptr<ObjectFile> objfile_ap(new ObjectFilePECOFF (module_sp, data_sp, data_offset, file, file_offset, length));
+        std::unique_ptr<ObjectFile> objfile_ap(new ObjectFilePECOFF (module_sp, data_sp, data_offset, file, file_offset, length));
         if (objfile_ap.get() && objfile_ap->ParseHeader())
             return objfile_ap.release();
     }
@@ -181,6 +183,18 @@ ObjectFilePECOFF::CreateMemoryInstance (const lldb::ModuleSP &module_sp,
 {
     return NULL;
 }
+
+size_t
+ObjectFilePECOFF::GetModuleSpecifications (const lldb_private::FileSpec& file,
+                                           lldb::DataBufferSP& data_sp,
+                                           lldb::offset_t data_offset,
+                                           lldb::offset_t file_offset,
+                                           lldb::offset_t length,
+                                           lldb_private::ModuleSpecList &specs)
+{
+    return 0;
+}
+
 
 bool
 ObjectFilePECOFF::MagicBytesMatch (DataBufferSP& data_sp)

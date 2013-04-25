@@ -39,7 +39,6 @@
 
 using namespace lldb;
 using namespace lldb_private;
-using namespace std;
 
 static bool
 GetFileStats (const FileSpec *file_spec, struct stat *stats_ptr)
@@ -349,11 +348,11 @@ FileSpec::SetFile (const char *pathname, bool resolve)
                     m_directory.SetCString(directory);
                 else
                 {
-                    char *last_resolved_path_slash = 
+                    char *last_resolved_path_slash = strrchr(resolved_path, '/');
 #ifdef _WIN32
-                        max(strrchr(resolved_path, '/'), strrchr(resolved_path, '\\'));
-#else
-                        strrchr(resolved_path, '/');
+                    char* last_resolved_path_slash_windows = strrchr(resolved_path, '\\');
+                    if (last_resolved_path_slash_windows > last_resolved_path_slash)
+                        last_resolved_path_slash = last_resolved_path_slash_windows;
 #endif
 
                     if (last_resolved_path_slash)
@@ -767,10 +766,11 @@ DataBufferSP
 FileSpec::MemoryMapFileContents(off_t file_offset, size_t file_size) const
 {
     DataBufferSP data_sp;
-    auto_ptr<DataBufferMemoryMap> mmap_data(new DataBufferMemoryMap());
+    std::unique_ptr<DataBufferMemoryMap> mmap_data(new DataBufferMemoryMap());
     if (mmap_data.get())
     {
-        if (mmap_data->MemoryMapFromFileSpec (this, file_offset, file_size) >= file_size)
+        const size_t mapped_length = mmap_data->MemoryMapFromFileSpec (this, file_offset, file_size);
+        if (((file_size == SIZE_MAX) && (mapped_length > 0)) || (mapped_length >= file_size))
             data_sp.reset(mmap_data.release());
     }
     return data_sp;
@@ -885,7 +885,7 @@ FileSpec::ReadFileLines (STLStringArray &lines)
     char path[PATH_MAX];
     if (GetPath(path, sizeof(path)))
     {
-        ifstream file_stream (path);
+        std::ifstream file_stream (path);
 
         if (file_stream)
         {

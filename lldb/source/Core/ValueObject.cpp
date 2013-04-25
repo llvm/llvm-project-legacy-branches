@@ -1009,7 +1009,17 @@ ValueObject::GetData (DataExtractor& data)
     ExecutionContext exe_ctx (GetExecutionContextRef());
     Error error = m_value.GetValueAsData(&exe_ctx, GetClangAST(), data, 0, GetModule().get());
     if (error.Fail())
+    {
+        if (m_data.GetByteSize())
+        {
+            data = m_data;
+            return data.GetByteSize();
+        }
+        else
+        {
         return 0;
+        }
+    }
     data.SetAddressByteSize(m_data.GetAddressByteSize());
     data.SetByteOrder(m_data.GetByteOrder());
     return data.GetByteSize();
@@ -3402,7 +3412,13 @@ DumpValueObject_Impl (Stream &s,
                 show_type = options.m_show_types || (curr_depth == 0 && !options.m_flat_output);
             
             if (show_type)
-                s.Printf("(%s) ", valobj->GetQualifiedTypeName().AsCString("<invalid type>"));
+            {
+                // Some ValueObjects don't have types (like registers sets). Only print
+                // the type if there is one to print
+                ConstString qualified_type_name(valobj->GetQualifiedTypeName());
+                if (qualified_type_name)
+                    s.Printf("(%s) ", qualified_type_name.GetCString());
+            }
 
             if (options.m_flat_output)
             {
@@ -3535,9 +3551,8 @@ DumpValueObject_Impl (Stream &s,
                 
                 if (print_children && (!entry || entry->DoesPrintChildren() || !sum_cstr))
                 {
-                    ValueObject* synth_valobj;
                     ValueObjectSP synth_valobj_sp = valobj->GetSyntheticValue (options.m_use_synthetic);
-                    synth_valobj = (synth_valobj_sp ? synth_valobj_sp.get() : valobj);
+                    ValueObject* synth_valobj = (synth_valobj_sp ? synth_valobj_sp.get() : valobj);
                     
                     size_t num_children = synth_valobj->GetNumChildren();
                     bool print_dotdotdot = false;
@@ -3834,6 +3849,13 @@ ValueObject::AddressOf (Error &error)
             break;
         }
     }
+    else
+    {
+        StreamString expr_path_strm;
+        GetExpressionPath(expr_path_strm, true);
+        error.SetErrorStringWithFormat("'%s' doesn't have a valid address", expr_path_strm.GetString().c_str());
+    }
+    
     return m_addr_of_valobj_sp;
 }
 

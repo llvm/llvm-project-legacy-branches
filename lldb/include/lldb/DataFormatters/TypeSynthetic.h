@@ -70,8 +70,8 @@ namespace lldb_private {
         virtual bool
         MightHaveChildren () = 0;
         
-        typedef STD_SHARED_PTR(SyntheticChildrenFrontEnd) SharedPointer;
-        typedef std::auto_ptr<SyntheticChildrenFrontEnd> AutoPointer;
+        typedef std::shared_ptr<SyntheticChildrenFrontEnd> SharedPointer;
+        typedef std::unique_ptr<SyntheticChildrenFrontEnd> AutoPointer;
         
     private:
         DISALLOW_COPY_AND_ASSIGN(SyntheticChildrenFrontEnd);
@@ -249,7 +249,7 @@ namespace lldb_private {
         virtual SyntheticChildrenFrontEnd::AutoPointer
         GetFrontEnd (ValueObject &backend) = 0;
         
-        typedef STD_SHARED_PTR(SyntheticChildren) SharedPointer;
+        typedef std::shared_ptr<SyntheticChildren> SharedPointer;
         typedef bool(*SyntheticChildrenCallback)(void*, ConstString, const SyntheticChildren::SharedPointer&);
         
         uint32_t&
@@ -419,7 +419,7 @@ namespace lldb_private {
                 return UINT32_MAX;
             }
             
-            typedef STD_SHARED_PTR(SyntheticChildrenFrontEnd) SharedPointer;
+            typedef std::shared_ptr<SyntheticChildrenFrontEnd> SharedPointer;
             
         private:
             DISALLOW_COPY_AND_ASSIGN(FrontEnd);
@@ -577,7 +577,7 @@ namespace lldb_private {
                 return m_interpreter->GetIndexOfChildWithName(m_wrapper_sp, name.GetCString());
             }
             
-            typedef STD_SHARED_PTR(SyntheticChildrenFrontEnd) SharedPointer;
+            typedef std::shared_ptr<SyntheticChildrenFrontEnd> SharedPointer;
             
         private:
             DISALLOW_COPY_AND_ASSIGN(FrontEnd);

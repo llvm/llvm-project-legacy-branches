@@ -42,6 +42,7 @@ static char ID;
 
 IRForTarget::StaticDataAllocator::StaticDataAllocator(lldb_private::IRExecutionUnit &execution_unit) :
     m_execution_unit(execution_unit),
+    m_stream_string(lldb_private::Stream::eBinary, execution_unit.GetAddressByteSize(), execution_unit.GetByteOrder()),
     m_allocation(LLDB_INVALID_ADDRESS)
 {
 }
@@ -63,22 +64,18 @@ lldb::addr_t IRForTarget::StaticDataAllocator::Allocate()
 
 IRForTarget::IRForTarget (lldb_private::ClangExpressionDeclMap *decl_map,
                           bool resolve_vars,
-                          lldb_private::ExecutionPolicy execution_policy,
-                          lldb::ClangExpressionVariableSP &const_result,
                           lldb_private::IRExecutionUnit &execution_unit,
                           lldb_private::Stream *error_stream,
                           const char *func_name) :
     ModulePass(ID),
     m_resolve_vars(resolve_vars),
-    m_execution_policy(execution_policy),
-    m_interpret_success(false),
     m_func_name(func_name),
     m_module(NULL),
     m_decl_map(decl_map),
     m_data_allocator(execution_unit),
+    m_memory_map(execution_unit),
     m_CFStringCreateWithBytes(NULL),
     m_sel_registerName(NULL),
-    m_const_result(const_result),
     m_error_stream(error_stream),
     m_has_side_effects(false),
     m_result_store(NULL),
@@ -284,6 +281,10 @@ IRForTarget::GetFunctionAddress (llvm::Function *fun,
                         m_error_stream->Printf("error: call to a function '%s' (alternate name '%s') that is not present in the target\n",
                                                mangled_name.GetName().GetCString(),
                                                alt_mangled_name.GetName().GetCString());
+                    else if (mangled_name.GetMangledName())
+                        m_error_stream->Printf("error: call to a function '%s' ('%s') that is not present in the target\n",
+                                               mangled_name.GetName().GetCString(),
+                                               mangled_name.GetMangledName().GetCString());
                     else
                         m_error_stream->Printf("error: call to a function '%s' that is not present in the target\n",
                                                mangled_name.GetName().GetCString());
@@ -443,97 +444,6 @@ clang::NamedDecl *
 IRForTarget::DeclForGlobal (GlobalValue *global_val)
 {        
     return DeclForGlobal(global_val, m_module);
-}
-
-void 
-IRForTarget::MaybeSetConstantResult (llvm::Constant *initializer,
-                                     const lldb_private::ConstString &name,
-                                     lldb_private::TypeFromParser type)
-{
-    if (llvm::ConstantExpr *init_expr = dyn_cast<llvm::ConstantExpr>(initializer))
-    {
-        switch (init_expr->getOpcode())
-        {
-        default:
-            return;
-        case Instruction::IntToPtr:
-            MaybeSetConstantResult (init_expr->getOperand(0), name, type);
-            return;
-        }
-    }
-    else if (llvm::ConstantInt *init_int = dyn_cast<llvm::ConstantInt>(initializer))
-    {
-        m_const_result = m_decl_map->BuildIntegerVariable(name, type, init_int->getValue());
-    }
-}
-
-void
-IRForTarget::MaybeSetCastResult (lldb_private::TypeFromParser type)
-{
-    lldb_private::Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
-    
-    if (!m_result_store)
-        return;
-    
-    LoadInst *original_load = NULL;
-        
-    for (llvm::Value *current_value = m_result_store->getValueOperand(), *next_value;
-         current_value != NULL;
-         current_value = next_value)
-    {
-        CastInst *cast_inst = dyn_cast<CastInst>(current_value);
-        LoadInst *load_inst = dyn_cast<LoadInst>(current_value);
-        
-        if (cast_inst)
-        {
-            next_value = cast_inst->getOperand(0);
-        }
-        else if (load_inst)
-        {
-            if (isa<LoadInst>(load_inst->getPointerOperand()))
-            {
-                next_value = load_inst->getPointerOperand();
-            }
-            else
-            {
-                original_load = load_inst;
-                break;
-            }
-        }
-        else
-        {
-            return;
-        }
-    }
-    
-    if (!original_load)
-        return;
-    
-    Value *loaded_value = original_load->getPointerOperand();
-    GlobalVariable *loaded_global = dyn_cast<GlobalVariable>(loaded_value);
-    
-    if (!loaded_global)
-        return;
-    
-    clang::NamedDecl *loaded_decl = DeclForGlobal(loaded_global);
-    
-    if (!loaded_decl)
-        return;
-    
-    clang::VarDecl *loaded_var = dyn_cast<clang::VarDecl>(loaded_decl);
-    
-    if (!loaded_var)
-        return;
-    
-    if (log)
-    {
-        lldb_private::StreamString type_desc_stream;
-        type.DumpTypeDescription(&type_desc_stream);
-        
-        log->Printf("Type to cast variable to: \"%s\"", type_desc_stream.GetString().c_str());
-    }
-    
-    m_const_result = m_decl_map->BuildCastVariable(m_result_name, loaded_var, type);
 }
 
 bool 
@@ -715,7 +625,7 @@ IRForTarget::CreateResultVariable (llvm::Function &llvm_function)
         log->Printf("Result decl type: \"%s\"", type_desc_stream.GetData());
     }
     
-    m_result_name = m_decl_map->GetPersistentResultName();
+    m_result_name = lldb_private::ConstString("$RESULT_NAME");
     
     if (log)
         log->Printf("Creating a new result global: \"%s\" with size 0x%" PRIx64,
@@ -808,8 +718,7 @@ IRForTarget::CreateResultVariable (llvm::Function &llvm_function)
         result_global->replaceAllUsesWith(new_result_global);
     }
     
-    if (!m_const_result)
-        if (!m_decl_map->AddPersistentVariable(result_decl, 
+    if (!m_decl_map->AddPersistentVariable(result_decl,
                                                m_result_name, 
                                                m_result_type,
                                                true,
@@ -1558,6 +1467,11 @@ IRForTarget::MaterializeInitializer (uint8_t *data, Constant *initializer)
         }
         return true;
     }
+    else if (isa<ConstantAggregateZero>(initializer))
+    {
+        memset(data, 0, m_target_data->getTypeStoreSize(initializer_type));
+        return true;
+    }
     return false;
 }
 
@@ -1957,6 +1871,16 @@ IRForTarget::ResolveExternals (Function &llvm_function)
                 return false;
             }
         }
+        else if (global_name.find("OBJC_CLASSLIST_SUP_REFS_$") != global_name.npos)
+        {
+            if (!HandleObjCClass(global))
+            {
+                if (m_error_stream)
+                    m_error_stream->Printf("Error [IRForTarget]: Couldn't resolve the class for an Objective-C static method call\n");
+                
+                return false;
+            }
+        }
         else if (DeclForGlobal(global))
         {
             if (!MaybeHandleVariable (global))
@@ -2139,10 +2063,11 @@ IRForTarget::ReplaceStaticLiterals (llvm::BasicBlock &basic_block)
         llvm::Instruction *inst = *user_iter;
 
         ConstantFP *operand_constant_fp = dyn_cast<ConstantFP>(operand_val);
-        Type *operand_type = operand_constant_fp->getType();
         
         if (operand_constant_fp)
         {
+            Type *operand_type = operand_constant_fp->getType();
+
             APFloat operand_apfloat = operand_constant_fp->getValueAPF();
             APInt operand_apint = operand_apfloat.bitcastToAPInt();
             
@@ -2196,7 +2121,7 @@ IRForTarget::ReplaceStaticLiterals (llvm::BasicBlock &basic_block)
             
             llvm::Type *fp_ptr_ty = operand_constant_fp->getType()->getPointerTo();
             
-            Constant *new_pointer = BuildRelocation(fp_ptr_ty, offset);
+            Constant *new_pointer = BuildRelocation(fp_ptr_ty, aligned_offset);
             
             llvm::LoadInst *fp_load = new llvm::LoadInst(new_pointer, "fp_load", inst);
             
@@ -2764,12 +2689,6 @@ IRForTarget::runOnModule (Module &llvm_module)
         return false;
     }
         
-    if (m_const_result && m_execution_policy != lldb_private::eExecutionPolicyAlways)
-    {
-        m_interpret_success = true;
-        return true;
-    }
-    
     for (bbi = function->begin();
          bbi != function->end();
          ++bbi)
@@ -2803,23 +2722,6 @@ IRForTarget::runOnModule (Module &llvm_module)
 
             return false;
         }
-    }
-    
-    if (m_decl_map && m_execution_policy != lldb_private::eExecutionPolicyAlways)
-    {
-        IRInterpreter interpreter (*m_decl_map,
-                                   m_error_stream);
-
-        interpreter.maybeRunOnFunction(m_const_result, m_result_name, m_result_type, *function, llvm_module, m_interpreter_error);
-        
-        if (m_interpreter_error.Success())
-            return true;
-    }
-    
-    if (m_execution_policy == lldb_private::eExecutionPolicyNever) {
-        if (m_result_name)
-            m_decl_map->RemoveResultVariable(m_result_name);
-        return false;
     }
     
     if (log && log->GetVerbose())

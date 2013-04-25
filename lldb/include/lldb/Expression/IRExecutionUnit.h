@@ -20,6 +20,8 @@
 #include <map>
 
 // Other libraries and framework includes
+#include "llvm/IR/Module.h"
+
 // Project includes
 #include "lldb/lldb-forward.h"
 #include "lldb/lldb-private.h"
@@ -66,7 +68,8 @@ public:
     //------------------------------------------------------------------
     /// Constructor
     //------------------------------------------------------------------
-    IRExecutionUnit (std::auto_ptr<llvm::Module> &module_ap,
+    IRExecutionUnit (std::unique_ptr<llvm::LLVMContext> &context_ap,
+                     std::unique_ptr<llvm::Module> &module_ap,
                      ConstString &name,
                      const lldb::TargetSP &target_sp,
                      std::vector<std::string> &cpu_features);
@@ -79,6 +82,14 @@ public:
     llvm::Module *GetModule()
     {
         return m_module;
+    }
+    
+    llvm::Function *GetFunction()
+    {
+        if (m_module)
+            return m_module->getFunction (m_name.AsCString());
+        else
+            return NULL;
     }
     
     void GetRunnableInfo(Error &error,
@@ -413,7 +424,7 @@ private:
             return m_default_mm_ap->getPointerToNamedFunction(Name, AbortOnFailure);
         }
     private:
-        std::auto_ptr<JITMemoryManager>     m_default_mm_ap;    ///< The memory allocator to use in actually creating space.  All calls are passed through to it.
+        std::unique_ptr<JITMemoryManager>    m_default_mm_ap;    ///< The memory allocator to use in actually creating space.  All calls are passed through to it.
         IRExecutionUnit                    &m_parent;           ///< The execution unit this is a proxy for.
     };
     
@@ -493,8 +504,9 @@ private:
     typedef std::vector<AllocationRecord>   RecordVector;
     RecordVector                            m_records;
 
-    std::auto_ptr<llvm::ExecutionEngine>    m_execution_engine_ap;
-    std::auto_ptr<llvm::Module>             m_module_ap;            ///< Holder for the module until it's been handed off
+    std::unique_ptr<llvm::LLVMContext>       m_context_ap;
+    std::unique_ptr<llvm::ExecutionEngine>   m_execution_engine_ap;
+    std::unique_ptr<llvm::Module>            m_module_ap;            ///< Holder for the module until it's been handed off
     llvm::Module                           *m_module;               ///< Owned by the execution engine
     std::vector<std::string>                m_cpu_features;
     llvm::SmallVector<JittedFunction, 1>    m_jitted_functions;     ///< A vector of all functions that have been JITted into machine code

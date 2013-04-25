@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MemoryGauge.h"
+#include "lldb/lldb-forward.h"
 #include <assert.h>
 #include <cmath>
 #include <mach/mach.h>

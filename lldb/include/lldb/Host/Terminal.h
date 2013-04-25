@@ -13,7 +13,9 @@
 
 #include "lldb/lldb-private.h"
 
+#ifdef LLDB_CONFIG_TERMIOS_SUPPORTED
 struct termios;
+#endif
 
 namespace lldb_private {
 
@@ -173,7 +175,9 @@ protected:
     //------------------------------------------------------------------
     Terminal        m_tty;          ///< A terminal
     int             m_tflags;       ///< Cached tflags information.
-    std::auto_ptr<struct termios> m_termios_ap; ///< Cached terminal state information.
+#ifdef LLDB_CONFIG_TERMIOS_SUPPORTED
+    std::unique_ptr<struct termios> m_termios_ap; ///< Cached terminal state information.
+#endif
     lldb::pid_t     m_process_group;///< Cached process group information.
 
 };

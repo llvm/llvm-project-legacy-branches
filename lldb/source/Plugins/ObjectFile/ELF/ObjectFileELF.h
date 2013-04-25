@@ -58,6 +58,13 @@ public:
                           const lldb::ProcessSP &process_sp, 
                           lldb::addr_t header_addr);
 
+    static size_t
+    GetModuleSpecifications (const lldb_private::FileSpec& file,
+                             lldb::DataBufferSP& data_sp,
+                             lldb::offset_t data_offset,
+                             lldb::offset_t file_offset,
+                             lldb::offset_t length,
+                             lldb_private::ModuleSpecList &specs);
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
@@ -155,7 +162,7 @@ private:
 
     /// List of file specifications corresponding to the modules (shared
     /// libraries) on which this object file depends.
-    mutable std::auto_ptr<lldb_private::FileSpecList> m_filespec_ap;
+    mutable std::unique_ptr<lldb_private::FileSpecList> m_filespec_ap;
 
     /// Data extractor holding the string table used to resolve section names.
     lldb_private::DataExtractor m_shstr_data;

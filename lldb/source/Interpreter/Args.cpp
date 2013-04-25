@@ -1509,7 +1509,6 @@ Args::ParseArgsForCompletion
     while (1)
     {
         bool missing_argument = false;
-        int parse_start = optind;
         int long_options_index = -1;
         
         val = ::getopt_long_only (dummy_vec.size() - 1,
@@ -1603,7 +1602,7 @@ Args::ParseArgsForCompletion
             switch (long_options[long_options_index].has_arg)
             {
             case no_argument:
-                option_element_vector.push_back (OptionArgElement (opt_defs_index, parse_start, 0));
+                option_element_vector.push_back (OptionArgElement (opt_defs_index, optind - 1, 0));
                 break;
             case required_argument:
                 if (optarg != NULL)

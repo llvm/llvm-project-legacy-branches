@@ -13,7 +13,6 @@
 // C Includes
 // C++ Includes
 #include <list>
-#include <memory>
 #include <map>
 #include <vector>
 
@@ -567,15 +566,15 @@ protected:
     lldb_private::DataExtractor     m_data_apple_namespaces;
     lldb_private::DataExtractor     m_data_apple_objc;
 
-    // The auto_ptr items below are generated on demand if and when someone accesses
+    // The unique pointer items below are generated on demand if and when someone accesses
     // them through a non const version of this class.
-    std::auto_ptr<DWARFDebugAbbrev>     m_abbr;
-    std::auto_ptr<DWARFDebugInfo>       m_info;
-    std::auto_ptr<DWARFDebugLine>       m_line;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_names_ap;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_types_ap;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_namespaces_ap;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_objc_ap;
+    std::unique_ptr<DWARFDebugAbbrev>     m_abbr;
+    std::unique_ptr<DWARFDebugInfo>       m_info;
+    std::unique_ptr<DWARFDebugLine>       m_line;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_names_ap;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_types_ap;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_namespaces_ap;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_objc_ap;
     NameToDIE                           m_function_basename_index;  // All concrete functions
     NameToDIE                           m_function_fullname_index;  // All concrete functions
     NameToDIE                           m_function_method_index;    // All inlined functions
@@ -589,7 +588,7 @@ protected:
                                         m_using_apple_tables:1;
     lldb_private::LazyBool              m_supports_DW_AT_APPLE_objc_complete_type;
 
-    std::auto_ptr<DWARFDebugRanges>     m_ranges;
+    std::unique_ptr<DWARFDebugRanges>     m_ranges;
     UniqueDWARFASTTypeMap m_unique_ast_type_map;
     typedef llvm::SmallPtrSet<const DWARFDebugInfoEntry *, 4> DIEPointerSet;
     typedef llvm::DenseMap<const DWARFDebugInfoEntry *, clang::DeclContext *> DIEToDeclContextMap;

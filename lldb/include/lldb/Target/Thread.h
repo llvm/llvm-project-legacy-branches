@@ -47,18 +47,15 @@ public:
     GetTraceEnabledState() const;
 };
 
-typedef STD_SHARED_PTR(ThreadProperties) ThreadPropertiesSP;
+typedef std::shared_ptr<ThreadProperties> ThreadPropertiesSP;
 
 class Thread :
-    public STD_ENABLE_SHARED_FROM_THIS(Thread),
+    public std::enable_shared_from_this<Thread>,
     public ThreadProperties,
     public UserID,
     public ExecutionContextScope,
     public Broadcaster
 {
-friend class ThreadEventData;
-friend class ThreadList;
-
 public:
     //------------------------------------------------------------------
     /// Broadcaster event bits definitions.
@@ -420,6 +417,12 @@ public:
     SetBackingThread (const lldb::ThreadSP &thread_sp)
     {
         return false;
+    }
+    
+    virtual lldb::ThreadSP
+    GetBackingThread () const
+    {
+        return lldb::ThreadSP();
     }
 
     virtual void
@@ -899,6 +902,7 @@ protected:
 
     friend class ThreadPlan;
     friend class ThreadList;
+    friend class ThreadEventData;
     friend class StackFrameList;
     friend class StackFrame;
     
@@ -968,7 +972,7 @@ protected:
     lldb::StateType     m_resume_state;         ///< This state is used to force a thread to be suspended from outside the ThreadPlan logic.
     lldb::StateType     m_temporary_resume_state; ///< This state records what the thread was told to do by the thread plan logic for the current resume.
                                                   /// It gets set in Thread::WillResume.
-    std::auto_ptr<lldb_private::Unwind> m_unwinder_ap;
+    std::unique_ptr<lldb_private::Unwind> m_unwinder_ap;
     bool                m_destroy_called;       // This is used internally to make sure derived Thread classes call DestroyThread.
     uint32_t m_thread_stop_reason_stop_id;      // This is the stop id for which the StopInfo is valid.  Can use this so you know that
                                                 // the thread's m_actual_stop_info_sp is current and you don't have to fetch it again

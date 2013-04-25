@@ -228,7 +228,7 @@ protected:
 LanguageRuntime*
 LanguageRuntime::FindPlugin (Process *process, lldb::LanguageType language)
 {
-    std::auto_ptr<LanguageRuntime> language_runtime_ap;
+    std::unique_ptr<LanguageRuntime> language_runtime_ap;
     LanguageRuntimeCreateInstance create_callback;
 
     for (uint32_t idx = 0;

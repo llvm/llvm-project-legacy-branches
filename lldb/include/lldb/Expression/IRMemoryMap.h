@@ -83,14 +83,26 @@ private:
         size_t          m_size;             ///< The size of the requested allocation
         uint32_t        m_permissions;      ///< The access permissions on the memory in the process.  In the host, the memory is always read/write.
         uint8_t         m_alignment;        ///< The alignment of the requested allocation
-        
-        std::unique_ptr<DataBufferHeap> m_data;
-        
+        DataBufferHeap  m_data;
         AllocationPolicy    m_policy;
-		Allocation() {}
-		Allocation(const Allocation&) {}
-	private:
-		Allocation& operator=(const Allocation&) { return *this; }
+    public:
+        Allocation (lldb::addr_t process_alloc,
+                    lldb::addr_t process_start,
+                    size_t size,
+                    uint32_t permissions,
+                    uint8_t alignment,
+                    AllocationPolicy m_policy);
+
+        Allocation () :
+            m_process_alloc (LLDB_INVALID_ADDRESS),
+            m_process_start (LLDB_INVALID_ADDRESS),
+            m_size (0),
+            m_permissions (0),
+            m_alignment (0),
+            m_data (),
+            m_policy (eAllocationPolicyInvalid)
+        {
+        }
     };
     
     lldb::ProcessWP                             m_process_wp;
@@ -101,6 +113,7 @@ private:
     lldb::addr_t FindSpace (size_t size);
     bool ContainsHostOnlyAllocations ();
     AllocationMap::iterator FindAllocation (lldb::addr_t addr, size_t size);
+    bool IntersectsAllocation (lldb::addr_t addr, size_t size);
 };
     
 }

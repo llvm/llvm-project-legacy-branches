@@ -97,7 +97,7 @@ public:
     SetStopOnSharedLibraryEvents (bool stop);
 };
 
-typedef STD_SHARED_PTR(ProcessProperties) ProcessPropertiesSP;
+typedef std::shared_ptr<ProcessProperties> ProcessPropertiesSP;
 
 //----------------------------------------------------------------------
 // ProcessInfo
@@ -1349,7 +1349,7 @@ protected:
 /// @brief A plug-in interface definition class for debugging a process.
 //----------------------------------------------------------------------
 class Process :
-    public STD_ENABLE_SHARED_FROM_THIS(Process),
+    public std::enable_shared_from_this<Process>,
     public ProcessProperties,
     public UserID,
     public Broadcaster,
@@ -2688,6 +2688,42 @@ public:
                 Error &error);
 
     //------------------------------------------------------------------
+    /// Read a NULL terminated string from memory
+    ///
+    /// This function will read a cache page at a time until a NULL
+    /// string terminator is found. It will stop reading if an aligned
+    /// sequence of NULL termination \a type_width bytes is not found
+    /// before reading \a cstr_max_len bytes.  The results are always 
+    /// guaranteed to be NULL terminated, and that no more than
+    /// (max_bytes - type_width) bytes will be read.
+    ///
+    /// @param[in] vm_addr
+    ///     The virtual load address to start the memory read.
+    ///
+    /// @param[in] str
+    ///     A character buffer containing at least max_bytes.
+    ///
+    /// @param[in] max_bytes
+    ///     The maximum number of bytes to read.
+    ///
+    /// @param[in] error
+    ///     The error status of the read operation.
+    ///
+    /// @param[in] type_width
+    ///     The size of the null terminator (1 to 4 bytes per
+    ///     character).  Defaults to 1.
+    ///
+    /// @return
+    ///     The error status or the number of bytes prior to the null terminator.
+    //------------------------------------------------------------------
+    size_t
+    ReadStringFromMemory (lldb::addr_t vm_addr, 
+                           char *str, 
+                           size_t max_bytes,
+                           Error &error,
+                           size_t type_width = 1);
+
+    //------------------------------------------------------------------
     /// Read a NULL terminated C string from memory
     ///
     /// This function will read a cache page at a time until the NULL
@@ -3463,10 +3499,17 @@ public:
     ReadWriteLock &
     GetRunLock ()
     {
+#if defined(__APPLE__)
+        // The "m_private_run_lock" causes problems for other platforms
+        // right now, so we are leaving this in for Apple builds only
+        // until we can get the kinks worked out.
         if (Host::GetCurrentThread() == m_private_state_thread)
             return m_private_run_lock;
         else
             return m_public_run_lock;
+#else
+        return m_public_run_lock;
+#endif
     }
 
 protected:
@@ -3587,9 +3630,9 @@ protected:
     std::vector<lldb::addr_t>   m_image_tokens;
     Listener                    &m_listener;
     BreakpointSiteList          m_breakpoint_site_list; ///< This is the list of breakpoint locations we intend to insert in the target.
-    std::auto_ptr<DynamicLoader> m_dyld_ap;
-    std::auto_ptr<DynamicCheckerFunctions> m_dynamic_checkers_ap; ///< The functions used by the expression parser to validate data that expressions use.
-    std::auto_ptr<OperatingSystem> m_os_ap;
+    std::unique_ptr<DynamicLoader> m_dyld_ap;
+    std::unique_ptr<DynamicCheckerFunctions> m_dynamic_checkers_ap; ///< The functions used by the expression parser to validate data that expressions use.
+    std::unique_ptr<OperatingSystem> m_os_ap;
     UnixSignals                 m_unix_signals;         /// This is the current signal set for this process.
     lldb::ABISP                 m_abi_sp;
     lldb::InputReaderSP         m_process_input_reader;
@@ -3603,10 +3646,12 @@ protected:
     AllocatedMemoryCache        m_allocated_memory_cache;
     bool                        m_should_detach;   /// Should we detach if the process object goes away with an explicit call to Kill or Detach?
     LanguageRuntimeCollection   m_language_runtimes;
-    std::auto_ptr<NextEventAction> m_next_event_action_ap;
+    std::unique_ptr<NextEventAction> m_next_event_action_ap;
     std::vector<PreResumeCallbackAndBaton> m_pre_resume_actions;
     ReadWriteLock               m_public_run_lock;
+#if defined(__APPLE__)
     ReadWriteLock               m_private_run_lock;
+#endif
     Predicate<bool>             m_currently_handling_event;
     bool                        m_finalize_called;
     lldb::StateType             m_last_broadcast_state;   /// This helps with the Public event coalescing in ShouldBroadcastEvent.

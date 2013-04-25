@@ -10,7 +10,7 @@
 #ifndef __PerfTestDriver_Results_h__
 #define __PerfTestDriver_Results_h__
 
-#include <memory>
+#include "lldb/lldb-forward.h"
 #include <map>
 #include <string>
 #include <vector>

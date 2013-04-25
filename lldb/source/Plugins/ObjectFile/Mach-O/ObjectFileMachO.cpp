@@ -19,6 +19,7 @@
 #include "lldb/Core/FileSpecList.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/RangeMap.h"
 #include "lldb/Core/Section.h"
@@ -43,13 +44,13 @@
 #include <dlfcn.h>
 #endif
 
+#ifndef __APPLE__
+#include "Utility/UuidCompatibility.h"
+#endif
+
 using namespace lldb;
 using namespace lldb_private;
 using namespace llvm::MachO;
-
-#ifdef _WIN32
-typedef char uuid_t[16];
-#endif
 
 class RegisterContextDarwin_x86_64_Mach : public RegisterContextDarwin_x86_64
 {
@@ -367,7 +368,8 @@ ObjectFileMachO::Initialize()
     PluginManager::RegisterPlugin (GetPluginNameStatic(),
                                    GetPluginDescriptionStatic(),
                                    CreateInstance,
-                                   CreateMemoryInstance);
+                                   CreateMemoryInstance,
+                                   GetModuleSpecifications);
 }
 
 void
@@ -411,7 +413,7 @@ ObjectFileMachO::CreateInstance (const lldb::ModuleSP &module_sp,
             data_sp = file->MemoryMapFileContents(file_offset, length);
             data_offset = 0;
         }
-        std::auto_ptr<ObjectFile> objfile_ap(new ObjectFileMachO (module_sp, data_sp, data_offset, file, file_offset, length));
+        std::unique_ptr<ObjectFile> objfile_ap(new ObjectFileMachO (module_sp, data_sp, data_offset, file, file_offset, length));
         if (objfile_ap.get() && objfile_ap->ParseHeader())
             return objfile_ap.release();
     }
@@ -426,12 +428,53 @@ ObjectFileMachO::CreateMemoryInstance (const lldb::ModuleSP &module_sp,
 {
     if (ObjectFileMachO::MagicBytesMatch(data_sp, 0, data_sp->GetByteSize()))
     {
-        std::auto_ptr<ObjectFile> objfile_ap(new ObjectFileMachO (module_sp, data_sp, process_sp, header_addr));
+        std::unique_ptr<ObjectFile> objfile_ap(new ObjectFileMachO (module_sp, data_sp, process_sp, header_addr));
         if (objfile_ap.get() && objfile_ap->ParseHeader())
             return objfile_ap.release();
     }
     return NULL;
 }
+
+size_t
+ObjectFileMachO::GetModuleSpecifications (const lldb_private::FileSpec& file,
+                                          lldb::DataBufferSP& data_sp,
+                                          lldb::offset_t data_offset,
+                                          lldb::offset_t file_offset,
+                                          lldb::offset_t length,
+                                          lldb_private::ModuleSpecList &specs)
+{
+    const size_t initial_count = specs.GetSize();
+    
+    if (ObjectFileMachO::MagicBytesMatch(data_sp, 0, data_sp->GetByteSize()))
+    {
+        DataExtractor data;
+        data.SetData(data_sp);
+        llvm::MachO::mach_header header;
+        if (ParseHeader (data, &data_offset, header))
+        {
+            if (header.sizeofcmds >= data_sp->GetByteSize())
+            {
+                data_sp = file.ReadFileContents(file_offset, header.sizeofcmds);
+                data_offset = 0;
+            }
+            if (data_sp)
+            {
+                ModuleSpec spec;
+                spec.GetFileSpec() = file;
+                spec.GetArchitecture().SetArchitecture(eArchTypeMachO,
+                                                       header.cputype,
+                                                       header.cpusubtype);
+                if (spec.GetArchitecture().IsValid())
+                {
+                    GetUUID (header, data, data_offset, spec.GetUUID());
+                    specs.Append(spec);
+                }
+            }
+        }
+    }
+    return specs.GetSize() - initial_count;
+}
+
 
 
 const ConstString &
@@ -541,6 +584,61 @@ ObjectFileMachO::~ObjectFileMachO()
 {
 }
 
+bool
+ObjectFileMachO::ParseHeader (DataExtractor &data,
+                              lldb::offset_t *data_offset_ptr,
+                              llvm::MachO::mach_header &header)
+{
+    data.SetByteOrder (lldb::endian::InlHostByteOrder());
+    // Leave magic in the original byte order
+    header.magic = data.GetU32(data_offset_ptr);
+    bool can_parse = false;
+    bool is_64_bit = false;
+    switch (header.magic)
+    {
+        case HeaderMagic32:
+            data.SetByteOrder (lldb::endian::InlHostByteOrder());
+            data.SetAddressByteSize(4);
+            can_parse = true;
+            break;
+            
+        case HeaderMagic64:
+            data.SetByteOrder (lldb::endian::InlHostByteOrder());
+            data.SetAddressByteSize(8);
+            can_parse = true;
+            is_64_bit = true;
+            break;
+            
+        case HeaderMagic32Swapped:
+            data.SetByteOrder(lldb::endian::InlHostByteOrder() == eByteOrderBig ? eByteOrderLittle : eByteOrderBig);
+            data.SetAddressByteSize(4);
+            can_parse = true;
+            break;
+            
+        case HeaderMagic64Swapped:
+            data.SetByteOrder(lldb::endian::InlHostByteOrder() == eByteOrderBig ? eByteOrderLittle : eByteOrderBig);
+            data.SetAddressByteSize(8);
+            is_64_bit = true;
+            can_parse = true;
+            break;
+            
+        default:
+            break;
+    }
+    
+    if (can_parse)
+    {
+        data.GetU32(data_offset_ptr, &header.cputype, 6);
+        if (is_64_bit)
+            *data_offset_ptr += 4;
+        return true;
+    }
+    else
+    {
+        memset(&header, 0, sizeof(header));
+    }
+    return false;
+}
 
 bool
 ObjectFileMachO::ParseHeader ()
@@ -848,25 +946,36 @@ ObjectFileMachO::ParseSections ()
                 load_cmd.filesize = m_data.GetAddress(&offset);
                 if (m_length != 0 && load_cmd.filesize != 0)
                 {
+                    if (load_cmd.fileoff > m_length)
+                    {
+                        // We have a load command that says it extends past the end of hte file.  This is likely
+                        // a corrupt file.  We don't have any way to return an error condition here (this method
+                        // was likely invokved from something like ObjectFile::GetSectionList()) -- all we can do
+                        // is null out the SectionList vector and if a process has been set up, dump a message
+                        // to stdout.  The most common case here is core file debugging with a truncated file.
+                        const char *lc_segment_name = load_cmd.cmd == LoadCommandSegment64 ? "LC_SEGMENT_64" : "LC_SEGMENT";
+                        GetModule()->ReportError("is a corrupt mach-o file: load command %u %s has a fileoff (0x%" PRIx64 ") that extends beyond the end of the file (0x%" PRIx64 ")",
+                                                 i,
+                                                 lc_segment_name,
+                                                 load_cmd.fileoff,
+                                                 m_length);
+                        m_sections_ap->Clear();
+                        return 0;
+                    }
+                    
                     if (load_cmd.fileoff + load_cmd.filesize > m_length)
                     {
                         // We have a load command that says it extends past the end of hte file.  This is likely
                         // a corrupt file.  We don't have any way to return an error condition here (this method
                         // was likely invokved from something like ObjectFile::GetSectionList()) -- all we can do
                         // is null out the SectionList vector and if a process has been set up, dump a message
-                        // to stdout.  The most common case here is core file debugging with a truncated file - and
-                        // in that case we don't have a Process yet so nothing will be printed.  Not really ideal;
-                        // the ObjectFile needs some way of reporting an error message for methods like GetSectionList
-                        // which fail.
-                        ProcessSP process_sp (m_process_wp.lock());
-                        if (process_sp)
-                        {
-                            Stream *s = &process_sp->GetTarget().GetDebugger().GetOutputStream();
-                            if (s)
-                            {
-                                s->Printf ("Corrupt/invalid Mach-O object file -- a load command extends past the end of the file.\n");
-                            }
-                        }
+                        // to stdout.  The most common case here is core file debugging with a truncated file.
+                        const char *lc_segment_name = load_cmd.cmd == LoadCommandSegment64 ? "LC_SEGMENT_64" : "LC_SEGMENT";
+                        GetModule()->ReportError("is a corrupt mach-o file: load command %u %s has a fileoff + filesize (0x%" PRIx64 ") that extends beyond the end of the file (0x%" PRIx64 ")",
+                                                 i,
+                                                 lc_segment_name,
+                                                 load_cmd.fileoff + load_cmd.filesize,
+                                                 m_length);
                         m_sections_ap->Clear();
                         return 0;
                     }
@@ -1388,6 +1497,10 @@ ObjectFileMachO::ParseSymtab (bool minimize)
                     if (lldb_shared_cache.IsValid() && process_shared_cache.IsValid() && lldb_shared_cache != process_shared_cache)
                     {
                             use_lldb_cache = false;
+                            ModuleSP module_sp (GetModule());
+                            if (module_sp)
+                                module_sp->ReportWarning ("shared cache in process does not match lldb's own shared cache, startup will be slow.");
+
                     }
 
                     PlatformSP platform_sp (target.GetPlatform());
@@ -1715,6 +1828,9 @@ ObjectFileMachO::ParseSymtab (bool minimize)
                         // The on-disk dyld_shared_cache file is not the same as the one in this
                         // process' memory, don't use it.
                         uuid_match = false;
+                        ModuleSP module_sp (GetModule());
+                        if (module_sp)
+                            module_sp->ReportWarning ("process shared cache does not match on-disk dyld_shared_cache file, some symbol names will be missing.");
                     }
                 }
 
@@ -3463,6 +3579,49 @@ ObjectFileMachO::Dump (Stream *s)
     }
 }
 
+bool
+ObjectFileMachO::GetUUID (const llvm::MachO::mach_header &header,
+                          const lldb_private::DataExtractor &data,
+                          lldb::offset_t lc_offset,
+                          lldb_private::UUID& uuid)
+{
+    uint32_t i;
+        struct uuid_command load_cmd;
+
+    lldb::offset_t offset = lc_offset;
+    for (i=0; i<header.ncmds; ++i)
+        {
+            const lldb::offset_t cmd_offset = offset;
+        if (data.GetU32(&offset, &load_cmd, 2) == NULL)
+                break;
+        
+            if (load_cmd.cmd == LoadCommandUUID)
+            {
+            const uint8_t *uuid_bytes = data.PeekData(offset, 16);
+            
+                if (uuid_bytes)
+                {
+                    // OpenCL on Mac OS X uses the same UUID for each of its object files.
+                    // We pretend these object files have no UUID to prevent crashing.
+                
+                    const uint8_t opencl_uuid[] = { 0x8c, 0x8e, 0xb3, 0x9b,
+                                                    0x3b, 0xa8,
+                                                    0x4b, 0x16,
+                                                    0xb6, 0xa4,
+                                                    0x27, 0x63, 0xbb, 0x14, 0xf0, 0x0d };
+                
+                    if (!memcmp(uuid_bytes, opencl_uuid, 16))
+                        return false;
+                
+                uuid.SetBytes (uuid_bytes);
+                    return true;
+                }
+                return false;
+            }
+            offset = cmd_offset + load_cmd.cmdsize;
+        }
+    return false;
+}
 
 bool
 ObjectFileMachO::GetUUID (lldb_private::UUID* uuid)
@@ -3471,40 +3630,8 @@ ObjectFileMachO::GetUUID (lldb_private::UUID* uuid)
     if (module_sp)
     {
         lldb_private::Mutex::Locker locker(module_sp->GetMutex());
-        struct uuid_command load_cmd;
         lldb::offset_t offset = MachHeaderSizeFromMagic(m_header.magic);
-        uint32_t i;
-        for (i=0; i<m_header.ncmds; ++i)
-        {
-            const lldb::offset_t cmd_offset = offset;
-            if (m_data.GetU32(&offset, &load_cmd, 2) == NULL)
-                break;
-
-            if (load_cmd.cmd == LoadCommandUUID)
-            {
-                const uint8_t *uuid_bytes = m_data.PeekData(offset, 16);
-
-                if (uuid_bytes)
-                {
-                    // OpenCL on Mac OS X uses the same UUID for each of its object files.
-                    // We pretend these object files have no UUID to prevent crashing.
-
-                    const uint8_t opencl_uuid[] = { 0x8c, 0x8e, 0xb3, 0x9b,
-                                                    0x3b, 0xa8,
-                                                    0x4b, 0x16,
-                                                    0xb6, 0xa4,
-                                                    0x27, 0x63, 0xbb, 0x14, 0xf0, 0x0d };
-
-                    if (!memcmp(uuid_bytes, opencl_uuid, 16))
-                        return false;
-
-                    uuid->SetBytes (uuid_bytes);
-                    return true;
-                }
-                return false;
-            }
-            offset = cmd_offset + load_cmd.cmdsize;
-        }
+        return GetUUID (m_header, m_data, offset, *uuid);
     }
     return false;
 }
@@ -4031,12 +4158,10 @@ ObjectFileMachO::GetLLDBSharedCacheUUID ()
         uint8_t *dyld_all_image_infos_address = dyld_get_all_image_infos();
         if (dyld_all_image_infos_address)
         {
-            uint32_t version;
-            memcpy (&version, dyld_all_image_infos_address, 4);
-            if (version >= 13)
+            uint32_t *version = (uint32_t*) dyld_all_image_infos_address;              // version <mach-o/dyld_images.h>
+            if (*version >= 13)
             {
-                uint8_t *sharedCacheUUID_address = 0;
-                sharedCacheUUID_address = dyld_all_image_infos_address + 84;  // sharedCacheUUID <mach-o/dyld_images.h>
+                uuid_t *sharedCacheUUID_address = (uuid_t*) ((uint8_t*) dyld_all_image_infos_address + 84);  // sharedCacheUUID <mach-o/dyld_images.h>
                 uuid.SetBytes (sharedCacheUUID_address);
             }
         }

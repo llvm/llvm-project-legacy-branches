@@ -46,6 +46,14 @@ public:
                     lldb::offset_t offset,
                     lldb::offset_t length);
 
+    static size_t
+    GetModuleSpecifications (const lldb_private::FileSpec& file,
+                             lldb::DataBufferSP& data_sp,
+                             lldb::offset_t data_offset,
+                             lldb::offset_t file_offset,
+                             lldb::offset_t length,
+                             lldb_private::ModuleSpecList &specs);
+
     static bool
     MagicBytesMatch (const lldb_private::DataExtractor &data);
 
@@ -119,7 +127,7 @@ protected:
     class Archive
     {
     public:
-        typedef STD_SHARED_PTR(Archive) shared_ptr;
+        typedef std::shared_ptr<Archive> shared_ptr;
         typedef std::multimap<lldb_private::FileSpec, shared_ptr> Map;
 
         static Map &

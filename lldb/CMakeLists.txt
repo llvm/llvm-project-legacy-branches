@@ -83,16 +83,41 @@ include_directories(/usr/include/python2.7)
 include_directories(../clang/include)
 include_directories("${CMAKE_CURRENT_BINARY_DIR}/../clang/include")
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.7")
-    set(CMAKE_CXX_FLAGS "-std=c++0x")
-  else()
-    set(CMAKE_CXX_FLAGS "-std=c++11")
+# lldb requires c++11 to build. Make sure that we have a compiler and standard
+# library combination that can do that.
+if (MSVC11)
+  # Do nothing, we're good.
+elseif (NOT MSVC)
+  # gcc and clang require the -std=c++0x or -std=c++11 flag.
+  if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU" OR
+      "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+    if (NOT ("${CMAKE_CXX_FLAGS}" MATCHES "-std=c\\+\\+0x" OR
+             "${CMAKE_CXX_FLAGS}" MATCHES "-std=gnu\\+\\+0x" OR
+             "${CMAKE_CXX_FLAGS}" MATCHES "-std=c\\+\\+11" OR
+             "${CMAKE_CXX_FLAGS}" MATCHES "-std=gnu\\+\\+11"))
+      if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.7")
+          set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+        else()
+          set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+        endif()
+      else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+      endif()
+    endif()
   endif()
 else()
-  if (NOT( CMAKE_SYSTEM_NAME MATCHES "Windows" ))
-    set(CMAKE_CXX_FLAGS "-std=c++11")
+    if (NOT( CMAKE_SYSTEM_NAME MATCHES "Windows" ))
+      message(FATAL_ERROR "The selected compiler does not support c++11 which is "
+            "required to build lldb.")
   endif()
+endif()
+
+# Disable Clang warnings
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  add_lldb_definitions(
+    -Wno-deprecated-declarations # Suppress "deprecated auto_ptr" warnings
+  )
 endif()
 
 # Disable MSVC warnings
@@ -149,7 +174,11 @@ macro(add_lldb_library name)
   #endif()
 
   if(LLDB_USED_LIBS)
-    target_link_libraries(${name} -Wl,--start-group ${LLDB_USED_LIBS} -Wl,--end-group)
+    if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+      target_link_libraries(${name} -Wl,--start-group ${LLDB_USED_LIBS} -Wl,--end-group)
+    else()
+      target_link_libraries(${name} ${LLDB_USED_LIBS})
+    endif()
   endif()
   target_link_libraries(${name} ${CLANG_USED_LIBS})
   target_link_libraries(${name} ${LLVM_USED_LIBS})
@@ -198,6 +227,23 @@ install(DIRECTORY include/
   PATTERN "*.h"
   PATTERN ".svn" EXCLUDE
   )
+
+
+# Find libraries or frameworks that may be needed
+if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  find_library(CARBON_LIBRARY Carbon)
+  find_library(FOUNDATION_LIBRARY Foundation)
+  find_library(CORE_FOUNDATION_LIBRARY CoreFoundation)
+  find_library(CORE_SERVICES_LIBRARY CoreServices)
+  find_library(SECURITY_LIBRARY Security)
+  find_library(DEBUG_SYMBOLS_LIBRARY DebugSymbols PATHS "/System/Library/PrivateFrameworks")
+
+  set(LIBXML2_INCLUDE_DIR "/usr/include/libxml2")
+  list(APPEND system_libs xml2)
+  list(APPEND system_libs ${CARBON_LIBRARY} ${FOUNDATION_LIBRARY}
+  ${CORE_FOUNDATION_LIBRARY} ${CORE_SERVICES_LIBRARY} ${SECURITY_LIBRARY}
+  ${DEBUG_SYMBOLS_LIBRARY})
+endif()
 
 #add_subdirectory(include)
 add_subdirectory(scripts)

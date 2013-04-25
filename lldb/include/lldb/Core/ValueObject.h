@@ -12,6 +12,9 @@
 
 // C Includes
 // C++ Includes
+#ifndef _MSC_VER
+#include <initializer_list>
+#endif
 #include <map>
 #include <vector>
 // Other libraries and framework includes

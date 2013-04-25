@@ -23,6 +23,7 @@
 #include "lldb/Expression/ClangExpressionParser.h"
 #include "lldb/Expression/ClangUtilityFunction.h"
 #include "lldb/Expression/ExpressionSourceCode.h"
+#include "lldb/Expression/IRExecutionUnit.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Target.h"
@@ -124,17 +125,14 @@ ClangUtilityFunction::Install (Stream &error_stream,
     //////////////////////////////////
     // JIT the output of the parser
     //
-    
-    lldb::ClangExpressionVariableSP const_result;
-    
-    bool evaluated_statically = false; // should stay that way
+        
+    bool can_interpret = false; // should stay that way
     
     Error jit_error = parser.PrepareForExecution (m_jit_start_addr, 
                                                   m_jit_end_addr,
                                                   m_execution_unit_ap,
                                                   exe_ctx,
-                                                  evaluated_statically,
-                                                  const_result,
+                                                  can_interpret,
                                                   eExecutionPolicyAlways);
     
     if (m_jit_start_addr != LLDB_INVALID_ADDRESS)

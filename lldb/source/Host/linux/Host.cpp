@@ -85,7 +85,7 @@ Host::GetAuxvData(lldb_private::Process *process)
         return buf_sp;
 
     size_t bytes_read = 0;
-    std::auto_ptr<DataBufferHeap> buf_ap(new DataBufferHeap(1024, 0));
+    std::unique_ptr<DataBufferHeap> buf_ap(new DataBufferHeap(1024, 0));
     for (;;) 
     {
         size_t avail = buf_ap->GetByteSize() - bytes_read;

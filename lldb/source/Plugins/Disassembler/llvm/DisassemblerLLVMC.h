@@ -43,7 +43,7 @@ class DisassemblerLLVMC : public lldb_private::Disassembler
     public:
         LLVMCDisassembler (const char *triple, unsigned flavor, DisassemblerLLVMC &owner);
         
-        ~LLVMCDisassembler() {};
+        ~LLVMCDisassembler();
         
         uint64_t GetMCInst (const uint8_t *opcode_data, size_t opcode_data_len, lldb::addr_t pc, llvm::MCInst &mc_inst);
         uint64_t PrintMCInst (llvm::MCInst &mc_inst, char *output_buffer, size_t out_buffer_len);
@@ -54,14 +54,14 @@ class DisassemblerLLVMC : public lldb_private::Disassembler
         }
         
     private:
-        bool                                 m_is_valid;
-        std::auto_ptr<llvm::MCContext>       m_context_ap;
-        std::auto_ptr<llvm::MCAsmInfo>       m_asm_info_ap;
-        std::auto_ptr<llvm::MCSubtargetInfo> m_subtarget_info_ap;
-        std::auto_ptr<llvm::MCInstrInfo>     m_instr_info_ap;
-        std::auto_ptr<llvm::MCRegisterInfo>  m_reg_info_ap;
-        std::auto_ptr<llvm::MCInstPrinter>   m_instr_printer_ap;
-        std::auto_ptr<llvm::MCDisassembler>  m_disasm_ap;
+        bool                                    m_is_valid;
+        std::unique_ptr<llvm::MCContext>         m_context_ap;
+        std::unique_ptr<llvm::MCAsmInfo>         m_asm_info_ap;
+        std::unique_ptr<llvm::MCSubtargetInfo>   m_subtarget_info_ap;
+        std::unique_ptr<llvm::MCInstrInfo>       m_instr_info_ap;
+        std::unique_ptr<llvm::MCRegisterInfo>    m_reg_info_ap;
+        std::unique_ptr<llvm::MCInstPrinter>     m_instr_printer_ap;
+        std::unique_ptr<llvm::MCDisassembler>    m_disasm_ap;
     };
 
 public:
@@ -164,8 +164,8 @@ protected:
     lldb_private::Mutex m_mutex;
     bool m_data_from_file;
     
-    std::auto_ptr<LLVMCDisassembler> m_disasm_ap;
-    std::auto_ptr<LLVMCDisassembler> m_alternate_disasm_ap;
+    std::unique_ptr<LLVMCDisassembler> m_disasm_ap;
+    std::unique_ptr<LLVMCDisassembler> m_alternate_disasm_ap;
 };
 
 #endif  // liblldb_DisassemblerLLVM_h_

@@ -224,7 +224,7 @@ public:
     }
 };
 
-typedef STD_SHARED_PTR(PlatformDarwinKernelProperties) PlatformDarwinKernelPropertiesSP;
+typedef std::shared_ptr<PlatformDarwinKernelProperties> PlatformDarwinKernelPropertiesSP;
 
 static const PlatformDarwinKernelPropertiesSP &
 GetGlobalProperties()
@@ -392,6 +392,12 @@ PlatformDarwinKernel::GetMacDirectoriesToSearch (std::vector<lldb_private::FileS
     if (sle.Exists() && sle.GetFileType() == FileSpec::eFileTypeDirectory)
     {
         directories.push_back(sle);
+    }
+
+    FileSpec le("/Library/Extensions", true);
+    if (le.Exists() && le.GetFileType() == FileSpec::eFileTypeDirectory)
+    {
+        directories.push_back(le);
     }
 
     FileSpec kdk("/Volumes/KernelDebugKit", true);

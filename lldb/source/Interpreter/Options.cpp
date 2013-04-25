@@ -522,8 +522,7 @@ Options::GenerateOptionUsage
 
         std::set<int> options;
         std::set<int>::const_iterator options_pos, options_end;
-        bool first;
-        for (i = 0, first = true; i < num_options; ++i)
+        for (i = 0; i < num_options; ++i)
         {
             if (opt_defs[i].usage_mask & opt_set_mask && isprint8(opt_defs[i].short_option))
             {
@@ -901,7 +900,7 @@ Options::HandleOptionArgumentCompletion
 )
 {
     const OptionDefinition *opt_defs = GetDefinitions();
-    std::auto_ptr<SearchFilter> filter_ap;
+    std::unique_ptr<SearchFilter> filter_ap;
 
     int opt_arg_pos = opt_element_vector[opt_element_index].opt_arg_pos;
     int opt_defs_index = opt_element_vector[opt_element_index].opt_defs_index;

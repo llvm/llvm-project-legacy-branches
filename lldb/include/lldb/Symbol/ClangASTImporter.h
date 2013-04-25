@@ -162,7 +162,7 @@ public:
     //
     
     typedef std::vector < std::pair<lldb::ModuleSP, ClangNamespaceDecl> > NamespaceMap;
-    typedef STD_SHARED_PTR(NamespaceMap) NamespaceMapSP;
+    typedef std::shared_ptr<NamespaceMap> NamespaceMapSP;
     
     void RegisterNamespaceMap (const clang::NamespaceDecl *decl, 
                                NamespaceMapSP &namespace_map);
@@ -290,7 +290,7 @@ private:
         clang::ASTContext              *m_source_ctx;
     };
     
-    typedef STD_SHARED_PTR(Minion) MinionSP;
+    typedef std::shared_ptr<Minion> MinionSP;
     typedef std::map<clang::ASTContext *, MinionSP> MinionMap;
     typedef std::map<const clang::NamespaceDecl *, NamespaceMapSP> NamespaceMetaMap;
     
@@ -313,7 +313,7 @@ private:
         MapCompleter           *m_map_completer;
     };
     
-    typedef STD_SHARED_PTR(ASTContextMetadata) ASTContextMetadataSP;    
+    typedef std::shared_ptr<ASTContextMetadata> ASTContextMetadataSP;    
     typedef std::map<const clang::ASTContext *, ASTContextMetadataSP> ContextMetadataMap;
     
     ContextMetadataMap m_metadata_map;

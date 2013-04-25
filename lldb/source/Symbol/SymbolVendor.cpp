@@ -34,7 +34,7 @@ using namespace lldb_private;
 SymbolVendor*
 SymbolVendor::FindPlugin (const lldb::ModuleSP &module_sp, lldb_private::Stream *feedback_strm)
 {
-    std::auto_ptr<SymbolVendor> instance_ap;
+    std::unique_ptr<SymbolVendor> instance_ap;
     //----------------------------------------------------------------------
     // We currently only have one debug symbol parser...
     //----------------------------------------------------------------------

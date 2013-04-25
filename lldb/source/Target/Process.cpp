@@ -1024,7 +1024,9 @@ Process::Process(Target &target, Listener &listener) :
     m_should_detach (false),
     m_next_event_action_ap(),
     m_public_run_lock (),
+#if defined(__APPLE__)
     m_private_run_lock (),
+#endif
     m_currently_handling_event(false),
     m_finalize_called(false),
     m_last_broadcast_state (eStateInvalid),
@@ -1032,7 +1034,6 @@ Process::Process(Target &target, Listener &listener) :
     m_can_jit(eCanJITDontKnow)
 {
     CheckInWithManager ();
-	m_private_run_lock.WriteLock();
 
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
@@ -1145,7 +1146,9 @@ Process::Finalize()
     // process around forever. These events need to be cleared out.
     m_private_state_listener.Clear();
     //m_public_run_lock.WriteUnlock();
+#if defined(__APPLE__)
     m_private_run_lock.WriteUnlock();
+#endif
     m_finalize_called = true;
 }
 
@@ -2358,6 +2361,60 @@ Process::ReadCStringFromMemory (addr_t addr, std::string &out_str, Error &error)
 
 
 size_t
+Process::ReadStringFromMemory (addr_t addr, char *dst, size_t max_bytes, Error &error,
+                                size_t type_width)
+{
+    size_t total_bytes_read = 0;
+    if (dst && max_bytes && type_width && max_bytes >= type_width)
+    {
+        // Ensure a null terminator independent of the number of bytes that is read.
+        memset (dst, 0, max_bytes);
+        size_t bytes_left = max_bytes - type_width;
+
+        const char terminator[4] = {'\0', '\0', '\0', '\0'};
+        assert(sizeof(terminator) >= type_width &&
+               "Attempting to validate a string with more than 4 bytes per character!");
+
+        addr_t curr_addr = addr;
+        const size_t cache_line_size = m_memory_cache.GetMemoryCacheLineSize();
+        char *curr_dst = dst;
+
+        error.Clear();
+        while (bytes_left > 0 && error.Success())
+        {
+            addr_t cache_line_bytes_left = cache_line_size - (curr_addr % cache_line_size);
+            addr_t bytes_to_read = std::min<addr_t>(bytes_left, cache_line_bytes_left);
+            size_t bytes_read = ReadMemory (curr_addr, curr_dst, bytes_to_read, error);
+
+            if (bytes_read == 0)
+                break;
+
+            // Search for a null terminator of correct size and alignment in bytes_read
+            size_t aligned_start = total_bytes_read - total_bytes_read % type_width;
+            for (size_t i = aligned_start; i + type_width <= total_bytes_read + bytes_read; i += type_width)
+                if (::strncmp(&dst[i], terminator, type_width) == 0)
+                {
+                    error.Clear();
+                    return i;
+                }
+
+            total_bytes_read += bytes_read;
+            curr_dst += bytes_read;
+            curr_addr += bytes_read;
+            bytes_left -= bytes_read;
+        }
+    }
+    else
+    {
+        if (max_bytes)
+            error.SetErrorString("invalid arguments");
+    }
+    return total_bytes_read;
+}
+
+// Deprecated in favor of ReadStringFromMemory which has wchar support and correct code to find
+// null terminators.
+size_t
 Process::ReadCStringFromMemory (addr_t addr, char *dst, size_t dst_max_len, Error &result_error)
 {
     size_t total_cstr_len = 0;
@@ -3151,14 +3208,16 @@ Process::ConnectRemote (Stream *strm, const char *remote_url)
         
             if (state == eStateStopped || state == eStateCrashed)
             {
-                // If we attached and actually have a process on the other end, then 
-                // this ended up being the equivalent of an attach.
-                CompleteAttach ();
+                if (m_public_run_lock.WriteTryLock())
+                {
+                    // If we attached and actually have a process on the other end, then 
+                    // this ended up being the equivalent of an attach.
+                    CompleteAttach ();
                 
-                // This delays passing the stopped event to listeners till 
-                // CompleteAttach gets a chance to complete...
-                HandlePrivateEvent (event_sp);
-                
+                    // This delays passing the stopped event to listeners till 
+                    // CompleteAttach gets a chance to complete...
+                    HandlePrivateEvent (event_sp);
+                }
             }
         }
 
@@ -3203,7 +3262,9 @@ Process::PrivateResume ()
             else
             {
                 m_mod_id.BumpResumeID();
+#if defined(__APPLE__)
                 m_private_run_lock.WriteLock();
+#endif
                 error = DoResume();
                 if (error.Success())
                 {
@@ -3212,10 +3273,12 @@ Process::PrivateResume ()
                     if (log)
                         log->Printf ("Process thinks the process has resumed.");
                 }
+#if defined(__APPLE__)
                 else
                 {
                     m_private_run_lock.WriteUnlock();
                 }
+#endif
             }
         }
         else
@@ -3584,8 +3647,9 @@ Process::ShouldBroadcastEvent (Event *event_ptr)
             // If we aren't going to stop, let the thread plans decide if we're going to report this event.
             // If no thread has an opinion, we don't report it.
             
+#if defined(__APPLE__)
             m_private_run_lock.WriteUnlock();
-
+#endif
             RefreshStateAfterStop ();
             if (ProcessEventData::GetInterruptedFromEvent (event_ptr))
             {
@@ -4044,6 +4108,12 @@ Process::ProcessEventData::DoOnRemoval (Event *event_ptr)
         
         bool still_should_stop = false;
         
+        // Sometimes - for instance if we have a bug in the stub we are talking to, we stop but no thread has a
+        // valid stop reason.  In that case we should just stop, because we have no way of telling what the right
+        // thing to do is, and it's better to let the user decide than continue behind their backs.
+        
+        bool does_anybody_have_an_opinion = false;
+        
         for (idx = 0; idx < num_threads; ++idx)
         {
             curr_thread_list = m_process_sp->GetThreadList();
@@ -4071,6 +4141,7 @@ Process::ProcessEventData::DoOnRemoval (Event *event_ptr)
             StopInfoSP stop_info_sp = thread_sp->GetStopInfo ();
             if (stop_info_sp && stop_info_sp->IsValid())
             {
+                does_anybody_have_an_opinion = true;
                 bool this_thread_wants_to_stop;
                 if (stop_info_sp->GetOverrideShouldStop())
                 {
@@ -4099,10 +4170,10 @@ Process::ProcessEventData::DoOnRemoval (Event *event_ptr)
             }
         }
 
-		lldb::StateType state = m_process_sp->GetPrivateState();
-		if (state != eStateRunning && state != eStateCrashed && state != eStateDetached && state != eStateExited)
+        
+        if (m_process_sp->GetPrivateState() != eStateRunning)
         {
-            if (!still_should_stop)
+            if (!still_should_stop && does_anybody_have_an_opinion)
             {
                 // We've been asked to continue, so do that here.
                 SetRestarted(true);
@@ -4444,7 +4515,7 @@ Process::SetSTDIOFileDescriptor (int file_descriptor)
 {
     // First set up the Read Thread for reading/handling process I/O
     
-    std::auto_ptr<ConnectionFileDescriptor> conn_ap (new ConnectionFileDescriptor (file_descriptor, true));
+    std::unique_ptr<ConnectionFileDescriptor> conn_ap (new ConnectionFileDescriptor (file_descriptor, true));
     
     if (conn_ap.get())
     {
@@ -4697,7 +4768,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                 one_thread_timeout.OffsetWithMicroSeconds(default_one_thread_timeout_usec);
             else
             {
-                uint64_t computed_timeout = computed_timeout = timeout_usec / 2;
+                uint64_t computed_timeout = timeout_usec / 2;
                 if (computed_timeout > default_one_thread_timeout_usec)
                     computed_timeout = default_one_thread_timeout_usec;
                 one_thread_timeout.OffsetWithMicroSeconds(computed_timeout);

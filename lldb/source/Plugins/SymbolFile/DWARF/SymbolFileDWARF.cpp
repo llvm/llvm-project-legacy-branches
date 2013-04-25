@@ -880,7 +880,7 @@ SymbolFileDWARF::ParseCompileUnitFunction (const SymbolContext& sc, DWARFCompile
                 func_name.SetValue(ConstString(name), false);
 
             FunctionSP func_sp;
-            std::auto_ptr<Declaration> decl_ap;
+            std::unique_ptr<Declaration> decl_ap;
             if (decl_file != 0 || decl_line != 0 || decl_column != 0)
                 decl_ap.reset(new Declaration (sc.comp_unit->GetSupportFiles().GetFileSpecAtIndex(decl_file), 
                                                decl_line, 
@@ -995,7 +995,7 @@ SymbolFileDWARF::ParseCompileUnitSupportFiles (const SymbolContext& sc, FileSpec
 struct ParseDWARFLineTableCallbackInfo
 {
     LineTable* line_table;
-    std::auto_ptr<LineSequence> sequence_ap;
+    std::unique_ptr<LineSequence> sequence_ap;
 };
 
 //----------------------------------------------------------------------
@@ -1060,7 +1060,7 @@ SymbolFileDWARF::ParseCompileUnitLineTable (const SymbolContext &sc)
             const dw_offset_t cu_line_offset = dwarf_cu_die->GetAttributeValueAsUnsigned(this, dwarf_cu, DW_AT_stmt_list, DW_INVALID_OFFSET);
             if (cu_line_offset != DW_INVALID_OFFSET)
             {
-                std::auto_ptr<LineTable> line_table_ap(new LineTable(sc.comp_unit));
+                std::unique_ptr<LineTable> line_table_ap(new LineTable(sc.comp_unit));
                 if (line_table_ap.get())
                 {
                     ParseDWARFLineTableCallbackInfo info;
@@ -1170,12 +1170,12 @@ SymbolFileDWARF::ParseFunctionBlocks
 
                     if (tag != DW_TAG_subprogram && (name != NULL || mangled_name != NULL))
                     {
-                        std::auto_ptr<Declaration> decl_ap;
+                        std::unique_ptr<Declaration> decl_ap;
                         if (decl_file != 0 || decl_line != 0 || decl_column != 0)
                             decl_ap.reset(new Declaration(sc.comp_unit->GetSupportFiles().GetFileSpecAtIndex(decl_file), 
                                                           decl_line, decl_column));
 
-                        std::auto_ptr<Declaration> call_ap;
+                        std::unique_ptr<Declaration> call_ap;
                         if (call_file != 0 || call_line != 0 || call_column != 0)
                             call_ap.reset(new Declaration(sc.comp_unit->GetSupportFiles().GetFileSpecAtIndex(call_file), 
                                                           call_line, call_column));
@@ -1273,15 +1273,26 @@ SymbolFileDWARF::ParseTemplateDIE (DWARFCompileUnit* dwarf_cu,
                     }
                 }
                 
-                if (name && lldb_type && clang_type)
+                clang::ASTContext *ast = GetClangASTContext().getASTContext();
+                if (!clang_type)
+                    clang_type = ast->VoidTy.getAsOpaquePtr();
+
+                if (clang_type)
                 {
                     bool is_signed = false;
-                    template_param_infos.names.push_back(name);
+                    if (name && name[0])
+                        template_param_infos.names.push_back(name);
+                    else
+                        template_param_infos.names.push_back(NULL);
+    
                     clang::QualType clang_qual_type (clang::QualType::getFromOpaquePtr (clang_type));
-                    if (tag == DW_TAG_template_value_parameter && ClangASTContext::IsIntegerType (clang_type, is_signed) && uval64_valid)
+                    if (tag == DW_TAG_template_value_parameter &&
+                        lldb_type != NULL &&
+                        ClangASTContext::IsIntegerType (clang_type, is_signed) &&
+                        uval64_valid)
                     {
                         llvm::APInt apint (lldb_type->GetByteSize() * 8, uval64, is_signed);
-                        template_param_infos.args.push_back (clang::TemplateArgument (*GetClangASTContext().getASTContext(),
+                        template_param_infos.args.push_back (clang::TemplateArgument (*ast,
                                                                                       llvm::APSInt(apint),
                                                                                       clang_qual_type));
                     }
@@ -1435,7 +1446,7 @@ private:
     const char             *m_property_setter_name;
     const char             *m_property_getter_name;
     uint32_t                m_property_attributes;
-    std::auto_ptr<ClangASTMetadata> m_metadata_ap;
+    std::unique_ptr<ClangASTMetadata> m_metadata_ap;
 };
 
 struct BitfieldInfo

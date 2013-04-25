@@ -22,6 +22,7 @@
 #include "lldb/Expression/ClangExpressionDeclMap.h"
 #include "lldb/Expression/IRExecutionUnit.h"
 #include "lldb/Expression/IRDynamicChecks.h"
+#include "lldb/Expression/IRInterpreter.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
@@ -189,7 +190,7 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
                                               ClangExpression &expr) :
     m_expr (expr),
     m_compiler (),
-    m_code_generator (NULL)
+    m_code_generator ()
 {
     // Initialize targets first, so that --version shows registered targets.
     static struct InitializeLLVM {
@@ -353,7 +354,7 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     m_selector_table.reset(new SelectorTable());
     m_builtin_context.reset(new Builtin::Context());
     
-    std::auto_ptr<clang::ASTContext> ast_context(new ASTContext(m_compiler->getLangOpts(),
+    std::unique_ptr<clang::ASTContext> ast_context(new ASTContext(m_compiler->getLangOpts(),
                                                                 m_compiler->getSourceManager(),
                                                                 &m_compiler->getTarget(),
                                                                 m_compiler->getPreprocessor().getIdentifierTable(),
@@ -464,21 +465,20 @@ static bool FindFunctionInModule (ConstString &mangled_name,
 Error
 ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_addr, 
                                             lldb::addr_t &func_end,
-                                            std::auto_ptr<IRExecutionUnit> &execution_unit_ap,
+                                            std::unique_ptr<IRExecutionUnit> &execution_unit_ap,
                                             ExecutionContext &exe_ctx,
-                                            bool &evaluated_statically,
-                                            lldb::ClangExpressionVariableSP &const_result,
+                                            bool &can_interpret,
                                             ExecutionPolicy execution_policy)
 {
 	func_addr = LLDB_INVALID_ADDRESS;
 	func_end = LLDB_INVALID_ADDRESS;
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
-    std::auto_ptr<llvm::ExecutionEngine> execution_engine_ap;
+    std::unique_ptr<llvm::ExecutionEngine> execution_engine_ap;
     
     Error err;
     
-    std::auto_ptr<llvm::Module> module_ap (m_code_generator->ReleaseModule());
+    std::unique_ptr<llvm::Module> module_ap (m_code_generator->ReleaseModule());
 
     if (!module_ap.get())
     {
@@ -503,7 +503,8 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_addr,
             log->Printf("Found function %s for %s", function_name.AsCString(), m_expr.FunctionName());
     }
     
-    m_execution_unit.reset(new IRExecutionUnit(module_ap, // handed off here
+    m_execution_unit.reset(new IRExecutionUnit(m_llvm_context, // handed off here
+                                               module_ap, // handed off here
                                                function_name,
                                                exe_ctx.GetTargetSP(),
                                                m_compiler->getTargetOpts().Features));
@@ -519,50 +520,39 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_addr,
     
         IRForTarget ir_for_target(decl_map,
                                   m_expr.NeedsVariableResolution(),
-                                  execution_policy,
-                                  const_result,
                                   *m_execution_unit,
                                   error_stream,
                                   function_name.AsCString());
         
         bool ir_can_run = ir_for_target.runOnModule(*m_execution_unit->GetModule());
         
-        Error &interpreter_error(ir_for_target.getInterpreterError());
+        Error interpret_error;
         
-        if (execution_policy != eExecutionPolicyAlways && interpreter_error.Success())
-        {
-            if (const_result)
-                const_result->TransferAddress();
-            evaluated_statically = true;
-            err.Clear();
-            return err;
-        }
+        can_interpret = IRInterpreter::CanInterpret(*m_execution_unit->GetModule(), *m_execution_unit->GetFunction(), interpret_error);
         
         Process *process = exe_ctx.GetProcessPtr();
-
-        if (!process || execution_policy == eExecutionPolicyNever)
+        
+        if (!ir_can_run)
         {
-            err.SetErrorToGenericError();
-            if (execution_policy == eExecutionPolicyAlways)
-                err.SetErrorString("Execution needed to run in the target, but the target can't be run");
-            else
-                err.SetErrorStringWithFormat("Interpreting the expression locally failed: %s", interpreter_error.AsCString());
-
-            return err;
-        }
-        else if (!ir_can_run)
-        {
-            err.SetErrorToGenericError();
             err.SetErrorString("The expression could not be prepared to run in the target");
-            
             return err;
         }
         
-        if (execution_policy != eExecutionPolicyNever &&
-            m_expr.NeedsValidation() && 
-            process)
+        if (!can_interpret && execution_policy == eExecutionPolicyNever)
         {
-            if (!process->GetDynamicCheckers())
+            err.SetErrorStringWithFormat("Can't run the expression locally: %s", interpret_error.AsCString());
+            return err;
+        }
+        
+        if (!process && execution_policy == eExecutionPolicyAlways)
+        {
+            err.SetErrorString("Expression needed to run in the target, but the target can't be run");
+            return err;
+        }
+        
+        if (execution_policy == eExecutionPolicyAlways || !can_interpret)
+        {
+            if (!process->GetDynamicCheckers() && m_expr.NeedsValidation())
             {                
                 DynamicCheckerFunctions *dynamic_checkers = new DynamicCheckerFunctions();
                 
@@ -582,7 +572,6 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_addr,
                 
                 if (log)
                     log->Printf("== [ClangUserExpression::Evaluate] Finished installing dynamic checkers ==");
-            }
             
             IRDynamicChecks ir_dynamic_checks(*process->GetDynamicCheckers(), function_name.AsCString());
         
@@ -593,11 +582,16 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_addr,
                 return err;
             }
         }
-    }
     
     m_execution_unit->GetRunnableInfo(err, func_addr, func_end);
+        }
+    }
+    else
+    {
+        m_execution_unit->GetRunnableInfo(err, func_addr, func_end);
+    }
     
-    execution_unit_ap = m_execution_unit;
+    execution_unit_ap.reset (m_execution_unit.release());
         
         return err;
 }

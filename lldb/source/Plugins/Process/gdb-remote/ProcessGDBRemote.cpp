@@ -751,7 +751,7 @@ ProcessGDBRemote::ConnectToDebugserver (const char *connect_url)
 {
     Error error;
     // Sleep and wait a bit for debugserver to start to listen...
-    std::auto_ptr<ConnectionFileDescriptor> conn_ap(new ConnectionFileDescriptor());
+    std::unique_ptr<ConnectionFileDescriptor> conn_ap(new ConnectionFileDescriptor());
     if (conn_ap.get())
     {
         const uint32_t max_retry_count = 50;
@@ -1058,10 +1058,19 @@ ProcessGDBRemote::DoResume ()
     {
         listener.StartListeningForEvents (&m_async_broadcaster, ProcessGDBRemote::eBroadcastBitAsyncThreadDidExit);
         
+        const size_t num_threads = GetThreadList().GetSize();
+
         StreamString continue_packet;
         bool continue_packet_error = false;
         if (m_gdb_comm.HasAnyVContSupport ())
         {
+            if (m_continue_c_tids.size() == num_threads)
+            {
+                // All threads are continuing, just send a "c" packet
+                continue_packet.PutCString ("c");
+            }
+            else
+            {
             continue_packet.PutCString ("vCont");
         
             if (!m_continue_c_tids.empty())
@@ -1111,6 +1120,7 @@ ProcessGDBRemote::DoResume ()
             if (continue_packet_error)
                 continue_packet.GetString().clear();
         }
+        }
         else
             continue_packet_error = true;
         
@@ -1119,7 +1129,6 @@ ProcessGDBRemote::DoResume ()
             // Either no vCont support, or we tried to use part of the vCont
             // packet that wasn't supported by the remote GDB server.
             // We need to try and make a simple packet that can do our continue
-            const size_t num_threads = GetThreadList().GetSize();
             const size_t num_continue_c_tids = m_continue_c_tids.size();
             const size_t num_continue_C_tids = m_continue_C_tids.size();
             const size_t num_continue_s_tids = m_continue_s_tids.size();
@@ -1405,6 +1414,29 @@ ProcessGDBRemote::SetThreadStopInfo (StringExtractor& stop_packet)
                     // and the m_thread_list.AddThread(...) so it doesn't change on us
                     Mutex::Locker locker (m_thread_list.GetMutex ());
                     thread_sp = m_thread_list.FindThreadByID(tid, false);
+                    if (!thread_sp)
+                    {
+                        // If there is an operating system plug-in it might hiding the actual API
+                        // thread inside a ThreadMemory...
+                        if (GetOperatingSystem())
+                        {
+                            bool found_backing_thread = false;
+                            const uint32_t num_threads = m_thread_list.GetSize();
+                            for (uint32_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+                            {
+                                thread_sp = m_thread_list.GetThreadAtIndex(thread_idx)->GetBackingThread();
+                                if (thread_sp && thread_sp->GetID() == tid)
+                                {
+                                    found_backing_thread = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!found_backing_thread)
+                                thread_sp.reset();
+                        }
+                    }
+                    
                     if (!thread_sp)
                     {
                         // Create the thread if we need to

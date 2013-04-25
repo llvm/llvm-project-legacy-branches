@@ -213,7 +213,7 @@ template<class Y>
 SharingPtr<T>::SharingPtr(Y* p)
     : ptr_(p), cntrl_(0)
 {
-    std::auto_ptr<Y> hold(p);
+    std::unique_ptr<Y> hold(p);
     typedef imp::shared_ptr_pointer<Y*> _CntrlBlk;
     cntrl_ = new _CntrlBlk(p);
     hold.release();

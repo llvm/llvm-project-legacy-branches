@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Gauge.h"
+#include "lldb/lldb-forward.h"
 
 template <>
 lldb_perf::Results::ResultSP

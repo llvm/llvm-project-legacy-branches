@@ -33,6 +33,7 @@
 #include "lldb/Target/ThreadList.h"
 #include "lldb/Target/Thread.h"
 #include "Plugins/Process/Utility/DynamicRegisterInfo.h"
+#include "Plugins/Process/Utility/RegisterContextDummy.h"
 #include "Plugins/Process/Utility/RegisterContextMemory.h"
 #include "Plugins/Process/Utility/ThreadMemory.h"
 
@@ -60,7 +61,7 @@ OperatingSystemPython::CreateInstance (Process *process, bool force)
     FileSpec python_os_plugin_spec (process->GetPythonOSPluginPath());
     if (python_os_plugin_spec && python_os_plugin_spec.Exists())
     {
-        std::auto_ptr<OperatingSystemPython> os_ap (new OperatingSystemPython (process, python_os_plugin_spec));
+        std::unique_ptr<OperatingSystemPython> os_ap (new OperatingSystemPython (process, python_os_plugin_spec));
         if (os_ap.get() && os_ap->IsValid())
             return os_ap.release();
     }
@@ -194,8 +195,6 @@ OperatingSystemPython::UpdateThreadList (ThreadList &old_thread_list, ThreadList
     if (threads_list)
     {
         ThreadList core_thread_list(new_thread_list);
-
-        threads_list.Dump(); // REMOVE THIS
 
         uint32_t i;
         const uint32_t num_threads = threads_list.GetSize();
@@ -334,6 +333,13 @@ OperatingSystemPython::CreateRegisterContextForThread (Thread *thread, addr_t re
                 }
             }
         }
+    }
+    // if we still have no register data, fallback on a dummy context to avoid crashing
+    if (!reg_ctx_sp)
+    {
+        if (log)
+            log->Printf ("OperatingSystemPython::CreateRegisterContextForThread (tid = 0x%" PRIx64 ") forcing a dummy register context", thread->GetID());
+        reg_ctx_sp.reset(new RegisterContextDummy(*thread,0,target.GetArchitecture().GetAddressByteSize()));
     }
     return reg_ctx_sp;
 }
