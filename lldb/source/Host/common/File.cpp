@@ -229,6 +229,8 @@ File::Open (const char *path, uint32_t options, uint32_t permissions)
 #ifndef _WIN32
     if (options & eOpenOptionNonBlocking)
         oflag |= O_NONBLOCK;
+#else
+    oflag |= O_BINARY;
 #endif
 
     mode_t mode = 0;
