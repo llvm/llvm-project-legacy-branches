@@ -21,6 +21,7 @@ typedef struct Win32RWLOCK {
         unsigned long int readlockcount;
         HANDLE writable;
         CRITICAL_SECTION writelock;
+        unsigned long int writelocked;
 } Win32RWLOCK;
 
 typedef Win32RWLOCK* PWin32RWLOCK; 
@@ -39,6 +40,7 @@ static bool loadSRW() {
   static bool sChecked = false;
   if (!sChecked) {
     sChecked = true;
+    return false;
 
     HMODULE hLib = ::LoadLibrary(TEXT("Kernel32"));
     if (hLib) {
@@ -123,10 +125,12 @@ bool ReadWriteLock::ReadTryLock () {
 
 bool ReadWriteLock::ReadUnlock () {
     if (sHasSRW) {
-        fpReleaseSRWLockShared(static_cast<PSRWLOCK>(m_data));
+            fpReleaseSRWLockShared(static_cast<PSRWLOCK>(m_data));
         return true;
     } else {
-        if (InterlockedDecrement(&static_cast<PWin32RWLOCK>(m_data)->readlockcount) == 0)
+        unsigned long int value = InterlockedDecrement(&static_cast<PWin32RWLOCK>(m_data)->readlockcount);
+        assert(((int)value) >= 0);
+        if (value == 0)
             SetEvent(static_cast<PWin32RWLOCK>(m_data)->writable);
         return true;
     }
@@ -139,6 +143,8 @@ bool ReadWriteLock::WriteLock () {
     } else {
         EnterCriticalSection(&static_cast<PWin32RWLOCK>(m_data)->writelock);
         WaitForSingleObject(static_cast<PWin32RWLOCK>(m_data)->writable, INFINITE);
+        int res = InterlockedExchange(&static_cast<PWin32RWLOCK>(m_data)->writelocked, 1);
+        assert(res == 0);
         return true;
     }
 }
@@ -148,10 +154,12 @@ bool ReadWriteLock::WriteTryLock () {
         return fpTryAcquireSRWLockExclusive(static_cast<PSRWLOCK>(m_data)) != 0;
     } else {
         if (TryEnterCriticalSection(&static_cast<PWin32RWLOCK>(m_data)->writelock)) {
-            if (!WaitForSingleObject(static_cast<PWin32RWLOCK>(m_data)->writable, 0)) {
+            if (WaitForSingleObject(static_cast<PWin32RWLOCK>(m_data)->writable, 0)) {
                 LeaveCriticalSection(&static_cast<PWin32RWLOCK>(m_data)->writelock);
                 return false;
             }
+            int res = InterlockedExchange(&static_cast<PWin32RWLOCK>(m_data)->writelocked, 1);
+            assert(res == 0);
             return true;
         }
         return false;
@@ -163,8 +171,12 @@ bool ReadWriteLock::WriteUnlock () {
         fpReleaseSRWLockExclusive(static_cast<PSRWLOCK>(m_data));
         return true;
     } else {
-        LeaveCriticalSection(&static_cast<PWin32RWLOCK>(m_data)->writelock);
-        return true;
+        int res = InterlockedExchange(&static_cast<PWin32RWLOCK>(m_data)->writelocked, 0);
+        if (res == 1) {
+            LeaveCriticalSection(&static_cast<PWin32RWLOCK>(m_data)->writelock);
+            return true;
+        }
+        return false;
     }
 }
 

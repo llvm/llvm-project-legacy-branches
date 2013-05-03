@@ -3208,8 +3208,6 @@ Process::ConnectRemote (Stream *strm, const char *remote_url)
         
             if (state == eStateStopped || state == eStateCrashed)
             {
-                if (m_public_run_lock.WriteTryLock())
-                {
                     // If we attached and actually have a process on the other end, then 
                     // this ended up being the equivalent of an attach.
                     CompleteAttach ();
@@ -3217,7 +3215,7 @@ Process::ConnectRemote (Stream *strm, const char *remote_url)
                     // This delays passing the stopped event to listeners till 
                     // CompleteAttach gets a chance to complete...
                     HandlePrivateEvent (event_sp);
-                }
+                
             }
         }
 
@@ -3885,6 +3883,7 @@ Process::HandlePrivateEvent (EventSP &event_sp)
                     // FIXME: should cons up an exited event, and discard this one.
                     SetExitStatus(0, m_next_event_action_ap->GetExitString());
                     SetNextEventAction(NULL);
+                    m_currently_handling_event.SetValue(false, eBroadcastAlways);
                     return;
                 }
                 SetNextEventAction(NULL);
