@@ -180,7 +180,7 @@ bool AnalyzerOptions::shouldSuppressFromCXXStandardLibrary() {
 bool AnalyzerOptions::shouldReportIssuesInMainSourceFile() {
   return getBooleanOption(ReportIssuesInMainSourceFile,
                           "report-in-main-source-file",
-                          /* Default = */ false);
+                          /* Default = */ true);
 }
 
 int AnalyzerOptions::getOptionAsInteger(StringRef Name, int DefaultVal) {
