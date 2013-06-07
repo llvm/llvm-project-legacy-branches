@@ -41,6 +41,9 @@ public:
     GetArgumentValues (lldb_private::Thread &thread,
                        lldb_private::ValueList &values) const;
     
+    virtual lldb_private::Error
+    SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueObjectSP &new_value);
+
 protected:
     virtual lldb::ValueObjectSP
     GetReturnValueObjectImpl (lldb_private::Thread &thread,
@@ -90,6 +93,12 @@ public:
         return pc & ~(lldb::addr_t)1;
     }
 
+    virtual bool
+    FunctionCallsChangeCFA ()
+    {
+        return false;
+    }
+
     virtual const lldb_private::RegisterInfo *
     GetRegisterInfoArray (uint32_t &count);
 
@@ -105,14 +114,14 @@ public:
     static lldb::ABISP
     CreateInstance (const lldb_private::ArchSpec &arch);
     
+    static lldb_private::ConstString
+    GetPluginNameStatic();
+    
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-    
-    virtual const char *
-    GetShortPluginName();
     
     virtual uint32_t
     GetPluginVersion();

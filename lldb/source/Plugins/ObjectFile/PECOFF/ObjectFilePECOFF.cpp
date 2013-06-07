@@ -16,6 +16,7 @@
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Core/FileSpecList.h"
 #include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Core/StreamFile.h"
@@ -121,7 +122,8 @@ ObjectFilePECOFF::Initialize()
     PluginManager::RegisterPlugin (GetPluginNameStatic(),
                                    GetPluginDescriptionStatic(),
                                    CreateInstance,
-                                   CreateMemoryInstance);
+                                   CreateMemoryInstance,
+                                   GetModuleSpecifications);
 }
 
 void
@@ -131,10 +133,11 @@ ObjectFilePECOFF::Terminate()
 }
 
 
-const char *
+lldb_private::ConstString
 ObjectFilePECOFF::GetPluginNameStatic()
 {
-    return "object-file.pe-coff";
+    static ConstString g_name("pe-coff");
+    return g_name;
 }
 
 const char *
@@ -145,11 +148,25 @@ ObjectFilePECOFF::GetPluginDescriptionStatic()
 
 
 ObjectFile *
-ObjectFilePECOFF::CreateInstance (const lldb::ModuleSP &module_sp, DataBufferSP& dataSP, const FileSpec* file, addr_t offset, addr_t length)
+ObjectFilePECOFF::CreateInstance (const lldb::ModuleSP &module_sp,
+                                  DataBufferSP& data_sp,
+                                  lldb::offset_t data_offset,
+                                  const lldb_private::FileSpec* file,
+                                  lldb::offset_t file_offset,
+                                  lldb::offset_t length)
 {
-    if (ObjectFilePECOFF::MagicBytesMatch(dataSP))
+    if (!data_sp)
     {
-        std::auto_ptr<ObjectFile> objfile_ap(new ObjectFilePECOFF (module_sp, dataSP, file, offset, length));
+        data_sp = file->MemoryMapFileContents(file_offset, length);
+        data_offset = 0;
+    }
+
+    if (ObjectFilePECOFF::MagicBytesMatch(data_sp))
+    {
+        // Update the data to contain the entire file if it doesn't already
+        if (data_sp->GetByteSize() < length)
+            data_sp = file->MemoryMapFileContents(file_offset, length);
+        std::unique_ptr<ObjectFile> objfile_ap(new ObjectFilePECOFF (module_sp, data_sp, data_offset, file, file_offset, length));
         if (objfile_ap.get() && objfile_ap->ParseHeader())
             return objfile_ap.release();
     }
@@ -165,22 +182,35 @@ ObjectFilePECOFF::CreateMemoryInstance (const lldb::ModuleSP &module_sp,
     return NULL;
 }
 
-bool
-ObjectFilePECOFF::MagicBytesMatch (DataBufferSP& dataSP)
+size_t
+ObjectFilePECOFF::GetModuleSpecifications (const lldb_private::FileSpec& file,
+                                           lldb::DataBufferSP& data_sp,
+                                           lldb::offset_t data_offset,
+                                           lldb::offset_t file_offset,
+                                           lldb::offset_t length,
+                                           lldb_private::ModuleSpecList &specs)
 {
-    DataExtractor data(dataSP, eByteOrderLittle, 4);
-    uint32_t offset = 0;
+    return 0;
+}
+
+
+bool
+ObjectFilePECOFF::MagicBytesMatch (DataBufferSP& data_sp)
+{
+    DataExtractor data(data_sp, eByteOrderLittle, 4);
+    lldb::offset_t offset = 0;
     uint16_t magic = data.GetU16 (&offset);
     return magic == IMAGE_DOS_SIGNATURE;
 }
 
 
 ObjectFilePECOFF::ObjectFilePECOFF (const lldb::ModuleSP &module_sp, 
-                                    DataBufferSP& dataSP, 
+                                    DataBufferSP& data_sp,
+                                    lldb::offset_t data_offset,
                                     const FileSpec* file, 
-                                    addr_t offset, 
-                                    addr_t length) :
-    ObjectFile (module_sp, file, offset, length, dataSP),
+                                    lldb::offset_t file_offset,
+                                    lldb::offset_t length) :
+    ObjectFile (module_sp, file, file_offset, length, data_sp, data_offset),
     m_dos_header (),
     m_coff_header (),
     m_coff_header_opt (),
@@ -206,7 +236,7 @@ ObjectFilePECOFF::ParseHeader ()
         lldb_private::Mutex::Locker locker(module_sp->GetMutex());
         m_sect_headers.clear();
         m_data.SetByteOrder (eByteOrderLittle);
-        uint32_t offset = 0;
+        lldb::offset_t offset = 0;
         
         if (ParseDOSHeader())
         {
@@ -220,8 +250,6 @@ ObjectFilePECOFF::ParseHeader ()
                     ParseCOFFOptionalHeader(&offset);
                 ParseSectionHeaders (offset);
             }
-            StreamFile s(stdout, false);// REMOVE THIS LINE!!!
-            Dump(&s);// REMOVE THIS LINE!!!
             return true;
         }
     }
@@ -241,7 +269,7 @@ ObjectFilePECOFF::IsExecutable() const
     return (m_coff_header.flags & IMAGE_FILE_DLL) == 0;
 }
 
-size_t
+uint32_t
 ObjectFilePECOFF::GetAddressByteSize () const
 {
     if (m_coff_header_opt.magic == OPT_HEADER_MAGIC_PE32_PLUS)
@@ -273,7 +301,7 @@ bool
 ObjectFilePECOFF::ParseDOSHeader ()
 {
     bool success = false;
-    uint32_t offset = 0;
+    lldb::offset_t offset = 0;
     success = m_data.ValidOffsetForDataOfSize(0, sizeof(m_dos_header));
     
     if (success)
@@ -328,7 +356,7 @@ ObjectFilePECOFF::ParseDOSHeader ()
 // ParserCOFFHeader
 //----------------------------------------------------------------------
 bool
-ObjectFilePECOFF::ParseCOFFHeader(uint32_t* offset_ptr)
+ObjectFilePECOFF::ParseCOFFHeader(lldb::offset_t *offset_ptr)
 {
     bool success = m_data.ValidOffsetForDataOfSize (*offset_ptr, sizeof(m_coff_header));
     if (success)
@@ -347,10 +375,10 @@ ObjectFilePECOFF::ParseCOFFHeader(uint32_t* offset_ptr)
 }
 
 bool
-ObjectFilePECOFF::ParseCOFFOptionalHeader(uint32_t* offset_ptr)
+ObjectFilePECOFF::ParseCOFFOptionalHeader(lldb::offset_t *offset_ptr)
 {
     bool success = false;
-    const uint32_t end_offset = *offset_ptr + m_coff_header.hdrsize;
+    const lldb::offset_t end_offset = *offset_ptr + m_coff_header.hdrsize;
     if (*offset_ptr < end_offset)
     {
         success = true;
@@ -431,7 +459,7 @@ ObjectFilePECOFF::ParseSectionHeaders (uint32_t section_header_data_offset)
         DataBufferSP section_header_data_sp(m_file.ReadFileContents (section_header_data_offset, section_header_byte_size));
         DataExtractor section_header_data (section_header_data_sp, GetByteOrder(), addr_byte_size);
 
-        uint32_t offset = 0;
+        lldb::offset_t offset = 0;
         if (section_header_data.ValidOffsetForDataOfSize (offset, section_header_byte_size))
         {
             m_sect_headers.resize(nsects);
@@ -464,8 +492,8 @@ ObjectFilePECOFF::GetSectionName(std::string& sect_name, const section_header_t&
 {
     if (sect.name[0] == '/')
     {
-        uint32_t stroff = strtoul(&sect.name[1], NULL, 10);
-        uint32_t string_file_offset = m_coff_header.symoff + (m_coff_header.nsyms * 18) + stroff;
+        lldb::offset_t stroff = strtoul(&sect.name[1], NULL, 10);
+        lldb::offset_t string_file_offset = m_coff_header.symoff + (m_coff_header.nsyms * 18) + stroff;
         const char *name = m_data.GetCStr (&string_file_offset);
         if (name)
         {
@@ -505,7 +533,7 @@ ObjectFilePECOFF::GetSymtab()
                 // Include the 4 bytes string table size at the end of the symbols
                 DataBufferSP symtab_data_sp(m_file.ReadFileContents (m_coff_header.symoff, symbol_data_size + 4));
                 DataExtractor symtab_data (symtab_data_sp, GetByteOrder(), addr_byte_size);
-                uint32_t offset = symbol_data_size;
+                lldb::offset_t offset = symbol_data_size;
                 const uint32_t strtab_size = symtab_data.GetU32 (&offset);
                 DataBufferSP strtab_data_sp(m_file.ReadFileContents (m_coff_header.symoff + symbol_data_size + 4, strtab_size));
                 DataExtractor strtab_data (strtab_data_sp, GetByteOrder(), addr_byte_size);
@@ -789,7 +817,7 @@ ObjectFilePECOFF::DumpOptCOFFHeader(Stream *s, const coff_opt_header_t& header)
     s->Printf ("  entry                   = 0x%8.8x\n", header.entry);
     s->Printf ("  code_offset             = 0x%8.8x\n", header.code_offset);
     s->Printf ("  data_offset             = 0x%8.8x\n", header.data_offset);
-    s->Printf ("  image_base              = 0x%16.16llx\n", header.image_base);
+    s->Printf ("  image_base              = 0x%16.16" PRIx64 "\n", header.image_base);
     s->Printf ("  sect_alignment          = 0x%8.8x\n", header.sect_alignment);
     s->Printf ("  file_alignment          = 0x%8.8x\n", header.file_alignment);
     s->Printf ("  major_os_system_version = 0x%4.4x\n", header.major_os_system_version);
@@ -804,10 +832,10 @@ ObjectFilePECOFF::DumpOptCOFFHeader(Stream *s, const coff_opt_header_t& header)
     s->Printf ("  checksum                = 0x%8.8x\n", header.checksum);
     s->Printf ("  subsystem               = 0x%4.4x\n", header.subsystem);
     s->Printf ("  dll_flags               = 0x%4.4x\n", header.dll_flags);
-    s->Printf ("  stack_reserve_size      = 0x%16.16llx\n", header.stack_reserve_size);
-    s->Printf ("  stack_commit_size       = 0x%16.16llx\n", header.stack_commit_size);
-    s->Printf ("  heap_reserve_size       = 0x%16.16llx\n", header.heap_reserve_size);
-    s->Printf ("  heap_commit_size        = 0x%16.16llx\n", header.heap_commit_size);
+    s->Printf ("  stack_reserve_size      = 0x%16.16" PRIx64 "\n", header.stack_reserve_size);
+    s->Printf ("  stack_commit_size       = 0x%16.16" PRIx64 "\n", header.stack_commit_size);
+    s->Printf ("  heap_reserve_size       = 0x%16.16" PRIx64 "\n", header.heap_reserve_size);
+    s->Printf ("  heap_commit_size        = 0x%16.16" PRIx64 "\n", header.heap_commit_size);
     s->Printf ("  loader_flags            = 0x%8.8x\n", header.loader_flags);
     s->Printf ("  num_data_dir_entries    = 0x%8.8zx\n", header.data_dirs.size());
     uint32_t i;
@@ -927,14 +955,8 @@ ObjectFilePECOFF::CalculateStrata()
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+ConstString
 ObjectFilePECOFF::GetPluginName()
-{
-    return "ObjectFilePECOFF";
-}
-
-const char *
-ObjectFilePECOFF::GetShortPluginName()
 {
     return GetPluginNameStatic();
 }

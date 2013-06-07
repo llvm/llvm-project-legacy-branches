@@ -46,6 +46,15 @@ public:
     SBThread (const lldb::SBThread &thread);
 
    ~SBThread();
+    
+    static bool
+    EventIsThreadEvent (const SBEvent &event);
+    
+    static SBFrame
+    GetStackFrameFromEvent (const SBEvent &event);
+    
+    static SBThread
+    GetThreadFromEvent (const SBEvent &event);
 
     bool
     IsValid() const;
@@ -79,6 +88,7 @@ public:
     /// eStopReasonWatchpoint    1     watchpoint id
     /// eStopReasonSignal        1     unix signal number
     /// eStopReasonException     N     exception data
+    /// eStopReasonExec          0
     /// eStopReasonPlanComplete  0
     //--------------------------------------------------------------------------
     ") GetStopReasonDataAtIndex;
@@ -114,6 +124,9 @@ public:
     StepInto (lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
 
     void
+    StepInto (const char *target_name, lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
+
+    void
     StepOut ();
 
     void
@@ -129,6 +142,9 @@ public:
 
     void
     RunToAddress (lldb::addr_t addr);
+
+    SBError
+    ReturnFromFrame (SBFrame &frame, SBValue &return_value);
 
     %feature("docstring", "
     //--------------------------------------------------------------------------
@@ -162,6 +178,9 @@ public:
     bool
     IsSuspended();
 
+    bool
+    IsStopped();
+
     uint32_t
     GetNumFrames ();
 
@@ -180,6 +199,15 @@ public:
     bool
     GetDescription (lldb::SBStream &description) const;
     
+    bool
+    GetStatus (lldb::SBStream &status) const;
+    
+    bool
+    operator == (const lldb::SBThread &rhs) const;
+
+    bool
+    operator != (const lldb::SBThread &rhs) const;
+             
     %pythoncode %{
         class frames_access(object):
             '''A helper object that will lazily hand out frames for a thread when supplied an index.'''
@@ -239,6 +267,9 @@ public:
 
         __swig_getmethods__["is_suspended"] = IsSuspended
         if _newclass: is_suspended = property(IsSuspended, None, doc='''A read only property that returns a boolean value that indicates if this thread is suspended.''')
+
+        __swig_getmethods__["is_stopped"] = IsStopped
+        if _newclass: is_stopped = property(IsStopped, None, doc='''A read only property that returns a boolean value that indicates if this thread is stopped but not exited.''')
     %}
 
 };

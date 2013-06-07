@@ -11,6 +11,7 @@
 #define liblldb_ModuleList_h_
 
 #include <vector>
+#include <list>
 
 #include "lldb/lldb-private.h"
 #include "lldb/Host/Mutex.h"
@@ -27,6 +28,25 @@ namespace lldb_private {
 class ModuleList
 {
 public:
+    
+    class Notifier
+    {
+    public:
+        virtual void
+        ModuleAdded (const ModuleList& module_list, const lldb::ModuleSP& module_sp) = 0;
+        virtual void
+        ModuleRemoved (const ModuleList& module_list, const lldb::ModuleSP& module_sp) = 0;
+        virtual void
+        ModuleUpdated (const ModuleList& module_list, const lldb::ModuleSP& old_module_sp,
+                       const lldb::ModuleSP& new_module_sp) = 0;
+        virtual void
+        WillClearList (const ModuleList& module_list) = 0;
+        
+        virtual
+        ~Notifier ()
+        {}
+    };
+    
     //------------------------------------------------------------------
     /// Default constructor.
     ///
@@ -44,6 +64,8 @@ public:
     ///     Another module list object.
     //------------------------------------------------------------------
     ModuleList (const ModuleList& rhs);
+    
+    ModuleList (ModuleList::Notifier* notifier);
 
     //------------------------------------------------------------------
     /// Destructor.
@@ -91,6 +113,15 @@ public:
     bool
     AppendIfNeeded (const lldb::ModuleSP &module_sp);
 
+    void
+    Append (const ModuleList& module_list);
+    
+    bool
+    AppendIfNeeded (const ModuleList& module_list);
+    
+    bool
+    ReplaceModule (const lldb::ModuleSP &old_module_sp, const lldb::ModuleSP &new_module_sp);
+    
     //------------------------------------------------------------------
     /// Clear the object's state.
     ///
@@ -126,16 +157,15 @@ public:
     Dump (Stream *s) const;
 
     void
-    LogUUIDAndPaths (lldb::LogSP &log_sp, 
-                     const char *prefix_cstr);
+    LogUUIDAndPaths (Log *log, const char *prefix_cstr);
                      
     Mutex &
-    GetMutex ()
+    GetMutex () const
     {
         return m_modules_mutex;
     }
     
-    uint32_t
+    size_t
     GetIndexForModule (const Module *module) const;
 
     //------------------------------------------------------------------
@@ -151,7 +181,7 @@ public:
     /// @see ModuleList::GetSize()
     //------------------------------------------------------------------
     lldb::ModuleSP
-    GetModuleAtIndex (uint32_t idx);
+    GetModuleAtIndex (size_t idx) const;
 
     //------------------------------------------------------------------
     /// Get the module shared pointer for the module at index \a idx without
@@ -168,7 +198,7 @@ public:
     /// @see ModuleList::GetSize()
     //------------------------------------------------------------------
     lldb::ModuleSP
-    GetModuleAtIndexUnlocked (uint32_t idx);
+    GetModuleAtIndexUnlocked (size_t idx) const;
 
     //------------------------------------------------------------------
     /// Get the module pointer for the module at index \a idx.
@@ -183,7 +213,7 @@ public:
     /// @see ModuleList::GetSize()
     //------------------------------------------------------------------
     Module*
-    GetModulePointerAtIndex (uint32_t idx) const;
+    GetModulePointerAtIndex (size_t idx) const;
 
     //------------------------------------------------------------------
     /// Get the module pointer for the module at index \a idx without
@@ -200,7 +230,7 @@ public:
     /// @see ModuleList::GetSize()
     //------------------------------------------------------------------
     Module*
-    GetModulePointerAtIndexUnlocked (uint32_t idx) const;
+    GetModulePointerAtIndexUnlocked (size_t idx) const;
 
     //------------------------------------------------------------------
     /// Find compile units by partial or full path.
@@ -223,21 +253,21 @@ public:
     /// @return
     ///     The number of matches added to \a sc_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindCompileUnits (const FileSpec &path,
                       bool append,
-                      SymbolContextList &sc_list);
+                      SymbolContextList &sc_list) const;
     
     //------------------------------------------------------------------
     /// @see Module::FindFunctions ()
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindFunctions (const ConstString &name,
                    uint32_t name_type_mask,
                    bool include_symbols,
                    bool include_inlines,
                    bool append,
-                   SymbolContextList &sc_list);
+                   SymbolContextList &sc_list) const;
 
     //------------------------------------------------------------------
     /// Find global and static variables by name.
@@ -262,11 +292,11 @@ public:
     /// @return
     ///     The number of matches added to \a variable_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindGlobalVariables (const ConstString &name,
                          bool append,
-                         uint32_t max_matches,
-                         VariableList& variable_list);
+                         size_t max_matches,
+                         VariableList& variable_list) const;
 
     //------------------------------------------------------------------
     /// Find global and static variables by regular exression.
@@ -290,11 +320,11 @@ public:
     /// @return
     ///     The number of matches added to \a variable_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindGlobalVariables (const RegularExpression& regex,
                          bool append,
-                         uint32_t max_matches,
-                         VariableList& variable_list);
+                         size_t max_matches,
+                         VariableList& variable_list) const;
 
     //------------------------------------------------------------------
     /// Finds the first module whose file specification matches \a
@@ -332,7 +362,7 @@ public:
                  ModuleList& matching_module_list) const;
 
     lldb::ModuleSP
-    FindModule (const Module *module_ptr);
+    FindModule (const Module *module_ptr) const;
 
     //------------------------------------------------------------------
     // Find a module by UUID
@@ -342,22 +372,22 @@ public:
     // finding modules by UUID values is very efficient and accurate.
     //------------------------------------------------------------------
     lldb::ModuleSP
-    FindModule (const UUID &uuid);
+    FindModule (const UUID &uuid) const;
     
     lldb::ModuleSP
-    FindFirstModule (const ModuleSpec &module_spec);
+    FindFirstModule (const ModuleSpec &module_spec) const;
 
     size_t
     FindSymbolsWithNameAndType (const ConstString &name,
                                 lldb::SymbolType symbol_type,
                                 SymbolContextList &sc_list,
-                                bool append = false);
+                                bool append = false) const;
 
     size_t
     FindSymbolsMatchingRegExAndType (const RegularExpression &regex, 
                                      lldb::SymbolType symbol_type, 
                                      SymbolContextList &sc_list,
-                                     bool append = false);
+                                     bool append = false) const;
                                      
     //------------------------------------------------------------------
     /// Find types by name.
@@ -392,12 +422,12 @@ public:
     /// @return
     ///     The number of matches added to \a type_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindTypes (const SymbolContext& sc,
                const ConstString &name,
                bool name_is_fully_qualified,
-               uint32_t max_matches,
-               TypeList& types);
+               size_t max_matches,
+               TypeList& types) const;
     
     bool
     FindSourceFile (const FileSpec &orig_spec, FileSpec &new_spec) const;
@@ -416,7 +446,7 @@ public:
 
     bool
     ResolveFileAddress (lldb::addr_t vm_addr,
-                        Address& so_addr);
+                        Address& so_addr) const;
 
     //------------------------------------------------------------------
     /// @copydoc Module::ResolveSymbolContextForAddress (const Address &,uint32_t,SymbolContext&)
@@ -424,7 +454,7 @@ public:
     uint32_t
     ResolveSymbolContextForAddress (const Address& so_addr,
                                     uint32_t resolve_scope,
-                                    SymbolContext& sc);
+                                    SymbolContext& sc) const;
 
     //------------------------------------------------------------------
     /// @copydoc Module::ResolveSymbolContextForFilePath (const char *,uint32_t,bool,uint32_t,SymbolContextList&)
@@ -434,7 +464,7 @@ public:
                                      uint32_t line,
                                      bool check_inlines,
                                      uint32_t resolve_scope,
-                                     SymbolContextList& sc_list);
+                                     SymbolContextList& sc_list) const;
 
     //------------------------------------------------------------------
     /// @copydoc Module::ResolveSymbolContextsForFileSpec (const FileSpec &,uint32_t,bool,uint32_t,SymbolContextList&)
@@ -444,7 +474,7 @@ public:
                                      uint32_t line,
                                      bool check_inlines,
                                      uint32_t resolve_scope,
-                                     SymbolContextList& sc_list);
+                                     SymbolContextList& sc_list) const;
 
     //------------------------------------------------------------------
     /// Gets the size of the module list.
@@ -455,6 +485,12 @@ public:
     size_t
     GetSize () const;
 
+    bool
+    LoadScriptingResourcesInTarget (Target *target,
+                                    std::list<Error>& errors,
+                                    Stream* feedback_stream = NULL,
+                                    bool continue_on_error = true);
+    
     static bool
     ModuleIsInCache (const Module *module_ptr);
 
@@ -473,7 +509,7 @@ public:
     FindSharedModules (const ModuleSpec &module_spec,
                        ModuleList &matching_module_list);
 
-    static uint32_t
+    static size_t
     RemoveOrphanSharedModules (bool mandatory);
     
     static bool
@@ -485,12 +521,26 @@ protected:
     //------------------------------------------------------------------
     typedef std::vector<lldb::ModuleSP> collection; ///< The module collection type.
 
+    void
+    AppendImpl (const lldb::ModuleSP &module_sp, bool use_notifier = true);
+    
+    bool
+    RemoveImpl (const lldb::ModuleSP &module_sp, bool use_notifier = true);
+    
+    collection::iterator
+    RemoveImpl (collection::iterator pos, bool use_notifier = true);
+    
+    void
+    ClearImpl (bool use_notifier = true);
+    
     //------------------------------------------------------------------
     // Member variables.
     //------------------------------------------------------------------
     collection m_modules; ///< The collection of modules.
     mutable Mutex m_modules_mutex;
 
+    Notifier* m_notifier;
+    
 };
 
 } // namespace lldb_private

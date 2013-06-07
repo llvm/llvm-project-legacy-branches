@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class SmartArrayDataFormatterTestCase(TestBase):
 
@@ -34,10 +35,7 @@ class SmartArrayDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -242,11 +240,11 @@ class SmartArrayDataFormatterTestCase(TestBase):
 # using [] is required here
         self.runCmd("type summary add --summary-string \"arr = ${var%x}\" \"int [5]\"")
         
-        self.expect("frame variable intarr",
-                    substrs = ['<invalid usage of pointer value as object>'])
+        self.expect("frame variable intarr",matching=False,
+                    substrs = ['0x00000001,0x00000001,0x00000002,0x00000003,0x00000005'])
         
-        self.expect("frame variable other.intarr",
-                    substrs = ['<invalid usage of pointer value as object>'])
+        self.expect("frame variable other.intarr", matching=False,
+                    substrs = ['0x00000009,0x00000008,0x00000007,0x00000006,0x00000005'])
 
         self.runCmd("type summary add --summary-string \"arr = ${var[]%x}\" \"int [5]\"")
         

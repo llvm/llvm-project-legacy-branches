@@ -13,6 +13,7 @@
 #include "lldb/lldb-private-log.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/LineTable.h"
 
 using namespace lldb;
@@ -89,10 +90,8 @@ FileLineResolver::GetDepth()
 void
 FileLineResolver::GetDescription (Stream *s)
 {
-    s->Printf ("File and line resolver for file: \"%s%s%s\" line: %u", 
-               m_file_spec.GetDirectory().GetCString(),
-               m_file_spec.GetDirectory() ? "/" : "",
-               m_file_spec.GetFilename().GetCString(),
+    s->Printf ("File and line resolver for file: \"%s\" line: %u", 
+               m_file_spec.GetPath().c_str(),
                m_line_number);
 }
 

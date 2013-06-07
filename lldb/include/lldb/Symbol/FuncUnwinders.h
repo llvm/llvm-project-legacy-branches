@@ -1,9 +1,6 @@
 #ifndef liblldb_FuncUnwinders_h
 #define liblldb_FuncUnwinders_h
 
-
-#include <memory>
-
 #include "lldb/Core/AddressRange.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/AddressRange.h"
@@ -70,6 +67,13 @@ public:
         return m_range.ContainsFileAddress (addr);
     }
 
+    // When we're doing an unwind using the UnwindPlanAtNonCallSite and we find an
+    // impossible unwind condition, we know that the UnwindPlan is invalid.  Calling
+    // this method on the FuncUnwinder will tell it to replace that UnwindPlan with
+    // the architectural default UnwindPlan so hopefully our stack walk will get past
+    // this frame.
+    void
+    InvalidateNonCallSiteUnwindPlan (lldb_private::Thread& Thread);
 
 private:
     UnwindTable& m_unwind_table;

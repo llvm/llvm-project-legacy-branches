@@ -23,6 +23,20 @@ def getCompiler():
     """Returns the compiler in effect the test suite is running with."""
     return os.environ["CC"] if "CC" in os.environ else "clang"
 
+def getArchFlag():
+    """Returns the flag required to specify the arch"""
+    compiler = getCompiler()
+    if compiler is None:
+      return ""
+    elif "gcc" in compiler:
+      archflag = "-m"
+    elif "clang" in compiler:
+      archflag = "-arch "
+    else:
+      archflag = None
+
+    return (" ARCHFLAG=" + archflag) if archflag else ""
+
 def getArchSpec(architecture):
     """
     Helper function to return the key-value string to specify the architecture
@@ -101,6 +115,8 @@ def buildDwarf(sender=None, architecture=None, compiler=None, dictionary=None, c
 
 def cleanup(sender=None, dictionary=None):
     """Perform a platform-specific cleanup after the test."""
+    #import traceback
+    #traceback.print_stack()
     if os.path.isfile("Makefile"):
         lldbtest.system(["/bin/sh", "-c", "make clean"+getCmdLine(dictionary)],
                         sender=sender)

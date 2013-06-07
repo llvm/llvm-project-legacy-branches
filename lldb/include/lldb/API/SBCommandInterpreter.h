@@ -11,6 +11,7 @@
 #define LLDB_SBCommandInterpreter_h_
 
 #include "lldb/API/SBDefines.h"
+#include "lldb/API/SBDebugger.h"
 
 namespace lldb {
 
@@ -65,6 +66,15 @@ public:
 
     lldb::SBProcess
     GetProcess ();
+    
+    lldb::SBDebugger
+    GetDebugger ();
+    
+    lldb::SBCommand
+    AddMultiwordCommand (const char* name, const char* help);
+    
+    lldb::SBCommand
+    AddCommand (const char* name, lldb::SBCommandPluginInterface *impl, const char* help);
 
     void
     SourceInitFileInHomeDirectory (lldb::SBCommandReturnObject &result);
@@ -75,8 +85,18 @@ public:
     lldb::ReturnStatus
     HandleCommand (const char *command_line, lldb::SBCommandReturnObject &result, bool add_to_history = false);
 
-    // This interface is not useful in SWIG, since the cursor & last_char arguments are string pointers INTO current_line
-    // and you can't do that in a scripting language interface in general... 
+    // The pointer based interface is not useful in SWIG, since the cursor & last_char arguments are string pointers INTO current_line
+    // and you can't do that in a scripting language interface in general...
+    
+    // In either case, the way this works is that the you give it a line and cursor position in the line.  The function
+    // will return the number of completions.  The matches list will contain number_of_completions + 1 elements.  The first
+    // element is the common substring after the cursor position for all the matches.  The rest of the elements are the
+    // matches.  The first element is useful if you are emulating the common shell behavior where the tab completes
+    // to the string that is common among all the matches, then you should first check if the first element is non-empty,
+    // and if so just insert it and move the cursor to the end of the insertion.  The next tab will return an empty
+    // common substring, and a list of choices (if any), at which point you should display the choices and let the user
+    // type further to disambiguate.
+    
     int
     HandleCompletion (const char *current_line,
                       const char *cursor,
@@ -99,6 +119,9 @@ public:
     SetCommandOverrideCallback (const char *command_name,
                                 lldb::CommandOverrideCallback callback,
                                 void *baton);
+    
+    SBCommandInterpreter (lldb_private::CommandInterpreter *interpreter_ptr = NULL);   // Access using SBDebugger::GetCommandInterpreter();
+    
 protected:
 
     lldb_private::CommandInterpreter &
@@ -112,14 +135,58 @@ protected:
 private:
     friend class SBDebugger;
 
-    SBCommandInterpreter (lldb_private::CommandInterpreter *interpreter_ptr = NULL);   // Access using SBDebugger::GetCommandInterpreter();
-
     static void
     InitializeSWIG ();
 
     lldb_private::CommandInterpreter *m_opaque_ptr;
 };
 
+class SBCommandPluginInterface
+{
+public:
+    virtual bool
+    DoExecute (lldb::SBDebugger debugger,
+               char** command,
+               lldb::SBCommandReturnObject &result)
+    {
+        return false;
+    }
+    
+    virtual
+    ~SBCommandPluginInterface ()
+    {}
+};
+    
+class SBCommand
+{
+public:
+    
+    SBCommand ();
+    
+    bool
+    IsValid ();
+    
+    const char*
+    GetName ();
+    
+    const char*
+    GetHelp ();
+    
+    lldb::SBCommand
+    AddMultiwordCommand (const char* name, const char* help = NULL);
+    
+    lldb::SBCommand
+    AddCommand (const char* name, lldb::SBCommandPluginInterface* impl, const char* help = NULL);
+    
+private:
+    
+    friend class SBDebugger;
+    friend class SBCommandInterpreter;
+    
+    SBCommand (lldb::CommandObjectSP cmd_sp);
+    
+    lldb::CommandObjectSP m_opaque_sp;
+};
 
 } // namespace lldb
 

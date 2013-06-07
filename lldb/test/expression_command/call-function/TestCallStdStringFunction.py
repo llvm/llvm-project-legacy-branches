@@ -26,19 +26,18 @@ class ExprCommandCallFunctionTestCase(TestBase):
         self.call_function()
 
     @dwarf_test
+    @expectedFailureGcc # llvm.org/pr14437, fails with GCC 4.6.3 and 4.7.2
     def test_with_dwarf(self):
         """Test calling std::String member function."""
-        self.buildDsym()
+        self.buildDwarf()
         self.call_function()
 
     def call_function(self):
         """Test calling std::String member function."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        # Some versions of GCC encode two locations for the 'return' statement in main.cpp
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=-1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 

@@ -28,16 +28,18 @@ class BasicExprCommandsTestCase(TestBase):
         self.line = line_number('main.cpp',
                                 '// Please test many expressions while stopped at this line:')
 
+        # Disable confirmation prompt to avoid infinite wait
+        self.runCmd("settings set auto-confirm true")
+        self.addTearDownHook(lambda: self.runCmd("settings clear auto-confirm"))
+
+
     def test_many_expr_commands(self):
         """These basic expression commands should work as expected."""
         self.buildDefault()
 
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=False)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -74,12 +76,7 @@ class BasicExprCommandsTestCase(TestBase):
         # (const char *) $7 = ...
 
         self.expect("expression argv[0]",
-            substrs = ["(const char *)",
-                       #
-                       # Relax this substring comparison a bit to take into acoount
-                       # the remote testsuite execution.
-                       #
-                       #os.path.join(self.mydir, "a.out")]                       
+            substrs = ["(const char *)", 
                        "a.out"])
         # (const char *) $8 = 0x... "/Volumes/data/lldb/svn/trunk/test/expression_command/test/a.out"
 
@@ -165,6 +162,22 @@ class BasicExprCommandsTestCase(TestBase):
             startstr = "'Z'")
         self.DebugSBValue(val)
 
+        callee_break = target.BreakpointCreateByName ("a_function_to_call", None)
+        self.assertTrue(callee_break.GetNumLocations() > 0)
+
+        # Make sure ignoring breakpoints works from the command line:
+        self.expect("expression -i true -- a_function_to_call()",
+                    substrs = ['(int) $', ' 1'])
+        self.assertTrue (callee_break.GetHitCount() == 1)
+
+        # Now try ignoring breakpoints using the SB API's:
+        options = lldb.SBExpressionOptions()
+        options.SetIgnoreBreakpoints(True)
+        value = frame.EvaluateExpression('a_function_to_call()', options)
+        self.assertTrue (value.IsValid())
+        self.assertTrue (value.GetValueAsSigned(0) == 2)
+        self.assertTrue (callee_break.GetHitCount() == 2)
+
     # rdar://problem/8686536
     # CommandInterpreter::HandleCommand is stripping \'s from input for WantsRawCommand commands
     def test_expr_commands_can_handle_quotes(self):
@@ -173,10 +186,7 @@ class BasicExprCommandsTestCase(TestBase):
 
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line(self, "main.cpp", self.line, num_expected_locations=1,loc_exact=False)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -217,7 +227,6 @@ class BasicExprCommandsTestCase(TestBase):
         self.expect('print_hi',
             substrs = ['(int) $',
                        '6'])
-
 
 if __name__ == '__main__':
     import atexit

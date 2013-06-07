@@ -14,6 +14,7 @@
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Stream.h"
+#include "lldb/Core/StreamString.h"
 #include "lldb/Symbol/TaggedASTType.h"
 #include "llvm/Pass.h"
 
@@ -28,13 +29,15 @@ namespace llvm {
     class Instruction;
     class Module;
     class StoreInst;
-    class TargetData;
+    class DataLayout;
     class Type;
     class Value;
 }
 
 namespace lldb_private {
     class ClangExpressionDeclMap;
+    class IRExecutionUnit;
+    class IRMemoryMap;
 }
 
 //----------------------------------------------------------------------
@@ -54,14 +57,6 @@ namespace lldb_private {
 class IRForTarget : public llvm::ModulePass
 {
 public:
-    class StaticDataAllocator {
-    public:
-        StaticDataAllocator();
-        virtual ~StaticDataAllocator();
-        virtual lldb_private::StreamString &GetStream() = 0;
-        virtual lldb::addr_t Allocate() = 0;
-    };
-    
     //------------------------------------------------------------------
     /// Constructor
     ///
@@ -84,8 +79,8 @@ public:
     ///     of the function, if it has no side-effects and the result can
     ///     be computed statically.
     ///
-    /// @param[in] data_allocator
-    ///     If non-NULL, the static data allocator to use for literal strings.
+    /// @param[in] execution_unit
+    ///     The holder for raw data associated with the expression.
     ///
     /// @param[in] error_stream
     ///     If non-NULL, a stream on which errors can be printed.
@@ -95,9 +90,7 @@ public:
     //------------------------------------------------------------------
     IRForTarget(lldb_private::ClangExpressionDeclMap *decl_map,
                 bool resolve_vars,
-                lldb_private::ExecutionPolicy execution_policy,
-                lldb::ClangExpressionVariableSP &const_result,
-                StaticDataAllocator *data_allocator,
+                lldb_private::IRExecutionUnit &execution_unit,
                 lldb_private::Stream *error_stream,
                 const char* func_name = "$__lldb_expr");
     
@@ -144,18 +137,6 @@ public:
     //------------------------------------------------------------------
     virtual llvm::PassManagerType 
     getPotentialPassManagerType() const;
-    
-    //------------------------------------------------------------------
-    /// Checks whether the IR interpreter successfully interpreted the
-    /// expression.
-    ///
-    /// Returns true if it did; false otherwise.
-    //------------------------------------------------------------------
-    lldb_private::Error &
-    getInterpreterError ()
-    {
-        return m_interpreter_error;
-    }
 
 private:
     //------------------------------------------------------------------
@@ -636,22 +617,50 @@ private:
     bool 
     ReplaceVariables (llvm::Function &llvm_function);
     
+    //------------------------------------------------------------------
+    /// A module-level pass to remove all global variables from the
+    /// module since it no longer should export or import any symbols.
+    //------------------------------------------------------------------
+    
+    //------------------------------------------------------------------
+    /// The top-level pass implementation
+    ///
+    /// @param[in] llvm_module
+    ///     The module currently being processed.
+    ///
+    /// @return
+    ///     True on success; false otherwise
+    //------------------------------------------------------------------
+    bool
+    StripAllGVs (llvm::Module &llvm_module);
+    
+    class StaticDataAllocator {
+    public:
+        StaticDataAllocator(lldb_private::IRExecutionUnit &execution_unit);
+        lldb_private::StreamString &GetStream()
+        {
+            return m_stream_string;
+        }
+        lldb::addr_t Allocate();
+    private:
+        lldb_private::IRExecutionUnit  &m_execution_unit;
+        lldb_private::StreamString      m_stream_string;
+        lldb::addr_t                    m_allocation;
+    };
+    
     /// Flags
     bool                                    m_resolve_vars;             ///< True if external variable references and persistent variable references should be resolved
-    lldb_private::ExecutionPolicy           m_execution_policy;         ///< True if the interpreter should be used to attempt to get a static result
-    bool                                    m_interpret_success;        ///< True if the interpreter successfully handled the whole expression
     std::string                             m_func_name;                ///< The name of the function to translate
     lldb_private::ConstString               m_result_name;              ///< The name of the result variable ($0, $1, ...)
     lldb_private::TypeFromParser            m_result_type;              ///< The type of the result variable.
     llvm::Module                           *m_module;                   ///< The module being processed, or NULL if that has not been determined yet.
-    std::auto_ptr<llvm::TargetData>         m_target_data;              ///< The target data for the module being processed, or NULL if there is no module.
+    std::unique_ptr<llvm::DataLayout>        m_target_data;              ///< The target data for the module being processed, or NULL if there is no module.
     lldb_private::ClangExpressionDeclMap   *m_decl_map;                 ///< The DeclMap containing the Decls 
-    StaticDataAllocator                    *m_data_allocator;           ///< If non-NULL, the allocator to use for constant strings
+    StaticDataAllocator                     m_data_allocator;           ///< The allocator to use for constant strings
+    lldb_private::IRMemoryMap              &m_memory_map;               ///< The memory map to pass to the IR interpreter
     llvm::Constant                         *m_CFStringCreateWithBytes;  ///< The address of the function CFStringCreateWithBytes, cast to the appropriate function pointer type
     llvm::Constant                         *m_sel_registerName;         ///< The address of the function sel_registerName, cast to the appropriate function pointer type
-    lldb::ClangExpressionVariableSP        &m_const_result;             ///< This value should be set to the return value of the expression if it is constant and the expression has no side effects
     lldb_private::Stream                   *m_error_stream;             ///< If non-NULL, the stream on which errors should be printed
-    lldb_private::Error                     m_interpreter_error;        ///< The error result from the IR interpreter
     
     bool                                    m_has_side_effects;         ///< True if the function's result cannot be simply determined statically
     llvm::StoreInst                        *m_result_store;             ///< If non-NULL, the store instruction that writes to the result variable.  If m_has_side_effects is true, this is NULL.

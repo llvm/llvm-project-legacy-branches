@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class NamedSummariesDataFormatterTestCase(TestBase):
 
@@ -34,10 +35,7 @@ class NamedSummariesDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -96,9 +94,10 @@ class NamedSummariesDataFormatterTestCase(TestBase):
             substrs = ['Second: x=65',
                         'y=0x'])
                     
-        self.expect("frame variable second --summary NoSuchSummary",
-            substrs = ['Second: x=65',
-                        'y=0x'])
+        # <rdar://problem/11576143> decided that invalid summaries will raise an error
+        # instead of just defaulting to the base summary
+        self.expect("frame variable second --summary NoSuchSummary",error=True,
+            substrs = ['must specify a valid named summary'])
                     
         self.runCmd("thread step-over")
                     

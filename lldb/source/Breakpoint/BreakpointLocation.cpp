@@ -7,22 +7,26 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 // C++ Includes
 #include <string>
 
 // Other libraries and framework includes
 // Project includes
+#include "lldb/lldb-private-log.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Breakpoint/BreakpointID.h"
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Log.h"
-#include "lldb/Target/Target.h"
-#include "lldb/Target/ThreadPlan.h"
-#include "lldb/Target/Process.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/StreamString.h"
-#include "lldb/lldb-private-log.h"
+#include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/Symbol.h"
+#include "lldb/Target/Target.h"
+#include "lldb/Target/Process.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/ThreadSpec.h"
 
@@ -42,7 +46,8 @@ BreakpointLocation::BreakpointLocation
     m_address (addr),
     m_owner (owner),
     m_options_ap (),
-    m_bp_site_sp ()
+    m_bp_site_sp (),
+    m_condition_mutex ()
 {
     SetThreadID (tid);
     m_being_created = false;
@@ -236,9 +241,120 @@ BreakpointLocation::SetCondition (const char *condition)
 }
 
 const char *
-BreakpointLocation::GetConditionText () const
+BreakpointLocation::GetConditionText (size_t *hash) const
 {
-    return GetOptionsNoCreate()->GetConditionText();
+    return GetOptionsNoCreate()->GetConditionText(hash);
+}
+
+bool
+BreakpointLocation::ConditionSaysStop (ExecutionContext &exe_ctx, Error &error)
+{
+    Log *log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
+ 
+    Mutex::Locker evaluation_locker(m_condition_mutex);
+    
+    size_t condition_hash;
+    const char *condition_text = GetConditionText(&condition_hash);
+    
+    if (!condition_text)
+    {
+        m_user_expression_sp.reset();
+        return false;
+    }
+    
+    if (condition_hash != m_condition_hash ||
+        !m_user_expression_sp ||
+        !m_user_expression_sp->MatchesContext(exe_ctx))
+    {
+        m_user_expression_sp.reset(new ClangUserExpression(condition_text,
+                                                           NULL,
+                                                           lldb::eLanguageTypeUnknown,
+                                                           ClangUserExpression::eResultTypeAny));
+        
+        StreamString errors;
+        
+        if (!m_user_expression_sp->Parse(errors,
+                                         exe_ctx,
+                                         eExecutionPolicyOnlyWhenNeeded,
+                                         true))
+        {
+            error.SetErrorStringWithFormat("Couldn't parse conditional expression:\n%s",
+                                           errors.GetData());
+            m_user_expression_sp.reset();
+            return false;
+        }
+        
+        m_condition_hash = condition_hash;
+    }
+
+    // We need to make sure the user sees any parse errors in their condition, so we'll hook the
+    // constructor errors up to the debugger's Async I/O.
+        
+    ValueObjectSP result_value_sp;
+    const bool unwind_on_error = true;
+    const bool ignore_breakpoints = true;
+    const bool try_all_threads = true;
+    
+    Error expr_error;
+    
+    StreamString execution_errors;
+    
+    ClangExpressionVariableSP result_variable_sp;
+    
+    ExecutionResults result_code =
+    m_user_expression_sp->Execute(execution_errors,
+                                  exe_ctx,
+                                  unwind_on_error,
+                                  ignore_breakpoints,
+                                  m_user_expression_sp,
+                                  result_variable_sp,
+                                  try_all_threads,
+                                  ClangUserExpression::kDefaultTimeout);
+    
+    bool ret;
+    
+    if (result_code == eExecutionCompleted)
+    {
+        if (!result_variable_sp)
+        {
+            ret = false;
+            error.SetErrorString("Expression did not return a result");
+        }
+        
+        result_value_sp = result_variable_sp->GetValueObject();
+
+        if (result_value_sp)
+        {
+            Scalar scalar_value;
+            if (result_value_sp->ResolveValue (scalar_value))
+            {
+                if (scalar_value.ULongLong(1) == 0)
+                    ret = false;
+                else
+                    ret = true;
+                if (log)
+                    log->Printf("Condition successfully evaluated, result is %s.\n",
+                                ret ? "true" : "false");
+            }
+            else
+            {
+                ret = false;
+                error.SetErrorString("Failed to get an integer result from the expression");
+            }
+        }
+        else
+        {
+            ret = false;
+            error.SetErrorString("Failed to get any result from the expression");
+        }
+    }
+    else
+    {
+        ret = false;
+        error.SetErrorStringWithFormat("Couldn't execute expression:\n%s", execution_errors.GetData());
+    }
+    
+    return ret;
 }
 
 uint32_t
@@ -318,7 +434,7 @@ bool
 BreakpointLocation::ShouldStop (StoppointCallbackContext *context)
 {
     bool should_stop = true;
-    LogSP log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
+    Log *log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
 
     IncrementHitCount();
 
@@ -374,9 +490,9 @@ BreakpointLocation::ResolveBreakpointSite ()
 
     if (new_id == LLDB_INVALID_BREAK_ID)
     {
-        LogSP log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
+        Log *log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
         if (log)
-            log->Warning ("Tried to add breakpoint site at 0x%llx but it was already present.\n",
+            log->Warning ("Tried to add breakpoint site at 0x%" PRIx64 " but it was already present.\n",
                           m_address.GetOpcodeLoadAddress (&m_owner.GetTarget()));
         return false;
     }
@@ -408,13 +524,20 @@ void
 BreakpointLocation::GetDescription (Stream *s, lldb::DescriptionLevel level)
 {
     SymbolContext sc;
-    s->Indent();
-    BreakpointID::GetCanonicalReference(s, m_owner.GetID(), GetID());
-
+    
+    // If the description level is "initial" then the breakpoint is printing out our initial state,
+    // and we should let it decide how it wants to print our label.
+    if (level != eDescriptionLevelInitial)
+    {
+        s->Indent();
+        BreakpointID::GetCanonicalReference(s, m_owner.GetID(), GetID());
+    }
+    
     if (level == lldb::eDescriptionLevelBrief)
         return;
 
-    s->PutCString(": ");
+    if (level != eDescriptionLevelInitial)
+        s->PutCString(": ");
 
     if (level == lldb::eDescriptionLevelVerbose)
         s->IndentMore();
@@ -423,7 +546,7 @@ BreakpointLocation::GetDescription (Stream *s, lldb::DescriptionLevel level)
     {
         m_address.CalculateSymbolContext(&sc);
 
-        if (level == lldb::eDescriptionLevelFull)
+        if (level == lldb::eDescriptionLevelFull || level == eDescriptionLevelInitial)
         {
             s->PutCString("where = ");
             sc.DumpStopContext (s, m_owner.GetTarget().GetProcessSP().get(), m_address, false, true, false);
@@ -476,7 +599,11 @@ BreakpointLocation::GetDescription (Stream *s, lldb::DescriptionLevel level)
         s->EOL();
         s->Indent();
     }
-    s->Printf ("%saddress = ", (level == lldb::eDescriptionLevelFull && m_address.IsSectionOffset()) ? ", " : "");
+    
+    if (m_address.IsSectionOffset() && (level == eDescriptionLevelFull || level == eDescriptionLevelInitial))
+        s->Printf (", ");
+    s->Printf ("address = ");
+    
     ExecutionContextScope *exe_scope = NULL;
     Target *target = &m_owner.GetTarget();
     if (target)
@@ -484,7 +611,10 @@ BreakpointLocation::GetDescription (Stream *s, lldb::DescriptionLevel level)
     if (exe_scope == NULL)
         exe_scope = target;
 
-    m_address.Dump(s, exe_scope, Address::DumpStyleLoadAddress, Address::DumpStyleModuleWithFileAddress);
+    if (eDescriptionLevelInitial)
+        m_address.Dump(s, exe_scope, Address::DumpStyleLoadAddress, Address::DumpStyleFileAddress);
+    else
+        m_address.Dump(s, exe_scope, Address::DumpStyleLoadAddress, Address::DumpStyleModuleWithFileAddress);
 
     if (level == lldb::eDescriptionLevelVerbose)
     {
@@ -503,7 +633,7 @@ BreakpointLocation::GetDescription (Stream *s, lldb::DescriptionLevel level)
         }
         s->IndentLess();
     }
-    else
+    else if (level != eDescriptionLevelInitial)
     {
         s->Printf(", %sresolved, hit count = %u ",
                   (IsResolved() ? "" : "un"),
@@ -521,7 +651,7 @@ BreakpointLocation::Dump(Stream *s) const
     if (s == NULL)
         return;
 
-    s->Printf("BreakpointLocation %u: tid = %4.4llx  load addr = 0x%8.8llx  state = %s  type = %s breakpoint  "
+    s->Printf("BreakpointLocation %u: tid = %4.4" PRIx64 "  load addr = 0x%8.8" PRIx64 "  state = %s  type = %s breakpoint  "
               "hw_index = %i  hit_count = %-4u  ignore_count = %-4u",
               GetID(),
               GetOptionsNoCreate()->GetThreadSpecNoCreate()->GetTID(),

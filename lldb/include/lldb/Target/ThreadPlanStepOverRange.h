@@ -34,19 +34,14 @@ public:
 
     virtual void GetDescription (Stream *s, lldb::DescriptionLevel level);
     virtual bool ShouldStop (Event *event_ptr);
-    virtual bool PlanExplainsStop ();
-
+    
 protected:
+    virtual bool DoPlanExplainsStop (Event *event_ptr);
+    virtual bool DoWillResume (lldb::StateType resume_state, bool current_plan);
 
 private:
 
-    friend ThreadPlan *
-    Thread::QueueThreadPlanForStepRange (bool abort_other_plans,
-                                         StepType type,
-                                         const AddressRange &range,
-                                         const SymbolContext &addr_context,
-                                         lldb::RunMode stop_others,
-                                         bool avoid_code_without_debug_info);
+    bool m_first_resume;
 
     DISALLOW_COPY_AND_ASSIGN (ThreadPlanStepOverRange);
 

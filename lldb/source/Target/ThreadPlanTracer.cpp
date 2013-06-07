@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Target/ThreadPlan.h"
 
 // C Includes
@@ -19,6 +21,7 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Disassembler.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Symbol/TypeList.h"
@@ -71,9 +74,12 @@ ThreadPlanTracer::Log()
     bool show_fullpaths = false;
     
     Stream *stream = GetLogStream();
-    m_thread.GetStackFrameAtIndex(0)->Dump (stream, show_frame_index, show_fullpaths);
-    stream->Printf("\n");
-    stream->Flush();
+    if (stream)
+    {
+        m_thread.GetStackFrameAtIndex(0)->Dump (stream, show_frame_index, show_fullpaths);
+        stream->Printf("\n");
+        stream->Flush();
+    }
     
 }
 
@@ -114,7 +120,7 @@ Disassembler *
 ThreadPlanAssemblyTracer::GetDisassembler ()
 {
     if (m_disassembler_sp.get() == NULL)
-        m_disassembler_sp = Disassembler::FindPlugin(m_thread.GetProcess()->GetTarget().GetArchitecture(), NULL);
+        m_disassembler_sp = Disassembler::FindPlugin(m_thread.GetProcess()->GetTarget().GetArchitecture(), NULL, NULL);
     return m_disassembler_sp.get();
 }
 
@@ -202,10 +208,11 @@ ThreadPlanAssemblyTracer::Log ()
                                     process_sp->GetByteOrder(), 
                                     process_sp->GetAddressByteSize());
             
+			bool data_from_file = false;
             if (addr_valid)
-                disassembler->DecodeInstructions (pc_addr, extractor, 0, 1, false);
+                disassembler->DecodeInstructions (pc_addr, extractor, 0, 1, false, data_from_file);
             else
-                disassembler->DecodeInstructions (Address (pc), extractor, 0, 1, false);
+                disassembler->DecodeInstructions (Address (pc), extractor, 0, 1, false, data_from_file);
             
             InstructionList &instruction_list = disassembler->GetInstructionList();
             const uint32_t max_opcode_byte_size = instruction_list.GetMaxOpcocdeByteSize();

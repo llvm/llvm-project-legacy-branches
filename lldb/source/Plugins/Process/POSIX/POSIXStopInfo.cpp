@@ -21,7 +21,7 @@ POSIXLimboStopInfo::~POSIXLimboStopInfo() { }
 lldb::StopReason
 POSIXLimboStopInfo::GetStopReason() const
 {
-    return lldb::eStopReasonTrace;
+    return lldb::eStopReasonThreadExiting;
 }
 
 const char *
@@ -33,13 +33,13 @@ POSIXLimboStopInfo::GetDescription()
 bool
 POSIXLimboStopInfo::ShouldStop(Event *event_ptr)
 {
-    return true;
+    return false;
 }
 
 bool
 POSIXLimboStopInfo::ShouldNotify(Event *event_ptr)
 {
-    return true;
+    return false;
 }
 
 //===----------------------------------------------------------------------===//
@@ -57,4 +57,33 @@ const char *
 POSIXCrashStopInfo::GetDescription()
 {
     return ProcessMessage::GetCrashReasonString(m_crash_reason);
+}
+
+//===----------------------------------------------------------------------===//
+// POSIXNewThreadStopInfo
+
+POSIXNewThreadStopInfo::~POSIXNewThreadStopInfo() { }
+
+lldb::StopReason
+POSIXNewThreadStopInfo::GetStopReason() const
+{
+    return lldb::eStopReasonNone;
+}
+
+const char *
+POSIXNewThreadStopInfo::GetDescription()
+{
+    return "thread spawned";
+}
+
+bool
+POSIXNewThreadStopInfo::ShouldStop(Event *event_ptr)
+{
+    return false;
+}
+
+bool
+POSIXNewThreadStopInfo::ShouldNotify(Event *event_ptr)
+{
+    return false;
 }

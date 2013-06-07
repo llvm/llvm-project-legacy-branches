@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/lldb-private.h"
 #include "lldb/lldb-private-log.h"
 #include "lldb/Core/ArchSpec.h"
@@ -25,7 +27,6 @@
 #include "Plugins/ABI/MacOSX-i386/ABIMacOSX_i386.h"
 #include "Plugins/ABI/MacOSX-arm/ABIMacOSX_arm.h"
 #include "Plugins/ABI/SysV-x86_64/ABISysV_x86_64.h"
-#include "Plugins/Disassembler/llvm/DisassemblerLLVM.h"
 #include "Plugins/Disassembler/llvm/DisassemblerLLVMC.h"
 #include "Plugins/Instruction/ARM/EmulateInstructionARM.h"
 #include "Plugins/SymbolVendor/MacOSX/SymbolVendorMacOSX.h"
@@ -41,19 +42,21 @@
 #include "Plugins/Platform/FreeBSD/PlatformFreeBSD.h"
 #include "Plugins/Platform/Linux/PlatformLinux.h"
 #include "Plugins/Platform/POSIX/PlatformPOSIX.h"
+#include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
+#ifndef LLDB_DISABLE_PYTHON
+#include "Plugins/OperatingSystem/Python/OperatingSystemPython.h"
+#endif
 #if defined (__APPLE__)
 #include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
 #include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
-#include "Plugins/OperatingSystem/Darwin-Kernel/OperatingSystemDarwinKernel.h"
-#include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV1.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV2.h"
 #include "Plugins/ObjectContainer/Universal-Mach-O/ObjectContainerUniversalMachO.h"
 #include "Plugins/ObjectFile/Mach-O/ObjectFileMachO.h"
 #include "Plugins/Process/MacOSX-Kernel/ProcessKDP.h"
-#include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
 #include "Plugins/Platform/MacOSX/PlatformMacOSX.h"
 #include "Plugins/Platform/MacOSX/PlatformRemoteiOS.h"
+#include "Plugins/Platform/MacOSX/PlatformDarwinKernel.h"
 #include "Plugins/Platform/MacOSX/PlatformiOSSimulator.h"
 #endif
 
@@ -64,12 +67,12 @@
 #endif
 
 #if defined (__FreeBSD__)
-#include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
 #include "Plugins/Process/POSIX/ProcessPOSIX.h"
 #include "Plugins/Process/FreeBSD/ProcessFreeBSD.h"
 #endif
 
 #include "Plugins/Platform/gdb-server/PlatformRemoteGDBServer.h"
+#include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
 #include "Plugins/DynamicLoader/Static/DynamicLoaderStatic.h"
 
 using namespace lldb;
@@ -94,7 +97,6 @@ lldb_private::Initialize ()
         ABIMacOSX_arm::Initialize();
         ABISysV_x86_64::Initialize();
         DisassemblerLLVMC::Initialize();
-        DisassemblerLLVM::Initialize();
         ObjectContainerBSDArchive::Initialize();
         ObjectFileELF::Initialize();
         SymbolFileDWARF::Initialize();
@@ -106,23 +108,26 @@ lldb_private::Initialize ()
         DynamicLoaderPOSIXDYLD::Initialize ();
         PlatformFreeBSD::Initialize();
         PlatformLinux::Initialize();
+        SymbolFileDWARFDebugMap::Initialize();
+        ItaniumABILanguageRuntime::Initialize();
+#ifndef LLDB_DISABLE_PYTHON
+        OperatingSystemPython::Initialize();
+#endif
+
 #if defined (__APPLE__)
         //----------------------------------------------------------------------
         // Apple/Darwin hosted plugins
         //----------------------------------------------------------------------
         DynamicLoaderMacOSXDYLD::Initialize();
         DynamicLoaderDarwinKernel::Initialize();
-        OperatingSystemDarwinKernel::Initialize();
-        SymbolFileDWARFDebugMap::Initialize();
-        ItaniumABILanguageRuntime::Initialize();
         AppleObjCRuntimeV2::Initialize();
         AppleObjCRuntimeV1::Initialize();
         ObjectContainerUniversalMachO::Initialize();
         ObjectFileMachO::Initialize();
-        ProcessGDBRemote::Initialize();
         ProcessKDP::Initialize();
         ProcessMachCore::Initialize();
         SymbolVendorMacOSX::Initialize();
+        PlatformDarwinKernel::Initialize();
         PlatformRemoteiOS::Initialize();
         PlatformMacOSX::Initialize();
         PlatformiOSSimulator::Initialize();
@@ -135,12 +140,12 @@ lldb_private::Initialize ()
 #endif
 #if defined (__FreeBSD__)
         ProcessFreeBSD::Initialize();
-        ProcessGDBRemote::Initialize();
 #endif
         //----------------------------------------------------------------------
         // Platform agnostic plugins
         //----------------------------------------------------------------------
         PlatformRemoteGDBServer::Initialize ();
+        ProcessGDBRemote::Initialize();
         DynamicLoaderStatic::Initialize();
 
         // Scan for any system or user LLDB plug-ins
@@ -171,7 +176,6 @@ lldb_private::Terminate ()
     ABIMacOSX_arm::Terminate();
     ABISysV_x86_64::Terminate();
     DisassemblerLLVMC::Terminate();
-    DisassemblerLLVM::Terminate();
     ObjectContainerBSDArchive::Terminate();
     ObjectFileELF::Terminate();
     SymbolFileDWARF::Terminate();
@@ -183,21 +187,24 @@ lldb_private::Terminate ()
     DynamicLoaderPOSIXDYLD::Terminate ();
     PlatformFreeBSD::Terminate();
     PlatformLinux::Terminate();
+    SymbolFileDWARFDebugMap::Terminate();
+    ItaniumABILanguageRuntime::Terminate();
+#ifndef LLDB_DISABLE_PYTHON
+    OperatingSystemPython::Terminate();
+#endif
+
 #if defined (__APPLE__)
     DynamicLoaderMacOSXDYLD::Terminate();
     DynamicLoaderDarwinKernel::Terminate();
-    OperatingSystemDarwinKernel::Terminate();
-    SymbolFileDWARFDebugMap::Terminate();
-    ItaniumABILanguageRuntime::Terminate();
     AppleObjCRuntimeV2::Terminate();
     AppleObjCRuntimeV1::Terminate();
     ObjectContainerUniversalMachO::Terminate();
     ObjectFileMachO::Terminate();
     ProcessMachCore::Terminate();
-    ProcessGDBRemote::Terminate();
     ProcessKDP::Terminate();
     SymbolVendorMacOSX::Terminate();
     PlatformMacOSX::Terminate();
+    PlatformDarwinKernel::Terminate();
     PlatformRemoteiOS::Terminate();
     PlatformiOSSimulator::Terminate();
 #endif
@@ -210,23 +217,105 @@ lldb_private::Terminate ()
 
 #if defined (__FreeBSD__)
     ProcessFreeBSD::Terminate();
-    ProcessGDBRemote::Terminate();
 #endif
     
+    ProcessGDBRemote::Terminate();
     DynamicLoaderStatic::Terminate();
 
     Log::Terminate();
 }
 
-extern "C" const double liblldb_coreVersionNumber;
+#if defined (__APPLE__)
+extern "C" const unsigned char liblldb_coreVersionString[];
+#else
+
+#include "clang/Basic/Version.h"
+
+static const char *
+GetLLDBRevision()
+{
+#ifdef LLDB_REVISION
+    return LLDB_REVISION;
+#else
+    return NULL;
+#endif
+}
+
+static const char *
+GetLLDBRepository()
+{
+#ifdef LLDB_REPOSITORY
+    return LLDB_REPOSITORY;
+#else
+    return NULL;
+#endif
+}
+
+#endif
+
 const char *
 lldb_private::GetVersion ()
 {
+#if defined (__APPLE__)
     static char g_version_string[32];
     if (g_version_string[0] == '\0')
-        ::snprintf (g_version_string, sizeof(g_version_string), "LLDB-%g", liblldb_coreVersionNumber);
+    {
+        const char *version_string = ::strstr ((const char *)liblldb_coreVersionString, "PROJECT:");
+        
+        if (version_string)
+            version_string += sizeof("PROJECT:") - 1;
+        else
+            version_string = "unknown";
+        
+        const char *newline_loc = strchr(version_string, '\n');
+        
+        size_t version_len = sizeof(g_version_string);
+        
+        if (newline_loc && (newline_loc - version_string < version_len))
+            version_len = newline_loc - version_string;
+        
+        ::strncpy(g_version_string, version_string, version_len);
+    }
 
     return g_version_string;
+#else
+    // On Linux/FreeBSD/Windows, report a version number in the same style as the clang tool.
+    static std::string g_version_str;
+    if (g_version_str.empty())
+    {
+        g_version_str += "lldb version ";
+        g_version_str += CLANG_VERSION_STRING;
+        const char * lldb_repo = GetLLDBRepository();
+        if (lldb_repo)
+        {
+            g_version_str += " (";
+            g_version_str += lldb_repo;
+        }
+
+        const char *lldb_rev = GetLLDBRevision();
+        if (lldb_rev)
+        {
+            g_version_str += " revision ";
+            g_version_str += lldb_rev;
+        }
+        std::string clang_rev (clang::getClangRevision());
+        if (clang_rev.length() > 0)
+        {
+            g_version_str += " clang revision ";
+            g_version_str += clang_rev;
+        }
+        std::string llvm_rev (clang::getLLVMRevision());
+        if (llvm_rev.length() > 0)
+        {
+            g_version_str += " llvm revision ";
+            g_version_str += llvm_rev;
+        }
+
+        if (lldb_repo)
+            g_version_str += ")";
+    }
+    return g_version_str.c_str();
+#endif
 }
 
 const char *
@@ -237,8 +326,6 @@ lldb_private::GetVoteAsCString (Vote vote)
     case eVoteNo:           return "no";
     case eVoteNoOpinion:    return "no opinion";
     case eVoteYes:          return "yes";
-    default:
-        break;
     }
     return "invalid";
 }
@@ -314,9 +401,6 @@ lldb_private::NameMatches (const char *name,
                 RegularExpression regex (match);
                 return regex.Execute (name);
             }
-            break;
-        default:
-            assert (!"unhandled NameMatchType in lldb_private::NameMatches()");
             break;
         }
     }

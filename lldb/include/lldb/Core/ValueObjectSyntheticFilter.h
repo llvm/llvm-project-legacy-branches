@@ -33,27 +33,36 @@ public:
     virtual
     ~ValueObjectSynthetic();
 
-    virtual size_t
+    virtual uint64_t
     GetByteSize();
     
     virtual ConstString
     GetTypeName();
+    
+    virtual ConstString
+    GetQualifiedTypeName();
 
-    virtual uint32_t
+    virtual bool
+    MightHaveChildren();
+
+    virtual size_t
     CalculateNumChildren();
 
     virtual lldb::ValueType
     GetValueType() const;
     
     virtual lldb::ValueObjectSP
-    GetChildAtIndex (uint32_t idx, bool can_create);
+    GetChildAtIndex (size_t idx, bool can_create);
     
     virtual lldb::ValueObjectSP
     GetChildMemberWithName (const ConstString &name, bool can_create);
     
-    virtual uint32_t
+    virtual size_t
     GetIndexOfChildWithName (const ConstString &name);
 
+    virtual lldb::ValueObjectSP
+    GetDynamicValue (lldb::DynamicValueType valueType);
+    
     virtual bool
     IsInScope ();
     
@@ -80,6 +89,24 @@ public:
             return false;
     }
     
+    virtual lldb::ValueObjectSP
+    GetStaticValue ()
+    {
+        if (m_parent)
+            return m_parent->GetStaticValue();
+        else
+            return GetSP();
+    }
+    
+    virtual lldb::DynamicValueType
+    GetDynamicValueType ()
+    {
+        if (m_parent)
+            return m_parent->GetDynamicValueType();
+        else
+            return lldb::eNoDynamicValues;
+    }
+
     virtual ValueObject *
     GetParent()
     {
@@ -101,6 +128,14 @@ public:
     virtual lldb::ValueObjectSP
     GetNonSyntheticValue ();
     
+    virtual bool
+    ResolveValue (Scalar &scalar)
+    {
+        if (m_parent)
+            return m_parent->ResolveValue(scalar);
+        return false;
+    }
+    
 protected:
     virtual bool
     UpdateValue ();
@@ -110,10 +145,13 @@ protected:
     
     virtual lldb::clang_type_t
     GetClangTypeImpl ();
+    
+    virtual void
+    CreateSynthFilter ();
 
     // we need to hold on to the SyntheticChildren because someone might delete the type binding while we are alive
     lldb::SyntheticChildrenSP m_synth_sp;
-    std::auto_ptr<SyntheticChildrenFrontEnd> m_synth_filter_ap;
+    std::unique_ptr<SyntheticChildrenFrontEnd> m_synth_filter_ap;
     
     typedef std::map<uint32_t, ValueObject*> ByIndexMap;
     typedef std::map<const char*, uint32_t> NameToIndexMap;
@@ -124,10 +162,17 @@ protected:
     ByIndexMap      m_children_byindex;
     NameToIndexMap  m_name_toindex;
     uint32_t        m_synthetic_children_count; // FIXME use the ValueObject's ChildrenManager instead of a special purpose solution
+    
+    ConstString     m_parent_type_name;
 
+    LazyBool        m_might_have_children;
+    
 private:
     friend class ValueObject;
     ValueObjectSynthetic (ValueObject &parent, lldb::SyntheticChildrenSP filter);
+    
+    void
+    CopyParentData ();
     
     //------------------------------------------------------------------
     // For ValueObject only

@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "PlatformRemoteGDBServer.h"
 
 // C Includes
@@ -39,7 +41,7 @@ PlatformRemoteGDBServer::Initialize ()
     if (g_initialized == false)
     {
         g_initialized = true;
-        PluginManager::RegisterPlugin (PlatformRemoteGDBServer::GetShortPluginNameStatic(),
+        PluginManager::RegisterPlugin (PlatformRemoteGDBServer::GetPluginNameStatic(),
                                        PlatformRemoteGDBServer::GetDescriptionStatic(),
                                        PlatformRemoteGDBServer::CreateInstance);
     }
@@ -69,10 +71,11 @@ PlatformRemoteGDBServer::CreateInstance (bool force, const lldb_private::ArchSpe
 }
 
 
-const char *
-PlatformRemoteGDBServer::GetShortPluginNameStatic()
+lldb_private::ConstString
+PlatformRemoteGDBServer::GetPluginNameStatic()
 {
-    return "remote-gdb-server";
+    static ConstString g_name("remote-gdb-server");
+    return g_name;
 }
 
 const char *
@@ -372,9 +375,10 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
     {
         if (IsConnected())
         {
-            uint16_t port = m_gdb_client.LaunchGDBserverAndGetPort();
+            lldb::pid_t debugserver_pid = LLDB_INVALID_PROCESS_ID;
+            uint16_t port = m_gdb_client.LaunchGDBserverAndGetPort(debugserver_pid);
             
-            if (port == 0)
+            if (port == 0 || debugserver_pid == LLDB_INVALID_PROCESS_ID)
             {
                 error.SetErrorStringWithFormat ("unable to launch a GDB server on '%s'", GetHostname ());
             }
@@ -383,10 +387,9 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
                 if (target == NULL)
                 {
                     TargetSP new_target_sp;
-                    FileSpec emptyFileSpec;
                     
                     error = debugger.GetTargetList().CreateTarget (debugger,
-                                                                   emptyFileSpec,
+                                                                   NULL,
                                                                    NULL, 
                                                                    false,
                                                                    NULL,
@@ -416,9 +419,14 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
                                                                 override_hostname ? override_hostname : GetHostname (), 
                                                                 port + port_offset);
                         assert (connect_url_len < sizeof(connect_url));
-                        error = process_sp->ConnectRemote (connect_url);
+                        error = process_sp->ConnectRemote (NULL, connect_url);
                         if (error.Success())
                             error = process_sp->Attach(attach_info);
+                        else
+                        {
+                            bool success = m_gdb_client.KillSpawnedProcess(debugserver_pid);
+                            printf ("success = %i\n", success);
+                        }
                     }
                 }
             }
@@ -441,35 +449,49 @@ PlatformRemoteGDBServer::MakeDirectory (const std::string &path,
 lldb::user_id_t
 PlatformRemoteGDBServer::OpenFile (const lldb_private::FileSpec& file_spec,
                                    uint32_t flags,
-                                   mode_t mode)
+                                   mode_t mode,
+                                   Error &error)
 {
-    return m_gdb_client.OpenFile (file_spec, flags, mode);
+    return m_gdb_client.OpenFile (file_spec, flags, mode, error);
 }
 
 bool
-PlatformRemoteGDBServer::CloseFile (lldb::user_id_t fd)
+PlatformRemoteGDBServer::CloseFile (lldb::user_id_t fd, Error &error)
 {
-    return m_gdb_client.CloseFile (fd);
+    return m_gdb_client.CloseFile (fd, error);
 }
 
 lldb::user_id_t
-PlatformRemoteGDBServer::GetFileSize (const lldb_private::FileSpec& source)
+PlatformRemoteGDBServer::GetFileSize (const lldb_private::FileSpec& file_spec)
 {
-    return m_gdb_client.GetFileSize(source);
+    return m_gdb_client.GetFileSize(file_spec);
 }
 
 uint32_t
-PlatformRemoteGDBServer::ReadFile (lldb::user_id_t fd, uint64_t offset,
-                                   void *data_ptr, size_t len)
+PlatformRemoteGDBServer::GetFilePermissions (const lldb_private::FileSpec &file_spec,
+                                             lldb_private::Error &error)
 {
-    return m_gdb_client.ReadFile (fd, offset, data_ptr, len);
+    return m_gdb_client.GetFilePermissions(file_spec, error);
 }
 
-uint32_t
-PlatformRemoteGDBServer::WriteFile (lldb::user_id_t fd, uint64_t offset,
-                                    void* data, size_t len)
+uint64_t
+PlatformRemoteGDBServer::ReadFile (lldb::user_id_t fd,
+                                   uint64_t offset,
+                                   void *dst,
+                                   uint64_t dst_len,
+                                   Error &error)
 {
-    return m_gdb_client.WriteFile (fd, offset, data, len);
+    return m_gdb_client.ReadFile (fd, offset, dst, dst_len, error);
+}
+
+uint64_t
+PlatformRemoteGDBServer::WriteFile (lldb::user_id_t fd,
+                                    uint64_t offset,
+                                    const void* src,
+                                    uint64_t src_len,
+                                    Error &error)
+{
+    return m_gdb_client.WriteFile (fd, offset, src, src_len, error);
 }
 
 lldb_private::Error

@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectHelp.h"
 
 // C Includes
@@ -62,7 +64,7 @@ CommandObjectHelp::DoExecute (Args& command, CommandReturnObject &result)
 {
     CommandObject::CommandMap::iterator pos;
     CommandObject *cmd_obj;
-    const int argc = command.GetArgumentCount ();
+    const size_t argc = command.GetArgumentCount ();
     
     // 'help' doesn't take any arguments, other than command names.  If argc is 0, we show the user
     // all commands (aliases and user commands if asked for).  Otherwise every argument must be the name of a command or a sub-command.
@@ -103,8 +105,7 @@ CommandObjectHelp::DoExecute (Args& command, CommandReturnObject &result)
                 else
                 {
                     CommandObject *found_cmd;
-                    found_cmd = ((CommandObjectMultiword *) sub_cmd_obj)->GetSubcommandObject(sub_command.c_str(), 
-                                                                                              &matches);
+                    found_cmd = sub_cmd_obj->GetSubcommandObject(sub_command.c_str(), &matches);
                     if (found_cmd == NULL)
                         all_okay = false;
                     else if (matches.GetSize() > 1)
@@ -172,8 +173,9 @@ CommandObjectHelp::DoExecute (Args& command, CommandReturnObject &result)
                     {
                             // Also emit a warning about using "--" in case you are using a command that takes options and arguments.
                             m_interpreter.OutputFormattedHelpText (output_strm, "", "",
-                                                                   "\nThis command takes options and arguments, if your arguments look like option specifiers"
-                                                                   " you must use '--' to terminate the options before starting to give the arguments.", 1);
+                                                                   "\nThis command takes options and free-form arguments.  If your arguments resemble"
+                                                                   " option specifiers (i.e., they start with a - or --), you must use ' -- ' between"
+                                                                   " the end of the command options and the beginning of the arguments.", 1);
                     }
 
                     // Mark this help command with a success status.
@@ -189,7 +191,7 @@ CommandObjectHelp::DoExecute (Args& command, CommandReturnObject &result)
                     }
                     else
                         m_interpreter.OutputFormattedHelpText (output_strm, "", "", sub_cmd_obj->GetHelp(), 1);
-                    ((CommandObjectMultiword *) sub_cmd_obj)->GenerateHelpText (result);
+                    sub_cmd_obj->GenerateHelpText (result);
                 }
                 else
                 {
@@ -222,8 +224,8 @@ CommandObjectHelp::DoExecute (Args& command, CommandReturnObject &result)
         {
             Stream &output_strm = result.GetOutputStream();
             output_strm.Printf("Help requested with ambiguous command name, possible completions:\n");
-            const uint32_t match_count = matches.GetSize();
-            for (uint32_t i = 0; i < match_count; i++)
+            const size_t match_count = matches.GetSize();
+            for (size_t i = 0; i < match_count; i++)
             {
                 output_strm.Printf("\t%s\n", matches.GetStringAtIndex(i));
             }

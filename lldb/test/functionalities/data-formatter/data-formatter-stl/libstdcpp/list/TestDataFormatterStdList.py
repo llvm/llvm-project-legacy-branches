@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class StdListDataFormatterTestCase(TestBase):
 
@@ -19,25 +20,39 @@ class StdListDataFormatterTestCase(TestBase):
         self.data_formatter_commands()
 
     @dwarf_test
+    @expectedFailureLinux('llvm.org/pr15301', ['gcc', 'icc']) # LLDB prints incorrect sizes of STL containers
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
         self.buildDwarf()
         self.data_formatter_commands()
 
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
+    def test_with_dsym_and_run_command(self):
+        """Test data formatter commands."""
+        self.buildDsym()
+        self.data_formatter_commands_after_steps()
+
+    @dwarf_test
+    @expectedFailureLinux # llvm.org/pr15301 Multiple LLDB steps do not all complete synchronously. 
+    def test_with_dwarf_and_run_command_after_steps(self):
+        """Test data formatter commands with multiple steps."""
+        self.buildDwarf()
+        self.data_formatter_commands_after_steps()
+
     def setUp(self):
         # Call super's setUp().
         TestBase.setUp(self)
-        # Find the line number to break at.
+        # Find the line numbers to break at for the different tests.
         self.line = line_number('main.cpp', '// Set break point at this line.')
+        self.optional_line = line_number('main.cpp', '// Optional break point at this line.')
+        self.final_line = line_number('main.cpp', '// Set final break point at this line.')
 
     def data_formatter_commands(self):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=-1)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -58,7 +73,7 @@ class StdListDataFormatterTestCase(TestBase):
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
 
-        self.runCmd("frame variable numbers_list -T")
+        self.runCmd("frame variable numbers_list --show-types")
         #self.runCmd("type synth add std::int_list std::string_list int_list string_list -l StdListSynthProvider")
         self.runCmd("type summary add std::int_list std::string_list int_list string_list --summary-string \"list has ${svar%#} items\" -e")
         self.runCmd("type format add -f hex int")
@@ -134,6 +149,9 @@ class StdListDataFormatterTestCase(TestBase):
         self.expect("expression numbers_list[0]", matching=False, error=True,
                     substrs = ['0x12345678'])
 
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("numbers_list").MightHaveChildren(), "numbers_list.MightHaveChildren() says False for non empty!")
+
         self.runCmd("n")
             
         self.expect("frame variable numbers_list",
@@ -157,7 +175,14 @@ class StdListDataFormatterTestCase(TestBase):
             substrs = ['list has 0 items',
                        '{}'])
         
-        self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.final_line, num_expected_locations=-1)
+
+        self.runCmd("c", RUN_SUCCEEDED)
+
+        # The stop reason of the thread should be breakpoint.
+        self.expect("thread list", STOPPED_DUE_TO_BREAKPOINT,
+            substrs = ['stopped',
+                       'stop reason = breakpoint'])
 
         self.expect("frame variable text_list",
                     substrs = ['list has 4 items',
@@ -182,6 +207,49 @@ class StdListDataFormatterTestCase(TestBase):
         # but check that expression does not rely on us
         self.expect("expression text_list[0]", matching=False, error=True,
                     substrs = ['goofy'])
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("text_list").MightHaveChildren(), "text_list.MightHaveChildren() says False for non empty!")
+
+    def data_formatter_commands_after_steps(self):
+        """Test that that file and class static variables display correctly after multiple step instructions."""
+        self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
+
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.optional_line, num_expected_locations=-1)
+
+        self.runCmd("run", RUN_SUCCEEDED)
+
+        # The stop reason of the thread should be breakpoint.
+        self.expect("thread list", STOPPED_DUE_TO_BREAKPOINT,
+            substrs = ['stopped',
+                       'stop reason = breakpoint'])
+
+        self.expect("frame variable text_list",
+            substrs = ['{}'])
+       
+        # Verify that steps in rapid succession are processed prior to inspecting text_list.
+        self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
+
+        self.expect("frame variable text_list",
+                    substrs = ['list has 4 items',
+                               '[0]', 'goofy',
+                               '[1]', 'is',
+                               '[2]', 'smart',
+                               '[3]', '!!!'])
+
+        self.expect("p text_list",
+                    substrs = ['list has 4 items',
+                               '\"goofy\"',
+                               '\"is\"',
+                               '\"smart\"',
+                               '\"!!!\"'])
+        
+        # check access-by-index
+        self.expect("frame variable text_list[0]",
+                    substrs = ['goofy']);
+        self.expect("frame variable text_list[3]",
+                    substrs = ['!!!']);
+        
 
 if __name__ == '__main__':
     import atexit

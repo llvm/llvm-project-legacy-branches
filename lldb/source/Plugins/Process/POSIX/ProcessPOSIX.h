@@ -49,6 +49,9 @@ public:
     DoAttachToProcessWithID(lldb::pid_t pid);
 
     virtual lldb_private::Error
+    DoAttachToProcessWithID (lldb::pid_t pid, const lldb_private::ProcessAttachInfo &attach_info);
+
+    virtual lldb_private::Error
     DoLaunch (lldb_private::Module *exe_module, 
               const lldb_private::ProcessLaunchInfo &launch_info);
 
@@ -62,7 +65,7 @@ public:
     DoHalt(bool &caused_stop);
 
     virtual lldb_private::Error
-    DoDetach();
+    DoDetach(bool keep_stopped);
 
     virtual lldb_private::Error
     DoSignal(int signal);
@@ -93,14 +96,32 @@ public:
     virtual lldb_private::Error
     DoDeallocateMemory(lldb::addr_t ptr);
 
+    virtual lldb::addr_t
+    ResolveIndirectFunction(const lldb_private::Address *address, lldb_private::Error &error);
+
     virtual size_t
     GetSoftwareBreakpointTrapOpcode(lldb_private::BreakpointSite* bp_site);
 
     virtual lldb_private::Error
-    EnableBreakpoint(lldb_private::BreakpointSite *bp_site);
+    EnableBreakpointSite(lldb_private::BreakpointSite *bp_site);
 
     virtual lldb_private::Error
-    DisableBreakpoint(lldb_private::BreakpointSite *bp_site);
+    DisableBreakpointSite(lldb_private::BreakpointSite *bp_site);
+
+    virtual lldb_private::Error
+    EnableWatchpoint(lldb_private::Watchpoint *wp, bool notify = true);
+
+    virtual lldb_private::Error
+    DisableWatchpoint(lldb_private::Watchpoint *wp, bool notify = true);
+
+    virtual lldb_private::Error
+    GetWatchpointSupportInfo(uint32_t &num);
+
+    virtual lldb_private::Error
+    GetWatchpointSupportInfo(uint32_t &num, bool &after);
+
+    virtual uint32_t
+    UpdateThreadListIfNeeded();
 
     virtual bool
     UpdateThreadList(lldb_private::ThreadList &old_thread_list, 
@@ -114,12 +135,6 @@ public:
 
     virtual size_t
     PutSTDIN(const char *buf, size_t len, lldb_private::Error &error);
-
-    virtual size_t
-    GetSTDOUT(char *buf, size_t len, lldb_private::Error &error);
-
-    virtual size_t
-    GetSTDERR(char *buf, size_t len, lldb_private::Error &error);
 
     //--------------------------------------------------------------------------
     // ProcessPOSIX internal API.
@@ -136,6 +151,11 @@ public:
     const char *
     GetFilePath(const lldb_private::ProcessLaunchInfo::FileAction *file_action,
                 const char *default_path);
+
+    /// Stops all threads in the process.
+    /// The \p stop_tid parameter indicates the thread which initiated the stop.
+    virtual void
+    StopAllThreads(lldb::tid_t stop_tid);
 
 protected:
     /// Target byte order.

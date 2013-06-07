@@ -16,6 +16,7 @@
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Symbol/ObjectFile.h"
 
 
 using namespace lldb;
@@ -162,7 +163,7 @@ SBSection::GetFileOffset ()
         {
             ObjectFile *objfile = module_sp->GetObjectFile();
             if (objfile)
-                return objfile->GetOffset() + section_sp->GetFileOffset();
+                return objfile->GetFileOffset() + section_sp->GetFileOffset();
         }
     }
     return UINT64_MAX;
@@ -199,7 +200,7 @@ SBSection::GetSectionData (uint64_t offset, uint64_t size)
                 ObjectFile *objfile = module_sp->GetObjectFile();
                 if (objfile)
                 {
-                    const uint64_t sect_file_offset = objfile->GetOffset() + section_sp->GetFileOffset();
+                    const uint64_t sect_file_offset = objfile->GetFileOffset() + section_sp->GetFileOffset();
                     const uint64_t file_offset = sect_file_offset + offset;
                     uint64_t file_size = size;
                     if (file_size == UINT64_MAX)
@@ -263,7 +264,7 @@ SBSection::GetDescription (SBStream &description)
     if (section_sp)
     {
         const addr_t file_addr = section_sp->GetFileAddress();
-        strm.Printf ("[0x%16.16llx-0x%16.16llx) ", file_addr, file_addr + section_sp->GetByteSize());
+        strm.Printf ("[0x%16.16" PRIx64 "-0x%16.16" PRIx64 ") ", file_addr, file_addr + section_sp->GetByteSize());
         section_sp->DumpName(&strm);
     }
     else

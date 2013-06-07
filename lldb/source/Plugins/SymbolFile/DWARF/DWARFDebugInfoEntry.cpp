@@ -89,7 +89,7 @@ bool
 DWARFDebugInfoEntry::Attributes::ExtractFormValueAtIndex (SymbolFileDWARF* dwarf2Data, uint32_t i, DWARFFormValue &form_value) const
 {
     form_value.SetForm(FormAtIndex(i));
-    dw_offset_t offset = DIEOffsetAtIndex(i);
+    lldb::offset_t offset = DIEOffsetAtIndex(i);
     return form_value.ExtractValue(dwarf2Data->get_debug_info_data(), &offset, CompileUnitAtIndex(i));
 }
 
@@ -119,7 +119,7 @@ DWARFDebugInfoEntry::FastExtract
     const DataExtractor& debug_info_data,
     const DWARFCompileUnit* cu,
     const uint8_t *fixed_form_sizes,
-    uint32_t* offset_ptr
+    lldb::offset_t *offset_ptr
 )
 {
     m_offset = *offset_ptr;
@@ -134,7 +134,7 @@ DWARFDebugInfoEntry::FastExtract
     
     if (m_abbr_idx)
     {
-        uint32_t offset = *offset_ptr;
+        lldb::offset_t offset = *offset_ptr;
 
         const DWARFAbbreviationDeclaration *abbrevDecl = cu->GetAbbreviations()->GetAbbreviationDeclaration(m_abbr_idx);
         
@@ -171,58 +171,77 @@ DWARFDebugInfoEntry::FastExtract
                     {
                     // Blocks if inlined data that have a length field and the data bytes
                     // inlined in the .debug_info
-                    case DW_FORM_block      : form_size = debug_info_data.GetULEB128 (&offset);      break;
-                    case DW_FORM_block1     : form_size = debug_info_data.GetU8_unchecked (&offset); break;
-                    case DW_FORM_block2     : form_size = debug_info_data.GetU16_unchecked (&offset);break;
-                    case DW_FORM_block4     : form_size = debug_info_data.GetU32_unchecked (&offset);break;
+                    case DW_FORM_exprloc     :
+                    case DW_FORM_block       : form_size = debug_info_data.GetULEB128 (&offset);      break;
+                    case DW_FORM_block1      : form_size = debug_info_data.GetU8_unchecked (&offset); break;
+                    case DW_FORM_block2      : form_size = debug_info_data.GetU16_unchecked (&offset);break;
+                    case DW_FORM_block4      : form_size = debug_info_data.GetU32_unchecked (&offset);break;
 
                     // Inlined NULL terminated C-strings
-                    case DW_FORM_string     :
+                    case DW_FORM_string      :
                         debug_info_data.GetCStr (&offset);
                         break;
 
                     // Compile unit address sized values
-                    case DW_FORM_addr       :
-                    case DW_FORM_ref_addr   :
+                    case DW_FORM_addr        :
                         form_size = cu->GetAddressByteSize();
+                        break;
+                    case DW_FORM_ref_addr    :
+                        if (cu->GetVersion() <= 2)
+                            form_size = cu->GetAddressByteSize();
+                        else
+                            form_size = 4; // 4 bytes for DWARF 32, 8 bytes for DWARF 64, but we don't support DWARF64 yet
+                        break;
+
+                    // 0 sized form
+                    case DW_FORM_flag_present:
+                        form_size = 0;
                         break;
 
                     // 1 byte values
-                    case DW_FORM_data1      :
-                    case DW_FORM_flag       :
-                    case DW_FORM_ref1       :
+                    case DW_FORM_data1       :
+                    case DW_FORM_flag        :
+                    case DW_FORM_ref1        :
                         form_size = 1;
                         break;
 
                     // 2 byte values
-                    case DW_FORM_data2      :
-                    case DW_FORM_ref2       :
+                    case DW_FORM_data2       :
+                    case DW_FORM_ref2        :
                         form_size = 2;
                         break;
 
                     // 4 byte values
-                    case DW_FORM_strp       :
-                    case DW_FORM_data4      :
-                    case DW_FORM_ref4       :
+                    case DW_FORM_strp        :
+                    case DW_FORM_data4       :
+                    case DW_FORM_ref4        :
                         form_size = 4;
                         break;
 
                     // 8 byte values
-                    case DW_FORM_data8      :
-                    case DW_FORM_ref8       :
+                    case DW_FORM_data8       :
+                    case DW_FORM_ref8        :
+                    case DW_FORM_ref_sig8    :
                         form_size = 8;
                         break;
 
                     // signed or unsigned LEB 128 values
-                    case DW_FORM_sdata      :
-                    case DW_FORM_udata      :
-                    case DW_FORM_ref_udata  :
+                    case DW_FORM_sdata       :
+                    case DW_FORM_udata       :
+                    case DW_FORM_ref_udata   :
                         debug_info_data.Skip_LEB128 (&offset);
                         break;
 
-                    case DW_FORM_indirect   :
+                    case DW_FORM_indirect    :
                         form_is_indirect = true;
                         form = debug_info_data.GetULEB128 (&offset);
+                        break;
+
+                    case DW_FORM_sec_offset  :
+                        if (cu->GetAddressByteSize () == 4)
+                            debug_info_data.GetU32 (offset_ptr);
+                        else
+                            debug_info_data.GetU64 (offset_ptr);
                         break;
 
                     default:
@@ -259,14 +278,14 @@ DWARFDebugInfoEntry::Extract
 (
     SymbolFileDWARF* dwarf2Data,
     const DWARFCompileUnit* cu,
-    uint32_t* offset_ptr
+    lldb::offset_t *offset_ptr
 )
 {
     const DataExtractor& debug_info_data = dwarf2Data->get_debug_info_data();
 //    const DataExtractor& debug_str_data = dwarf2Data->get_debug_str_data();
     const uint32_t cu_end_offset = cu->GetNextCompileUnitOffset();
     const uint8_t cu_addr_size = cu->GetAddressByteSize();
-    uint32_t offset = *offset_ptr;
+    lldb::offset_t offset = *offset_ptr;
 //  if (offset >= cu_end_offset)
 //      Log::Error("DIE at offset 0x%8.8x is beyond the end of the current compile unit (0x%8.8x)", m_offset, cu_end_offset);
     if ((offset < cu_end_offset) && debug_info_data.ValidOffset(offset))
@@ -318,59 +337,78 @@ DWARFDebugInfoEntry::Extract
                             {
                             // Blocks if inlined data that have a length field and the data bytes
                             // inlined in the .debug_info
-                            case DW_FORM_block      : form_size = debug_info_data.GetULEB128(&offset);  break;
-                            case DW_FORM_block1     : form_size = debug_info_data.GetU8(&offset);       break;
-                            case DW_FORM_block2     : form_size = debug_info_data.GetU16(&offset);      break;
-                            case DW_FORM_block4     : form_size = debug_info_data.GetU32(&offset);      break;
+                            case DW_FORM_exprloc     :
+                            case DW_FORM_block       : form_size = debug_info_data.GetULEB128(&offset);  break;
+                            case DW_FORM_block1      : form_size = debug_info_data.GetU8(&offset);       break;
+                            case DW_FORM_block2      : form_size = debug_info_data.GetU16(&offset);      break;
+                            case DW_FORM_block4      : form_size = debug_info_data.GetU32(&offset);      break;
 
                             // Inlined NULL terminated C-strings
-                            case DW_FORM_string     : debug_info_data.GetCStr(&offset);                 break;
+                            case DW_FORM_string      : debug_info_data.GetCStr(&offset);                 break;
 
                             // Compile unit address sized values
-                            case DW_FORM_addr       :
-                            case DW_FORM_ref_addr   :
+                            case DW_FORM_addr        :
                                 form_size = cu_addr_size;
+                                break;
+                            case DW_FORM_ref_addr    :
+                                if (cu->GetVersion() <= 2)
+                                    form_size = cu_addr_size;
+                                else
+                                    form_size = 4; // 4 bytes for DWARF 32, 8 bytes for DWARF 64, but we don't support DWARF64 yet
+                                break;
+
+                            // 0 sized form
+                            case DW_FORM_flag_present:
+                                form_size = 0;
                                 break;
 
                             // 1 byte values
-                            case DW_FORM_data1      :
-                            case DW_FORM_flag       :
-                            case DW_FORM_ref1       :
+                            case DW_FORM_data1       :
+                            case DW_FORM_flag        :
+                            case DW_FORM_ref1        :
                                 form_size = 1;
                                 break;
 
                             // 2 byte values
-                            case DW_FORM_data2      :
-                            case DW_FORM_ref2       :
+                            case DW_FORM_data2       :
+                            case DW_FORM_ref2        :
                                 form_size = 2;
                                 break;
 
                             // 4 byte values
-                            case DW_FORM_strp       :
+                            case DW_FORM_strp        :
                                 form_size = 4;
                                 break;
 
-                            case DW_FORM_data4      :
-                            case DW_FORM_ref4       :
+                            case DW_FORM_data4       :
+                            case DW_FORM_ref4        :
                                 form_size = 4;
                                 break;
 
                             // 8 byte values
-                            case DW_FORM_data8      :
-                            case DW_FORM_ref8       :
+                            case DW_FORM_data8       :
+                            case DW_FORM_ref8        :
+                            case DW_FORM_ref_sig8    :
                                 form_size = 8;
                                 break;
 
                             // signed or unsigned LEB 128 values
-                            case DW_FORM_sdata      :
-                            case DW_FORM_udata      :
-                            case DW_FORM_ref_udata  :
+                            case DW_FORM_sdata       :
+                            case DW_FORM_udata       :
+                            case DW_FORM_ref_udata   :
                                 debug_info_data.Skip_LEB128(&offset);
                                 break;
 
-                            case DW_FORM_indirect   :
+                            case DW_FORM_indirect    :
                                 form = debug_info_data.GetULEB128(&offset);
                                 form_is_indirect = true;
+                                break;
+
+                            case DW_FORM_sec_offset  :
+                                if (cu->GetAddressByteSize () == 4)
+                                    debug_info_data.GetU32 (offset_ptr);
+                                else
+                                    debug_info_data.GetU64 (offset_ptr);
                                 break;
 
                             default:
@@ -717,12 +755,12 @@ DWARFDebugInfoEntry::GetDIENamesAndRanges
     if (dwarf2Data == NULL)
         return false;
 
-    dw_addr_t lo_pc = DW_INVALID_ADDRESS;
-    dw_addr_t hi_pc = DW_INVALID_ADDRESS;
+    dw_addr_t lo_pc = LLDB_INVALID_ADDRESS;
+    dw_addr_t hi_pc = LLDB_INVALID_ADDRESS;
     std::vector<dw_offset_t> die_offsets;
     bool set_frame_base_loclist_addr = false;
     
-    dw_offset_t offset;
+    lldb::offset_t offset;
     const DWARFAbbreviationDeclaration* abbrevDecl = GetAbbreviationDeclarationPtr(dwarf2Data, cu, offset);
 
     if (abbrevDecl)
@@ -770,6 +808,7 @@ DWARFDebugInfoEntry::GetDIENamesAndRanges
                     break;
 
                 case DW_AT_MIPS_linkage_name:
+                case DW_AT_linkage_name:
                     if (mangled == NULL)
                         mangled = form_value.AsCString(&dwarf2Data->get_debug_str_data());
                     break;
@@ -830,7 +869,7 @@ DWARFDebugInfoEntry::GetDIENamesAndRanges
                             if (loc_list_length > 0)
                             {
                                 frame_base->SetOpcodeData(debug_loc_data, debug_loc_offset, loc_list_length);
-                                if (lo_pc != DW_INVALID_ADDRESS)
+                                if (lo_pc != LLDB_INVALID_ADDRESS)
                                 {
                                     assert (lo_pc >= cu->GetBaseAddress());
                                     frame_base->SetLocationListSlide(lo_pc - cu->GetBaseAddress());
@@ -853,9 +892,9 @@ DWARFDebugInfoEntry::GetDIENamesAndRanges
 
     if (ranges.IsEmpty())
     {
-        if (lo_pc != DW_INVALID_ADDRESS)
+        if (lo_pc != LLDB_INVALID_ADDRESS)
         {
-            if (hi_pc != DW_INVALID_ADDRESS && hi_pc > lo_pc)
+            if (hi_pc != LLDB_INVALID_ADDRESS && hi_pc > lo_pc)
                 ranges.Append(DWARFDebugRanges::Range (lo_pc, hi_pc - lo_pc));
             else
                 ranges.Append(DWARFDebugRanges::Range (lo_pc, 0));
@@ -905,7 +944,7 @@ DWARFDebugInfoEntry::Dump
 ) const
 {
     const DataExtractor& debug_info_data = dwarf2Data->get_debug_info_data();
-    uint32_t offset = m_offset;
+    lldb::offset_t offset = m_offset;
 
     if (debug_info_data.ValidOffset(offset))
     {
@@ -999,7 +1038,7 @@ DWARFDebugInfoEntry::DumpAttribute
     SymbolFileDWARF* dwarf2Data,
     const DWARFCompileUnit* cu,
     const DataExtractor& debug_info_data,
-    uint32_t* offset_ptr,
+    lldb::offset_t *offset_ptr,
     Stream &s,
     dw_attr_t attr,
     dw_form_t form
@@ -1007,6 +1046,7 @@ DWARFDebugInfoEntry::DumpAttribute
 {
     bool verbose    = s.GetVerbose();
     bool show_form  = s.GetFlags().Test(DWARFDebugInfo::eDumpFlag_ShowForm);
+    
     const DataExtractor* debug_str_data = dwarf2Data ? &dwarf2Data->get_debug_str_data() : NULL;
     if (verbose)
         s.Offset (*offset_ptr);
@@ -1048,7 +1088,7 @@ DWARFDebugInfoEntry::DumpAttribute
     {
     case DW_AT_stmt_list:
         if ( verbose ) s.PutCString(" ( ");
-        s.Printf( "0x%8.8llx", form_value.Unsigned());
+        s.Printf( "0x%8.8" PRIx64, form_value.Unsigned());
         if ( verbose ) s.PutCString(" )");
         break;
 
@@ -1128,9 +1168,10 @@ DWARFDebugInfoEntry::DumpAttribute
         {
             if ( !verbose )
                 form_value.Dump(s, debug_str_data, cu);
-            uint32_t ranges_offset = form_value.Unsigned();
+            lldb::offset_t ranges_offset = form_value.Unsigned();
             dw_addr_t base_addr = cu ? cu->GetBaseAddress() : 0;
-            DWARFDebugRanges::Dump(s, dwarf2Data->get_debug_ranges_data(), &ranges_offset, base_addr);
+            if (dwarf2Data)
+                DWARFDebugRanges::Dump(s, dwarf2Data->get_debug_ranges_data(), &ranges_offset, base_addr);
         }
         break;
 
@@ -1159,7 +1200,7 @@ DWARFDebugInfoEntry::GetAttributes
     uint32_t curr_depth
 ) const
 {
-    uint32_t offset;
+    lldb::offset_t offset;
     const DWARFAbbreviationDeclaration* abbrevDecl = GetAbbreviationDeclarationPtr(dwarf2Data, cu, offset);
 
     if (abbrevDecl)
@@ -1256,7 +1297,7 @@ DWARFDebugInfoEntry::GetAttributeValue
     dw_offset_t* end_attr_offset_ptr
 ) const
 {
-    uint32_t offset;
+    lldb::offset_t offset;
     const DWARFAbbreviationDeclaration* abbrevDecl = GetAbbreviationDeclarationPtr(dwarf2Data, cu, offset);
 
     if (abbrevDecl)
@@ -1407,7 +1448,7 @@ DWARFDebugInfoEntry::GetAttributeValueAsLocation
             // We have a location list offset as the value that is
             // the offset into the .debug_loc section that describes
             // the value over it's lifetime
-            dw_offset_t debug_loc_offset = form_value.Unsigned();
+            lldb::offset_t debug_loc_offset = form_value.Unsigned();
             if (dwarf2Data)
             {
                 assert(dwarf2Data->get_debug_loc_data().GetAddressByteSize() == cu->GetAddressByteSize());
@@ -1458,6 +1499,9 @@ DWARFDebugInfoEntry::GetMangledName
     if (GetAttributeValue(dwarf2Data, cu, DW_AT_MIPS_linkage_name, form_value))
         name = form_value.AsCString(&dwarf2Data->get_debug_str_data());
 
+    if (GetAttributeValue(dwarf2Data, cu, DW_AT_linkage_name, form_value))
+        name = form_value.AsCString(&dwarf2Data->get_debug_str_data());
+
     if (substitute_name_allowed && name == NULL)
     {
         if (GetAttributeValue(dwarf2Data, cu, DW_AT_name, form_value))
@@ -1481,9 +1525,14 @@ DWARFDebugInfoEntry::GetPubname
 ) const
 {
     const char* name = NULL;
+    if (!dwarf2Data)
+        return name;
+    
     DWARFFormValue form_value;
 
     if (GetAttributeValue(dwarf2Data, cu, DW_AT_MIPS_linkage_name, form_value))
+        name = form_value.AsCString(&dwarf2Data->get_debug_str_data());
+    else if (GetAttributeValue(dwarf2Data, cu, DW_AT_linkage_name, form_value))
         name = form_value.AsCString(&dwarf2Data->get_debug_str_data());
     else if (GetAttributeValue(dwarf2Data, cu, DW_AT_name, form_value))
         name = form_value.AsCString(&dwarf2Data->get_debug_str_data());
@@ -1514,12 +1563,18 @@ DWARFDebugInfoEntry::GetName
 (
     SymbolFileDWARF* dwarf2Data,
     const DWARFCompileUnit* cu,
-    const uint32_t die_offset,
+    const dw_offset_t die_offset,
     Stream &s
 )
 {
+    if (dwarf2Data == NULL)
+    {
+        s.PutCString("NULL");
+        return false;
+    }
+    
     DWARFDebugInfoEntry die;
-    uint32_t offset = die_offset;
+    lldb::offset_t offset = die_offset;
     if (die.Extract(dwarf2Data, cu, &offset))
     {
         if (die.IsNULL())
@@ -1557,12 +1612,18 @@ DWARFDebugInfoEntry::AppendTypeName
 (
     SymbolFileDWARF* dwarf2Data,
     const DWARFCompileUnit* cu,
-    const uint32_t die_offset,
+    const dw_offset_t die_offset,
     Stream &s
 )
 {
+    if (dwarf2Data == NULL)
+    {
+        s.PutCString("NULL");
+        return false;
+    }
+    
     DWARFDebugInfoEntry die;
-    uint32_t offset = die_offset;
+    lldb::offset_t offset = die_offset;
     if (die.Extract(dwarf2Data, cu, &offset))
     {
         if (die.IsNULL())
@@ -1581,6 +1642,9 @@ DWARFDebugInfoEntry::AppendTypeName
             {
                 bool result = true;
                 const DWARFAbbreviationDeclaration* abbrevDecl = die.GetAbbreviationDeclarationPtr(dwarf2Data, cu, offset);
+                
+                if (abbrevDecl == NULL)
+                    return false;
 
                 switch (abbrevDecl->Tag())
                 {
@@ -1666,11 +1730,11 @@ DWARFDebugInfoEntry::BuildAddressRangeTable
     {
         if (m_tag == DW_TAG_subprogram)
         {
-            dw_addr_t hi_pc = DW_INVALID_ADDRESS;
-            dw_addr_t lo_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_low_pc, DW_INVALID_ADDRESS);
-            if (lo_pc != DW_INVALID_ADDRESS)
-                hi_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_high_pc, DW_INVALID_ADDRESS);
-            if (hi_pc != DW_INVALID_ADDRESS)
+            dw_addr_t hi_pc = LLDB_INVALID_ADDRESS;
+            dw_addr_t lo_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_low_pc, LLDB_INVALID_ADDRESS);
+            if (lo_pc != LLDB_INVALID_ADDRESS)
+                hi_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_high_pc, LLDB_INVALID_ADDRESS);
+            if (hi_pc != LLDB_INVALID_ADDRESS)
             {
             /// printf("BuildAddressRangeTable() 0x%8.8x: %30s: [0x%8.8x - 0x%8.8x)\n", m_offset, DW_TAG_value_to_name(tag), lo_pc, hi_pc);
                 debug_aranges->AppendRange (cu->GetOffset(), lo_pc, hi_pc);
@@ -1707,13 +1771,13 @@ DWARFDebugInfoEntry::BuildFunctionAddressRangeTable
     {
         if (m_tag == DW_TAG_subprogram)
         {
-            dw_addr_t hi_pc = DW_INVALID_ADDRESS;
-            dw_addr_t lo_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_low_pc, DW_INVALID_ADDRESS);
-            if (lo_pc != DW_INVALID_ADDRESS)
-                hi_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_high_pc, DW_INVALID_ADDRESS);
-            if (hi_pc != DW_INVALID_ADDRESS)
+            dw_addr_t hi_pc = LLDB_INVALID_ADDRESS;
+            dw_addr_t lo_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_low_pc, LLDB_INVALID_ADDRESS);
+            if (lo_pc != LLDB_INVALID_ADDRESS)
+                hi_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_high_pc, LLDB_INVALID_ADDRESS);
+            if (hi_pc != LLDB_INVALID_ADDRESS)
             {
-            //  printf("BuildAddressRangeTable() 0x%8.8x: [0x%16.16llx - 0x%16.16llx)\n", m_offset, lo_pc, hi_pc); // DEBUG ONLY
+            //  printf("BuildAddressRangeTable() 0x%8.8x: [0x%16.16" PRIx64 " - 0x%16.16" PRIx64 ")\n", m_offset, lo_pc, hi_pc); // DEBUG ONLY
                 debug_aranges->AppendRange (GetOffset(), lo_pc, hi_pc);
             }
         }
@@ -1998,11 +2062,11 @@ DWARFDebugInfoEntry::LookupAddress
 
         if (match_addr_range)
         {
-            dw_addr_t lo_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_low_pc, DW_INVALID_ADDRESS);
-            if (lo_pc != DW_INVALID_ADDRESS)
+            dw_addr_t lo_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_low_pc, LLDB_INVALID_ADDRESS);
+            if (lo_pc != LLDB_INVALID_ADDRESS)
             {
-                dw_addr_t hi_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_high_pc, DW_INVALID_ADDRESS);
-                if (hi_pc != DW_INVALID_ADDRESS)
+                dw_addr_t hi_pc = GetAttributeValueAsUnsigned(dwarf2Data, cu, DW_AT_high_pc, LLDB_INVALID_ADDRESS);
+                if (hi_pc != LLDB_INVALID_ADDRESS)
                 {
                     //  printf("\n0x%8.8x: %30s: address = 0x%8.8x  [0x%8.8x - 0x%8.8x) ", m_offset, DW_TAG_value_to_name(tag), address, lo_pc, hi_pc);
                     if ((lo_pc <= address) && (address < hi_pc))
@@ -2112,25 +2176,28 @@ DWARFDebugInfoEntry::LookupAddress
 const DWARFAbbreviationDeclaration* 
 DWARFDebugInfoEntry::GetAbbreviationDeclarationPtr (SymbolFileDWARF* dwarf2Data,
                                                     const DWARFCompileUnit *cu,
-                                                    dw_offset_t &offset) const
+                                                    lldb::offset_t &offset) const
 {
-    offset = GetOffset();
-    
-    const DWARFAbbreviationDeclaration* abbrev_decl = cu->GetAbbreviations()->GetAbbreviationDeclaration (m_abbr_idx);
-    if (abbrev_decl)
+    if (dwarf2Data)
     {
-        // Make sure the abbreviation code still matches. If it doesn't and
-        // the DWARF data was mmap'ed, the backing file might have been modified
-        // which is bad news.
-        const uint64_t abbrev_code = dwarf2Data->get_debug_info_data().GetULEB128 (&offset);
-    
-        if (abbrev_decl->Code() == abbrev_code)
-            return abbrev_decl;
+        offset = GetOffset();
         
-        dwarf2Data->GetObjectFile()->GetModule()->ReportErrorIfModifyDetected ("0x%8.8x: the DWARF debug information has been modified (abbrev code was %u, and is now %u)", 
-                                                                               GetOffset(),
-                                                                               (uint32_t)abbrev_decl->Code(),
-                                                                               (uint32_t)abbrev_code);
+        const DWARFAbbreviationDeclaration* abbrev_decl = cu->GetAbbreviations()->GetAbbreviationDeclaration (m_abbr_idx);
+        if (abbrev_decl)
+        {
+            // Make sure the abbreviation code still matches. If it doesn't and
+            // the DWARF data was mmap'ed, the backing file might have been modified
+            // which is bad news.
+            const uint64_t abbrev_code = dwarf2Data->get_debug_info_data().GetULEB128 (&offset);
+        
+            if (abbrev_decl->Code() == abbrev_code)
+                return abbrev_decl;
+            
+            dwarf2Data->GetObjectFile()->GetModule()->ReportErrorIfModifyDetected ("0x%8.8x: the DWARF debug information has been modified (abbrev code was %u, and is now %u)", 
+                                                                                   GetOffset(),
+                                                                                   (uint32_t)abbrev_decl->Code(),
+                                                                                   (uint32_t)abbrev_code);
+        }
     }
     offset = DW_INVALID_OFFSET;
     return NULL;

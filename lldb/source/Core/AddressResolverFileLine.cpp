@@ -12,6 +12,8 @@
 // Project includes
 #include "lldb/Core/Log.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/SymbolContext.h"
 #include "lldb/lldb-private-log.h"
 
 using namespace lldb;
@@ -50,7 +52,7 @@ AddressResolverFileLine::SearchCallback
     uint32_t sc_list_size;
     CompileUnit *cu = context.comp_unit;
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
 
     sc_list_size = cu->ResolveSymbolContext (m_file_spec, m_line_number, m_inlines, false, eSymbolContextEverything,
                                              sc_list);
@@ -75,7 +77,7 @@ AddressResolverFileLine::SearchCallback
             else
             {
                 if (log)
-                  log->Printf ("error: Unable to resolve address at file address 0x%llx for %s:%d\n",
+                  log->Printf ("error: Unable to resolve address at file address 0x%" PRIx64 " for %s:%d\n",
                                line_start.GetFileAddress(),
                                m_file_spec.GetFilename().AsCString("<Unknown>"),
                                m_line_number);

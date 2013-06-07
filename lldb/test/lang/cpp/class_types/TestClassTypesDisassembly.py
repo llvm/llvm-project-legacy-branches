@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class IterateFrameAndDisassembleTestCase(TestBase):
 
@@ -19,6 +20,7 @@ class IterateFrameAndDisassembleTestCase(TestBase):
         self.disassemble_call_stack()
 
     @dwarf_test
+    @expectedFailureLinux # due to llvm.org/pr14540
     def test_with_dwarf_and_run_command(self):
         """Disassemble each call frame when stopped on C's constructor."""
         self.buildDwarf()
@@ -34,6 +36,7 @@ class IterateFrameAndDisassembleTestCase(TestBase):
 
     @python_api_test
     @dwarf_test
+    @expectedFailureLinux # due to llvm.org/pr14540
     def test_with_dwarf_and_python_api(self):
         """Disassemble each call frame when stopped on C's constructor."""
         self.buildDwarf()
@@ -51,10 +54,7 @@ class IterateFrameAndDisassembleTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Break on the ctor function of class C.
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=-1)
 
         self.runCmd("run", RUN_SUCCEEDED)
 

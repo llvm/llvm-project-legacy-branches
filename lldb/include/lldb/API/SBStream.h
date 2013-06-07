@@ -65,6 +65,7 @@ protected:
     friend class SBCompileUnit;
     friend class SBData;
     friend class SBDebugger;
+    friend class SBDeclaration;
     friend class SBEvent;
     friend class SBFileSpec;
     friend class SBFileSpecList;
@@ -99,7 +100,7 @@ protected:
 private:
 
     DISALLOW_COPY_AND_ASSIGN (SBStream);
-    std::auto_ptr<lldb_private::Stream> m_opaque_ap;
+    std::unique_ptr<lldb_private::Stream> m_opaque_ap;
     bool m_is_file;
 };
 

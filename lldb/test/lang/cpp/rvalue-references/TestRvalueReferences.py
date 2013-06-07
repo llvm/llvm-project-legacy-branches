@@ -2,7 +2,9 @@
 Tests that rvalue references are supported in C++
 """
 
+import lldb
 from lldbtest import *
+import lldbutil
 
 class CPPThisTestCase(TestBase):
     
@@ -19,6 +21,7 @@ class CPPThisTestCase(TestBase):
 
     #rdar://problem/11479676
     @expectedFailureClang
+    @expectedFailureGcc # GCC (4.7) does not emit correct DWARF tags for rvalue-references
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test that rvalues are supported in the C++ expression parser"""
@@ -29,10 +32,8 @@ class CPPThisTestCase(TestBase):
         TestBase.setUp(self)
     
     def set_breakpoint(self, line):
-        self.expect("breakpoint set -f main.cpp -l %d" % line,
-                    BREAKPOINT_CREATED,
-                    startstr = "Breakpoint created")
-    
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", line, num_expected_locations=1, loc_exact=True)
+
     def static_method_commands(self):
         """Test that rvalues are supported in the C++ expression parser"""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)

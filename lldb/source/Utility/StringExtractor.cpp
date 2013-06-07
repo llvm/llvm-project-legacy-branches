@@ -16,6 +16,43 @@
 // Other libraries and framework includes
 // Project includes
 
+static const uint8_t
+g_hex_ascii_to_hex_integer[256] = {
+    
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7,
+    0x8, 0x9, 255, 255, 255, 255, 255, 255,
+    255, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+};
+
 static inline int
 xdigit_to_sint (char ch)
 {
@@ -97,36 +134,7 @@ StringExtractor::GetChar (char fail_value)
         ++m_index;
         return ch;
     }
-    m_index = UINT32_MAX;
-    return fail_value;
-}
-
-uint32_t
-StringExtractor::GetNumHexASCIICharsAtFilePos (uint32_t max) const
-{
-    uint32_t idx = m_index;
-    const size_t size = m_packet.size();
-    while (idx < size && idx - m_index < max && isxdigit(m_packet[idx]))
-        ++idx;
-    return idx - m_index;
-}
-//----------------------------------------------------------------------
-// Extract a signed character from two hex ASCII chars in the packet
-// string
-//----------------------------------------------------------------------
-int8_t
-StringExtractor::GetHexS8 (int8_t fail_value)
-{
-    if (GetNumHexASCIICharsAtFilePos(2))
-    {
-        char hi_nibble_char = m_packet[m_index];
-        char lo_nibble_char = m_packet[m_index+1];
-        char hi_nibble = xdigit_to_sint (hi_nibble_char);
-        char lo_nibble = xdigit_to_sint (lo_nibble_char);
-        m_index += 2;
-        return (hi_nibble << 4) + lo_nibble;
-    }
-    m_index = UINT32_MAX;
+    m_index = UINT64_MAX;
     return fail_value;
 }
 
@@ -137,17 +145,19 @@ StringExtractor::GetHexS8 (int8_t fail_value)
 uint8_t
 StringExtractor::GetHexU8 (uint8_t fail_value, bool set_eof_on_fail)
 {
-    if (GetNumHexASCIICharsAtFilePos(2))
+    uint32_t i = m_index;
+    if ((i + 2) <= m_packet.size())
     {
-        uint8_t hi_nibble_char = m_packet[m_index];
-        uint8_t lo_nibble_char = m_packet[m_index+1];
-        uint8_t hi_nibble = xdigit_to_uint (hi_nibble_char);
-        uint8_t lo_nibble = xdigit_to_uint (lo_nibble_char);
-        m_index += 2;
-        return (hi_nibble << 4) + lo_nibble;
+        const uint8_t hi_nibble = g_hex_ascii_to_hex_integer[static_cast<uint8_t>(m_packet[i])];
+        const uint8_t lo_nibble = g_hex_ascii_to_hex_integer[static_cast<uint8_t>(m_packet[i+1])];
+        if (hi_nibble < 16 && lo_nibble < 16)
+        {
+            m_index += 2;
+            return (hi_nibble << 4) + lo_nibble;
+        }
     }
     if (set_eof_on_fail || m_index >= m_packet.size())
-        m_index = UINT32_MAX;
+        m_index = UINT64_MAX;
     return fail_value;
 }
 
@@ -158,10 +168,68 @@ StringExtractor::GetU32 (uint32_t fail_value, int base)
     {
         char *end = NULL;
         const char *start = m_packet.c_str();
-        const char *uint_cstr = start + m_index;
-        uint32_t result = ::strtoul (uint_cstr, &end, base);
+        const char *cstr = start + m_index;
+        uint32_t result = ::strtoul (cstr, &end, base);
 
-        if (end && end != uint_cstr)
+        if (end && end != cstr)
+        {
+            m_index = end - start;
+            return result;
+        }
+    }
+    return fail_value;
+}
+
+int32_t
+StringExtractor::GetS32 (int32_t fail_value, int base)
+{
+    if (m_index < m_packet.size())
+    {
+        char *end = NULL;
+        const char *start = m_packet.c_str();
+        const char *cstr = start + m_index;
+        int32_t result = ::strtol (cstr, &end, base);
+        
+        if (end && end != cstr)
+        {
+            m_index = end - start;
+            return result;
+        }
+    }
+    return fail_value;
+}
+
+
+uint64_t
+StringExtractor::GetU64 (uint64_t fail_value, int base)
+{
+    if (m_index < m_packet.size())
+    {
+        char *end = NULL;
+        const char *start = m_packet.c_str();
+        const char *cstr = start + m_index;
+        uint64_t result = ::strtoull (cstr, &end, base);
+        
+        if (end && end != cstr)
+        {
+            m_index = end - start;
+            return result;
+        }
+    }
+    return fail_value;
+}
+
+int64_t
+StringExtractor::GetS64 (int64_t fail_value, int base)
+{
+    if (m_index < m_packet.size())
+    {
+        char *end = NULL;
+        const char *start = m_packet.c_str();
+        const char *cstr = start + m_index;
+        int64_t result = ::strtoll (cstr, &end, base);
+        
+        if (end && end != cstr)
         {
             m_index = end - start;
             return result;
@@ -185,7 +253,7 @@ StringExtractor::GetHexMaxU32 (bool little_endian, uint32_t fail_value)
             // Make sure we don't exceed the size of a uint32_t...
             if (nibble_count >= (sizeof(uint32_t) * 2))
             {
-                m_index = UINT32_MAX;
+                m_index = UINT64_MAX;
                 return fail_value;
             }
 
@@ -217,7 +285,7 @@ StringExtractor::GetHexMaxU32 (bool little_endian, uint32_t fail_value)
             // Make sure we don't exceed the size of a uint32_t...
             if (nibble_count >= (sizeof(uint32_t) * 2))
             {
-                m_index = UINT32_MAX;
+                m_index = UINT64_MAX;
                 return fail_value;
             }
 
@@ -247,7 +315,7 @@ StringExtractor::GetHexMaxU64 (bool little_endian, uint64_t fail_value)
             // Make sure we don't exceed the size of a uint64_t...
             if (nibble_count >= (sizeof(uint64_t) * 2))
             {
-                m_index = UINT32_MAX;
+                m_index = UINT64_MAX;
                 return fail_value;
             }
 
@@ -279,7 +347,7 @@ StringExtractor::GetHexMaxU64 (bool little_endian, uint64_t fail_value)
             // Make sure we don't exceed the size of a uint64_t...
             if (nibble_count >= (sizeof(uint64_t) * 2))
             {
-                m_index = UINT32_MAX;
+                m_index = UINT64_MAX;
                 return fail_value;
             }
 
@@ -331,7 +399,7 @@ StringExtractor::GetHexWithFixedSize (uint32_t byte_size, bool little_endian, ui
             // Little Endian
             uint32_t shift_amount;
             for (i = 0, shift_amount = 0;
-                 i < byte_size && m_index != UINT32_MAX;
+                 i < byte_size && IsGood();
                  ++i, shift_amount += 8)
             {
                 result |= ((uint64_t)GetHexU8() << shift_amount);
@@ -340,14 +408,14 @@ StringExtractor::GetHexWithFixedSize (uint32_t byte_size, bool little_endian, ui
         else
         {
             // Big Endian
-            for (i = 0; i < byte_size && m_index != UINT32_MAX; ++i)
+            for (i = 0; i < byte_size && IsGood(); ++i)
             {
                 result <<= 8;
                 result |= GetHexU8();
             }
         }
     }
-    m_index = UINT32_MAX;
+    m_index = UINT64_MAX;
     return fail_value;
 }
 
@@ -396,6 +464,6 @@ StringExtractor::GetNameColonValue (std::string &name, std::string &value)
             }
         }
     }
-    m_index = UINT32_MAX;
+    m_index = UINT64_MAX;
     return false;
 }

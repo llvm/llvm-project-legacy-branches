@@ -35,12 +35,7 @@
 using namespace lldb;
 using namespace lldb_private;
 
-static const char *pluginName = "ABIMacOSX_arm";
-static const char *pluginDesc = "Mac OS X ABI for arm targets";
-static const char *pluginShort = "abi.macosx-arm";
-
-
-static RegisterInfo g_register_infos[] = 
+static RegisterInfo g_register_infos[] =
 {
     //  NAME       ALT       SZ OFF ENCODING         FORMAT          COMPILER                DWARF               GENERIC                     GDB                     LLDB NATIVE            VALUE REGS    INVALIDATE REGS
     //  ========== =======   == === =============    ============    ======================= =================== =========================== ======================= ====================== ==========    ===============
@@ -332,10 +327,7 @@ ABIMacOSX_arm::GetArgumentValues (Thread &thread,
     if (!reg_ctx)
         return false;
         
-    addr_t sp = reg_ctx->GetSP(0);
-    
-    if (!sp)
-        return false;
+    addr_t sp = 0;
 
     for (uint32_t value_idx = 0; value_idx < num_values; ++value_idx)
     {
@@ -405,6 +397,14 @@ ABIMacOSX_arm::GetArgumentValues (Thread &thread,
                 }
                 else
                 {
+                    if (sp == 0)
+                    {
+                        // Read the stack pointer if it already hasn't been read
+                        sp = reg_ctx->GetSP(0);
+                        if (sp == 0)
+                            return false;
+                    }
+
                     // Arguments 5 on up are on the stack
                     const uint32_t arg_byte_size = (bit_width + (8-1)) / 8;
                     Error error;
@@ -421,7 +421,7 @@ ABIMacOSX_arm::GetArgumentValues (Thread &thread,
 
 ValueObjectSP
 ABIMacOSX_arm::GetReturnValueObjectImpl (Thread &thread,
-                               lldb_private::ClangASTType &ast_type) const
+                                         lldb_private::ClangASTType &ast_type) const
 {
     Value value;
     ValueObjectSP return_valobj_sp;
@@ -507,6 +507,86 @@ ABIMacOSX_arm::GetReturnValueObjectImpl (Thread &thread,
     return return_valobj_sp;
 }
 
+Error
+ABIMacOSX_arm::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueObjectSP &new_value_sp)
+{
+    Error error;
+    if (!new_value_sp)
+    {
+        error.SetErrorString("Empty value object for return value.");
+        return error;
+    }
+    
+    clang_type_t value_type = new_value_sp->GetClangType();
+    if (!value_type)
+    {
+        error.SetErrorString ("Null clang type for return value.");
+        return error;
+    }
+    
+    clang::ASTContext *ast_context = new_value_sp->GetClangAST();
+    if (!ast_context)
+    {
+        error.SetErrorString ("Null clang AST for return value.");
+        return error;
+    }
+    Thread *thread = frame_sp->GetThread().get();
+    
+    bool is_signed;
+    uint32_t count;
+    bool is_complex;
+    
+    RegisterContext *reg_ctx = thread->GetRegisterContext().get();
+
+    bool set_it_simple = false;
+    if (ClangASTContext::IsIntegerType (value_type, is_signed) || ClangASTContext::IsPointerType(value_type))
+    {
+        DataExtractor data;
+        size_t num_bytes = new_value_sp->GetData(data);
+        lldb::offset_t offset = 0;
+        if (num_bytes <= 8)
+        {
+            const RegisterInfo *r0_info = reg_ctx->GetRegisterInfoByName("r0", 0);
+            if (num_bytes <= 4)
+            {
+                uint32_t raw_value = data.GetMaxU32(&offset, num_bytes);
+        
+                if (reg_ctx->WriteRegisterFromUnsigned (r0_info, raw_value))
+                    set_it_simple = true;
+            }
+            else
+            {
+                uint32_t raw_value = data.GetMaxU32(&offset, 4);
+        
+                if (reg_ctx->WriteRegisterFromUnsigned (r0_info, raw_value))
+                {
+                    const RegisterInfo *r1_info = reg_ctx->GetRegisterInfoByName("r1", 0);
+                    uint32_t raw_value = data.GetMaxU32(&offset, num_bytes - offset);
+                
+                    if (reg_ctx->WriteRegisterFromUnsigned (r1_info, raw_value))
+                        set_it_simple = true;
+                }
+            }
+        }
+        else
+        {
+            error.SetErrorString("We don't support returning longer than 64 bit integer values at present.");
+        }
+    }
+    else if (ClangASTContext::IsFloatingPointType (value_type, count, is_complex))
+    {
+        if (is_complex)
+            error.SetErrorString ("We don't support returning complex values at present");
+        else
+            error.SetErrorString ("We don't support returning float values at present");
+    }
+    
+    if (!set_it_simple)
+        error.SetErrorString ("We only support setting simple integer return types at present.");
+    
+    return error;
+}
+
 bool
 ABIMacOSX_arm::CreateFunctionEntryUnwindPlan (UnwindPlan &unwind_plan)
 {
@@ -548,6 +628,8 @@ ABIMacOSX_arm::CreateFunctionEntryUnwindPlan (UnwindPlan &unwind_plan)
     // All other registers are the same.
     
     unwind_plan.SetSourceName ("arm at-func-entry default");
+    unwind_plan.SetSourcedFromCompiler (eLazyBoolNo);
+
     return true;
 }
 
@@ -571,8 +653,29 @@ ABIMacOSX_arm::CreateDefaultUnwindPlan (UnwindPlan &unwind_plan)
     
     unwind_plan.AppendRow (row);
     unwind_plan.SetSourceName ("arm-apple-ios default unwind plan");
+    unwind_plan.SetSourcedFromCompiler (eLazyBoolNo);
+    unwind_plan.SetUnwindPlanValidAtAllInstructions (eLazyBoolNo);
+
     return true;
 }
+
+// ARMv7 on iOS general purpose reg rules:
+//    r0-r3 not preserved  (used for argument passing)
+//    r4-r6 preserved
+//    r7    preserved (frame pointer)
+//    r8    preserved
+//    r9    not preserved (usable as volatile scratch register with iOS 3.x and later)
+//    r10-r11 preserved
+//    r12   not presrved
+//    r13   preserved (stack pointer)
+//    r14   not preserved (link register)
+//    r15   preserved (pc)
+//    cpsr  not preserved (different rules for different bits)
+
+// ARMv7 on iOS floating point rules:
+//    d0-d7   not preserved   (aka s0-s15, q0-q3)
+//    d8-d15  preserved       (aka s16-s31, q4-q7)
+//    d16-d31 not preserved   (aka q8-q15)
 
 bool
 ABIMacOSX_arm::RegisterIsVolatile (const RegisterInfo *reg_info)
@@ -611,28 +714,28 @@ ABIMacOSX_arm::RegisterIsVolatile (const RegisterInfo *reg_info)
             switch (name[1])
             {
                 case '0': 
-                    return name[2] == '\0'; // d0
+                    return name[2] == '\0'; // d0 is volatile
 
                 case '1':
                     switch (name[2])
                     {
                     case '\0':
-                        return true; // d1;
+                        return true; // d1 is volatile
                     case '6':
                     case '7':
                     case '8':
                     case '9':
-                        return name[3] == '\0'; // d16 - d19
+                        return name[3] == '\0'; // d16 - d19 are volatile
                     default:
                         break;
                     }
                     break;
-                    
+
                 case '2':
                     switch (name[2])
                     {
                     case '\0':
-                        return true; // d2;
+                        return true; // d2 is volatile
                     case '0':
                     case '1':
                     case '2':
@@ -643,7 +746,7 @@ ABIMacOSX_arm::RegisterIsVolatile (const RegisterInfo *reg_info)
                     case '7':
                     case '8':
                     case '9':
-                        return name[3] == '\0'; // d20 - d29
+                        return name[3] == '\0'; // d20 - d29 are volatile
                     default:
                         break;
                     }
@@ -653,10 +756,10 @@ ABIMacOSX_arm::RegisterIsVolatile (const RegisterInfo *reg_info)
                     switch (name[2])
                     {
                     case '\0':
-                        return true; // d3;
+                        return true; // d3 is volatile
                     case '0':
                     case '1':
-                        return name[3] == '\0'; // d30 - d31
+                        return name[3] == '\0'; // d30 - d31 are volatile
                     default:
                         break;
                     }
@@ -664,7 +767,61 @@ ABIMacOSX_arm::RegisterIsVolatile (const RegisterInfo *reg_info)
                 case '5':
                 case '6':
                 case '7':
-                    return name[2] == '\0'; // d4 - d7
+                    return name[2] == '\0'; // d4 - d7 are volatile
+
+                default:
+                    break;
+            }
+        }
+        else if (name[0] == 's')
+        {
+            switch (name[1])
+            {
+                case '0': 
+                    return name[2] == '\0'; // s0 is volatile
+
+                case '1':
+                    switch (name[2])
+                    {
+                    case '\0':
+                        return true; // s1 is volatile
+                    case '0':
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4':
+                    case '5':
+                        return name[3] == '\0'; // s10 - s15 are volatile
+                    default:
+                        break;
+                    }
+                    break;
+
+                case '2':
+                    switch (name[2])
+                    {
+                    case '\0':
+                        return true; // s2 is volatile
+                    default:
+                        break;
+                    }
+                    break;
+
+                case '3':
+                    switch (name[2])
+                    {
+                    case '\0':
+                        return true; // s3 is volatile
+                    default:
+                        break;
+                    }
+                case '4':
+                case '5':
+                case '6':
+                case '7':
+                case '8':
+                case '9':
+                    return name[2] == '\0'; // s4 - s9 are volatile
 
                 default:
                     break;
@@ -679,8 +836,8 @@ ABIMacOSX_arm::RegisterIsVolatile (const RegisterInfo *reg_info)
 void
 ABIMacOSX_arm::Initialize()
 {
-    PluginManager::RegisterPlugin (pluginName,
-                                   pluginDesc,
+    PluginManager::RegisterPlugin (GetPluginNameStatic(),
+                                   "Mac OS X ABI for arm targets",
                                    CreateInstance);    
 }
 
@@ -690,19 +847,20 @@ ABIMacOSX_arm::Terminate()
     PluginManager::UnregisterPlugin (CreateInstance);
 }
 
+lldb_private::ConstString
+ABIMacOSX_arm::GetPluginNameStatic()
+{
+    static ConstString g_name("macosx-arm");
+    return g_name;
+}
+
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+lldb_private::ConstString
 ABIMacOSX_arm::GetPluginName()
 {
-    return pluginName;
-}
-
-const char *
-ABIMacOSX_arm::GetShortPluginName()
-{
-    return pluginShort;
+    return GetPluginNameStatic();
 }
 
 uint32_t

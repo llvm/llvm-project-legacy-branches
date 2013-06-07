@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class StaticVariableTestCase(TestBase):
 
@@ -18,6 +19,7 @@ class StaticVariableTestCase(TestBase):
         self.buildDsym()
         self.static_variable_commands()
 
+    @expectedFailureLinux # llvm.org/pr15261: lldb on Linux does not display the size of (class or file)static arrays
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test that file and class static variables display correctly."""
@@ -25,8 +27,8 @@ class StaticVariableTestCase(TestBase):
         self.static_variable_commands()
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
-    #rdar://problem/9980907
-    @expectedFailureClang
+    @expectedFailureClang(9980907)
+    @expectedFailureGcc(9980907)
     @python_api_test
     @dsym_test
     def test_with_dsym_and_python_api(self):
@@ -34,8 +36,7 @@ class StaticVariableTestCase(TestBase):
         self.buildDsym()
         self.static_variable_python()
 
-    #rdar://problem/9980907
-    @expectedFailureClang
+    @expectedFailureClang(9980907)
     @python_api_test
     @dwarf_test
     def test_with_dwarf_and_python_api(self):
@@ -53,10 +54,7 @@ class StaticVariableTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -109,13 +107,14 @@ class StaticVariableTestCase(TestBase):
 
         for val in valList:
             self.DebugSBValue(val)
-            self.assertTrue(val.GetValueType() == lldb.eValueTypeVariableGlobal)
             name = val.GetName()
             self.assertTrue(name in ['g_points', 'A::g_points'])
             if name == 'g_points':
+                self.assertTrue(val.GetValueType() == lldb.eValueTypeVariableStatic)
                 self.assertTrue(val.GetNumChildren() == 2)
             elif name == 'A::g_points' and self.getCompiler() in ['clang', 'llvm-gcc']:
                 # On Mac OS X, gcc 4.2 emits the wrong debug info for A::g_points.        
+                self.assertTrue(val.GetValueType() == lldb.eValueTypeVariableGlobal)
                 self.assertTrue(val.GetNumChildren() == 2)
                 child1 = val.GetChildAtIndex(1)
                 self.DebugSBValue(child1)

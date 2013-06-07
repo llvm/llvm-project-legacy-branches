@@ -19,6 +19,7 @@
 #include "lldb/lldb-enumerations.h"
 #include "lldb/lldb-forward.h"
 #include "lldb/lldb-types.h"
+#include "lldb/lldb-versioning.h"
 
 // Forward Declarations
 
@@ -29,15 +30,19 @@ class SBBlock;
 class SBBreakpoint;
 class SBBreakpointLocation;
 class SBBroadcaster;
+class SBCommand;
 class SBCommandInterpreter;
+class SBCommandPluginInterface;
 class SBCommandReturnObject;
 class SBCommunication;
 class SBCompileUnit;
 class SBData;
 class SBDebugger;
+class SBDeclaration;
 class SBError;
 class SBEvent;
 class SBEventList;
+class SBExpressionOptions;
 class SBFileSpec;
 class SBFileSpecList;
 class SBFrame;

@@ -65,7 +65,7 @@ protected:
     const lldb_private::TypeMemberImpl &
     ref () const;
 
-    std::auto_ptr<lldb_private::TypeMemberImpl> m_opaque_ap;
+    std::unique_ptr<lldb_private::TypeMemberImpl> m_opaque_ap;
 };
 
 class SBType
@@ -81,7 +81,7 @@ public:
     bool
     IsValid() const;
     
-    size_t
+    uint64_t
     GetByteSize();
 
     bool
@@ -89,6 +89,9 @@ public:
     
     bool
     IsReferenceType();
+    
+    bool
+    IsFunctionType ();
     
     lldb::SBType
     GetPointerType();
@@ -105,6 +108,14 @@ public:
     lldb::SBType
     GetUnqualifiedType();
 
+    lldb::SBType
+    GetCanonicalType();
+    // Get the "lldb::BasicType" enumeration for a type. If a type is not a basic
+    // type eBasicTypeInvalid will be returned
+    lldb::BasicType
+    GetBasicType();
+
+    // The call below confusing and should really be renamed to "CreateBasicType"
     lldb::SBType
     GetBasicType(lldb::BasicType type);
     
@@ -134,6 +145,12 @@ public:
 
     lldb::TemplateArgumentKind
     GetTemplateArgumentKind (uint32_t idx);
+
+    lldb::SBType
+    GetFunctionReturnType ();
+
+    lldb::SBTypeList
+    GetFunctionArgumentTypes ();
 
     const char*
     GetName();
@@ -217,7 +234,7 @@ public:
     
     
 private:
-    std::auto_ptr<lldb_private::TypeListImpl> m_opaque_ap;
+    std::unique_ptr<lldb_private::TypeListImpl> m_opaque_ap;
 };
     
 

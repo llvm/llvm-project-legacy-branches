@@ -315,11 +315,9 @@ Function::GetBlock (bool can_create)
         else
         {
             Host::SystemLog (Host::eSystemLogError, 
-                             "error: unable to find module shared pointer for function '%s' in %s%s%s\n", 
+                             "error: unable to find module shared pointer for function '%s' in %s\n", 
                              GetName().GetCString(),
-                             m_comp_unit->GetDirectory().GetCString(),
-                             m_comp_unit->GetDirectory() ? "/" : "",
-                             m_comp_unit->GetFilename().GetCString());
+                             m_comp_unit->GetPath().c_str());
         }
         m_block.SetBlockInfoHasBeenParsed (true, true);
     }
@@ -343,7 +341,9 @@ void
 Function::GetDescription(Stream *s, lldb::DescriptionLevel level, Target *target)
 {
     Type* func_type = GetType();
-    *s << "id = " << (const UserID&)*this << ", name = \"" << func_type->GetName() << "\", range = ";
+    const char *name = func_type ? func_type->GetName().AsCString() : "<unknown>";
+    
+    *s << "id = " << (const UserID&)*this << ", name = \"" << name << "\", range = ";
     
     Address::DumpStyle fallback_style;
     if (level == eDescriptionLevelVerbose)
@@ -368,7 +368,7 @@ Function::Dump(Stream *s, bool show_context) const
     }
     else if (m_type_uid != LLDB_INVALID_UID)
     {
-        s->Printf(", type_uid = 0x%8.8llx", m_type_uid);
+        s->Printf(", type_uid = 0x%8.8" PRIx64, m_type_uid);
     }
 
     s->EOL();
@@ -390,13 +390,7 @@ Function::CalculateSymbolContextModule ()
 {
     SectionSP section_sp (m_range.GetBaseAddress().GetSection());
     if (section_sp)
-    {
-        SectionSP linked_section_sp (section_sp->GetLinkedSection());
-        if (linked_section_sp)
-            return linked_section_sp->GetModule();
-        else
-            return section_sp->GetModule();
-    }
+        return section_sp->GetModule();
     
     return this->GetCompileUnit()->GetModule();
 }
@@ -424,7 +418,7 @@ void
 Function::DumpSymbolContext(Stream *s)
 {
     m_comp_unit->DumpSymbolContext(s);
-    s->Printf(", Function{0x%8.8llx}", GetID());
+    s->Printf(", Function{0x%8.8" PRIx64 "}", GetID());
 }
 
 size_t
@@ -493,10 +487,14 @@ Function::GetType() const
 clang_type_t
 Function::GetReturnClangType ()
 {
-    clang::QualType clang_type (clang::QualType::getFromOpaquePtr(GetType()->GetClangFullType()));
-    const clang::FunctionType *function_type = llvm::dyn_cast<clang::FunctionType> (clang_type);
-    if (function_type)
-        return function_type->getResultType().getAsOpaquePtr();
+    Type *type = GetType();
+    if (type)
+    {
+        clang::QualType clang_type (clang::QualType::getFromOpaquePtr(type->GetClangFullType()));
+        const clang::FunctionType *function_type = llvm::dyn_cast<clang::FunctionType> (clang_type);
+        if (function_type)
+            return function_type->getResultType().getAsOpaquePtr();
+    }
     return NULL;
 }
 

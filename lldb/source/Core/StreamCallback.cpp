@@ -35,7 +35,7 @@ StreamCallback::~StreamCallback ()
 StreamString &
 StreamCallback::FindStreamForThread(lldb::tid_t cur_tid)
 {
-    Mutex::Locker (m_collection_mutex);
+    Mutex::Locker locker(m_collection_mutex);
     collection::iterator iter = m_accumulated_data.find (cur_tid);
     if (iter == m_accumulated_data.end())
     {
@@ -55,7 +55,7 @@ StreamCallback::Flush ()
     out_stream.Clear();
 }
 
-int
+size_t
 StreamCallback::Write (const void *s, size_t length)
 {
     lldb::tid_t cur_tid = Host::GetCurrentThreadID();

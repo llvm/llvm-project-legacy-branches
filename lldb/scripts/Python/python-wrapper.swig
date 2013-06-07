@@ -151,6 +151,10 @@ LLDBSwigPythonBreakpointCallbackFunction
                 
                 if (pvalue != NULL)
                 {
+                    // be very conservative here and only refuse to stop if the user
+                    // actually returned False - anything else, just stop
+                    if (pvalue == Py_False)
+                        stop_at_breakpoint = false;
                     Py_DECREF (pvalue);
                 }
                 else if (PyErr_Occurred ())
@@ -267,6 +271,8 @@ LLDBSwigPythonCallTypeScript
 {
     lldb::SBValue sb_value (valobj_sp);
 
+    retval.clear();
+
     PyObject *ValObj_PyObj = SWIG_NewPointerObj((void *) &sb_value, SWIGTYPE_p_lldb__SBValue, 0);
     
     if (ValObj_PyObj == NULL)
@@ -312,8 +318,18 @@ LLDBSwigPythonCallTypeScript
         pvalue = PyObject_CallObject (pfunc, pargs);
         Py_DECREF (pargs);
         
-        if (pvalue != NULL && pvalue != Py_None && PyString_Check(pvalue))
-            retval.assign(PyString_AsString(pvalue));
+        if (pvalue != NULL && pvalue != Py_None)
+        {
+            if (PyString_Check(pvalue))
+                retval.assign(PyString_AsString(pvalue));
+            else
+            {
+                PyObject* value_as_string = PyObject_Str(pvalue);
+                if (value_as_string && value_as_string != Py_None && PyString_Check(value_as_string))
+                    retval.assign(PyString_AsString(value_as_string));
+                Py_XDECREF(value_as_string);
+            }
+        }
         Py_XDECREF (pvalue);
         Py_INCREF (session_dict);
     }
@@ -323,26 +339,27 @@ LLDBSwigPythonCallTypeScript
 SWIGEXPORT void*
 LLDBSwigPythonCreateSyntheticProvider 
 (
-    const std::string python_class_name,
+    const char *python_class_name,
     const char *session_dictionary_name,
     const lldb::ValueObjectSP& valobj_sp
 )
 {
     PyObject* retval = NULL;
 
-    if (python_class_name.empty() || !session_dictionary_name)
+    if (python_class_name == NULL || python_class_name[0] == '\0' || !session_dictionary_name)
         Py_RETURN_NONE;
 
     // I do not want the SBValue to be deallocated when going out of scope because python
     // has ownership of it and will manage memory for this object by itself
     lldb::SBValue *valobj_sb = new lldb::SBValue(valobj_sp);
+    valobj_sb->SetPreferSyntheticValue(false);
 
     PyObject *ValObj_PyObj = SWIG_NewPointerObj((void *)valobj_sb, SWIGTYPE_p_lldb__SBValue, 0);
 
     if (ValObj_PyObj == NULL)
         Py_RETURN_NONE;
 
-    const char* python_function_name = python_class_name.c_str();
+    const char* python_function_name = python_class_name;
 
     PyObject *session_dict, *pfunc;
     PyObject *pvalue;
@@ -417,12 +434,76 @@ LLDBSwigPythonCreateSyntheticProvider
         Py_RETURN_NONE;
 }
 
-/*
-these four calls below are meant to support
-Python-based synthetic children providers
-they essentially mimic the four pure virtual
-method calls provided by the frontend class
-*/
+// wrapper that calls an optional instance member of an object taking no arguments
+static PyObject*
+LLDBSwigPython_CallOptionalMember
+(
+    PyObject* self,
+    char* callee_name,
+    PyObject* ret_if_not_found = Py_None,
+    bool* was_found = NULL
+)
+{
+    if (self == NULL || self == Py_None)
+    {
+        if (was_found)
+            *was_found = false;
+        Py_XINCREF(ret_if_not_found);
+        return ret_if_not_found;
+    }
+
+    PyObject* pmeth  = PyObject_GetAttrString(self, callee_name);
+
+    if (PyErr_Occurred())
+    {
+        PyErr_Clear();
+    }
+
+    if (pmeth == NULL || pmeth == Py_None)
+    {
+        if (was_found)
+            *was_found = false;
+        Py_XDECREF(pmeth);
+        Py_XINCREF(ret_if_not_found);
+        return ret_if_not_found;
+    }
+
+    if (PyCallable_Check(pmeth) == 0)
+    {
+        if (PyErr_Occurred())
+        {
+            PyErr_Clear();
+        }
+
+        Py_XDECREF(pmeth);
+        if (was_found)
+            *was_found = false;
+        Py_XINCREF(ret_if_not_found);
+        return ret_if_not_found;
+    }
+
+    if (was_found)
+        *was_found = true;
+
+    if (PyErr_Occurred())
+    {
+        PyErr_Clear();
+    }
+
+    Py_XDECREF(pmeth);
+
+    // right now we know this function exists and is callable..
+    PyObject* py_return = PyObject_CallMethod(self, callee_name, NULL);
+    
+    // if it fails, print the error but otherwise go on
+    if (PyErr_Occurred())
+    {
+        PyErr_Print();
+        PyErr_Clear();
+    }
+    
+    return py_return;
+}
 
 SWIGEXPORT uint32_t
 LLDBSwigPython_CalculateNumChildren
@@ -430,33 +511,27 @@ LLDBSwigPython_CalculateNumChildren
     PyObject *implementor
 )
 {
+    uint32_t ret_val = UINT32_MAX;
 
     static char callee_name[] = "num_children";
 
-    if (implementor == NULL || implementor == Py_None)
-        return 0;
-    PyObject* py_return = PyObject_CallMethod(implementor, callee_name, NULL);
-    if (PyErr_Occurred())
-    {
-        PyErr_Print();
-        PyErr_Clear();
-    }
+    PyObject* py_return = LLDBSwigPython_CallOptionalMember(implementor,callee_name, NULL);
 
-    if (py_return == NULL || py_return == Py_None)
-    {
-        Py_XDECREF(py_return);
-        return UINT32_MAX;
-    }
-    long retval = PyInt_AsLong(py_return);
-    Py_DECREF(py_return);
-    if (retval >= 0)
-        return (uint32_t)retval;
+    if (!py_return)
+        return ret_val;
+
+    if (PyInt_Check(py_return))
+        ret_val = PyInt_AsLong(py_return);
+
+    Py_XDECREF(py_return);
+    
     if (PyErr_Occurred())
     {
         PyErr_Print();
         PyErr_Clear();
     }
-    return 0;
+    
+    return ret_val;
 }
 
 SWIGEXPORT PyObject*
@@ -541,64 +616,38 @@ LLDBSwigPython_UpdateSynthProviderInstance
     PyObject *implementor
 )
 {
-
     bool ret_val = false;
 
     static char callee_name[] = "update";
 
-    if (implementor == NULL || implementor == Py_None)
-        return ret_val;
+    PyObject* py_return = LLDBSwigPython_CallOptionalMember(implementor,callee_name);
 
-    // all this code is here because update is optional, so we don't want to bother trying to call it unless it's been def:ined for us
-    // other synth provider calls are mandatory, so we want to fail in a very obvious way if they are missing!
-    PyObject* pmeth  = PyObject_GetAttrString(implementor, callee_name);
-
-    if (PyErr_Occurred())
-    {
-        PyErr_Clear();
-    }
-
-    if (pmeth == NULL || pmeth == Py_None)
-    {
-        Py_XDECREF(pmeth);
-        return ret_val;
-    }
-
-    if (PyCallable_Check(pmeth) == 0)
-    {
-        if (PyErr_Occurred())
-        {
-            PyErr_Clear();
-        }
-
-        Py_XDECREF(pmeth);
-        return ret_val;
-    }
-
-    if (PyErr_Occurred())
-    {
-        PyErr_Clear();
-    }
-
-    Py_XDECREF(pmeth);
-
-    // right now we know this function exists and is callable..
-    PyObject* py_return = PyObject_CallMethod(implementor, callee_name, NULL);
-    
-    // if it fails, print the error but otherwise go on
-    if (PyErr_Occurred())
-    {
-        PyErr_Print();
-        PyErr_Clear();
-    }
-    
     if (py_return == Py_True)
         ret_val = true;
 
     Py_XDECREF(py_return);
     
     return ret_val;
+}
 
+SWIGEXPORT bool
+LLDBSwigPython_MightHaveChildrenSynthProviderInstance
+(
+    PyObject *implementor
+)
+{
+    bool ret_val = false;
+
+    static char callee_name[] = "has_children";
+
+    PyObject* py_return = LLDBSwigPython_CallOptionalMember(implementor,callee_name, Py_True);
+
+    if (py_return == Py_True)
+        ret_val = true;
+
+    Py_XDECREF(py_return);
+    
+    return ret_val;
 }
 
 SWIGEXPORT void*
@@ -617,11 +666,11 @@ LLDBSWIGPython_CastPyObjectToSBValue
     return sb_ptr;
 }
 
-// Currently, SBCommandReturnObjectReleaser wraps an std::auto_ptr to an
+// Currently, SBCommandReturnObjectReleaser wraps a unique pointer to an
 // lldb_private::CommandReturnObject. This means that the destructor for the
 // SB object will deallocate its contained CommandReturnObject. Because that
 // object is used as the real return object for Python-based commands, we want
-// it to stay around. Thus, we release the auto_ptr before returning from
+// it to stay around. Thus, we release the unique pointer before returning from
 // LLDBSwigPythonCallCommand, and to guarantee that the release will occur no
 // matter how we exit from the function, we have a releaser object whose
 // destructor does the right thing for us
@@ -742,10 +791,107 @@ LLDBSwigPythonCallCommand
     return retval;
 }
 
+SWIGEXPORT void*
+LLDBSWIGPythonCreateOSPlugin
+(
+    const char *python_class_name,
+    const char *session_dictionary_name,
+    const lldb::ProcessSP& process_sp
+)
+{
+    PyObject* retval = NULL;
+
+    if (python_class_name == NULL || python_class_name[0] == '\0' || !session_dictionary_name)
+        Py_RETURN_NONE;
+
+    // I do not want the SBValue to be deallocated when going out of scope because python
+    // has ownership of it and will manage memory for this object by itself
+    lldb::SBProcess *process_sb = new lldb::SBProcess(process_sp);
+
+    PyObject *SBProc_PyObj = SWIG_NewPointerObj((void *)process_sb, SWIGTYPE_p_lldb__SBProcess, 0);
+
+    if (SBProc_PyObj == NULL)
+        Py_RETURN_NONE;
+
+    const char* python_function_name = python_class_name;
+
+    PyObject *session_dict, *pfunc;
+    PyObject *pvalue;
+    
+    session_dict = FindSessionDictionary (session_dictionary_name);
+    if (session_dict != NULL)
+    {
+        pfunc = ResolvePythonName (python_function_name, session_dict);
+        if (pfunc != NULL)
+        {
+            // Set up the arguments and call the function.
+                
+            if (PyCallable_Check (pfunc))
+            {
+                PyObject *argList = Py_BuildValue("(O)", SBProc_PyObj);
+
+                if (PyErr_Occurred ())
+                {
+                    PyErr_Print();
+                    PyErr_Clear();
+                    return retval;
+                }
+
+                if (argList == NULL)
+                {
+                    return retval;
+                }
+
+                Py_INCREF(SBProc_PyObj);
+
+                pvalue = PyObject_CallObject(pfunc, argList);
+
+                Py_DECREF(argList);
+
+                if (pvalue != NULL)
+                {
+                    if (pvalue != Py_None)
+                        retval = pvalue;
+                    else
+                    {
+                        retval = Py_None;
+                        Py_INCREF(retval);
+                    }
+                }
+                else if (PyErr_Occurred ())
+                {
+                    PyErr_Print();
+                    PyErr_Clear();
+                }
+                Py_INCREF (session_dict);
+            }
+            else if (PyErr_Occurred())
+            {
+                PyErr_Print();
+                PyErr_Clear();
+            }
+        }
+        else if (PyErr_Occurred())
+        {
+            PyErr_Print();
+            PyErr_Clear();
+        }
+    }
+    else if (PyErr_Occurred ())
+    {
+        PyErr_Print();
+        PyErr_Clear ();
+    }
+    if (retval)
+        return retval;
+    else
+        Py_RETURN_NONE;
+}
+
 SWIGEXPORT bool
 LLDBSwigPythonCallModuleInit 
 (
-    const std::string python_module_name,
+    const char *python_module_name,
     const char *session_dictionary_name,
     lldb::DebuggerSP& debugger
 )
@@ -760,7 +906,7 @@ LLDBSwigPythonCallModuleInit
     if (DebuggerObj_PyObj == NULL)
         return retval;
         
-    if (!(python_module_name.length()) || !session_dictionary_name)
+    if (python_module_name == NULL || python_module_name[0] == '\0' || !session_dictionary_name)
         return retval;
 
     PyObject *session_dict, *pfunc;
@@ -768,7 +914,8 @@ LLDBSwigPythonCallModuleInit
     
     session_dict = FindSessionDictionary (session_dictionary_name);
     
-    std::string python_function_name_string = python_module_name + (".__lldb_init_module");
+    std::string python_function_name_string = python_module_name;
+    python_function_name_string += ".__lldb_init_module";
     const char* python_function_name = python_function_name_string.c_str();
     
     if (session_dict != NULL)
@@ -823,5 +970,97 @@ LLDBSwigPythonCallModuleInit
     }
     return retval;
 }
+%}
 
+
+%runtime %{
+// Forward declaration to be inserted at the start of LLDBWrapPython.h
+// I used runtime as a hack to make SWIG place it where it's needed.
+// This is needed to use LLDBSwigPythonCallSBInputReaderCallback in the
+// typemaps and in the extensions (SBInputReader.__del__()).
+#include "lldb/API/SBInputReader.h"
+#include "lldb/API/SBDebugger.h"
+#include "lldb/API/SBValue.h"
+ 
+SWIGEXPORT lldb::ValueObjectSP
+LLDBSWIGPython_GetValueObjectSPFromSBValue (void* data)
+{
+    lldb::ValueObjectSP valobj_sp;
+    if (data)
+    {
+        lldb::SBValue* sb_ptr = (lldb::SBValue *)data;
+        valobj_sp = sb_ptr->GetSP();
+    }
+    return valobj_sp;
+}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+size_t
+LLDBSwigPythonCallSBInputReaderCallback(void *baton,
+                                        lldb::SBInputReader *reader,
+                                        lldb::InputReaderAction notification,
+                                        const char*bytes,
+                                        size_t bytes_len);
+
+void LLDBSwigPythonCallPythonLogOutputCallback(const char *str, void *baton);
+
+#ifdef __cplusplus
+}
+#endif
+%}
+
+%wrapper %{
+// For the InputReader Callback functions
+SWIGEXPORT size_t
+LLDBSwigPythonCallSBInputReaderCallback(void *baton,
+                                        lldb::SBInputReader *reader,
+                                        lldb::InputReaderAction notification,
+                                        const char*bytes,
+                                        size_t bytes_len) {
+    if (baton != Py_None) {
+        SWIG_PYTHON_THREAD_BEGIN_BLOCK;
+    
+        PyObject *py_InputReader = SWIG_NewPointerObj(reader, SWIGTYPE_p_lldb__SBInputReader, false);
+        PyObject *py_Notification = PyInt_FromLong(notification);
+        PyObject *py_Bytes = PyBytes_FromStringAndSize(bytes, bytes_len);
+    
+        PyObject *tuple = PyTuple_Pack(3, py_InputReader, py_Notification, py_Bytes);
+        PyObject *res = PyObject_Call(reinterpret_cast<PyObject*>(baton), tuple, NULL);
+        Py_DECREF(tuple);
+        Py_DECREF(py_InputReader);
+        Py_DECREF(py_Notification);
+        Py_DECREF(py_Bytes);
+    
+        if (res == NULL) {
+          PyObject *exc = PyErr_Occurred();
+          if (exc) {
+            ::puts("\nErroring out at LLDBSwigPythonCallSBInputReaderCallback");
+            PyErr_Print();
+          }
+          return 0;
+        }
+    
+        size_t result = 0;
+        // If the callback misbehaves and returns Py_None, assume it returned 0
+        if (res != Py_None)
+          result = static_cast<size_t>(PyInt_AsSsize_t(res));
+    
+        Py_DECREF(res);
+        SWIG_PYTHON_THREAD_END_BLOCK;
+        return result;
+    }
+    return 0;
+}
+
+// For the LogOutputCallback functions
+void LLDBSwigPythonCallPythonLogOutputCallback(const char *str, void *baton) {
+    if (baton != Py_None) {
+      SWIG_PYTHON_THREAD_BEGIN_BLOCK;
+      PyObject_CallFunction(reinterpret_cast<PyObject*>(baton), const_cast<char*>("s"), str);
+      SWIG_PYTHON_THREAD_END_BLOCK;
+    }
+}
 %}

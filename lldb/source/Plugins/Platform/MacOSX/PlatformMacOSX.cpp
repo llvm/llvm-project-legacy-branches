@@ -46,7 +46,7 @@ PlatformMacOSX::Initialize ()
         default_platform_sp->SetSystemArchitecture (Host::GetArchitecture());
         Platform::SetDefaultPlatform (default_platform_sp);
 #endif        
-        PluginManager::RegisterPlugin (PlatformMacOSX::GetShortPluginNameStatic(false),
+        PluginManager::RegisterPlugin (PlatformMacOSX::GetPluginNameStatic(false),
                                        PlatformMacOSX::GetDescriptionStatic(false),
                                        PlatformMacOSX::CreateInstance);
     }
@@ -82,10 +82,14 @@ PlatformMacOSX::CreateInstance (bool force, const ArchSpec *arch)
                 create = true;
                 break;
                 
+#if defined(__APPLE__)
+            // Only accept "unknown" for vendor if the host is Apple and
+            // it "unknown" wasn't specified (it was just returned becasue it
+            // was NOT specified)
             case llvm::Triple::UnknownArch:
                 create = !arch->TripleVendorWasSpecified();
                 break;
-                
+#endif
             default:
                 break;
         }
@@ -97,11 +101,14 @@ PlatformMacOSX::CreateInstance (bool force, const ArchSpec *arch)
                 case llvm::Triple::Darwin:  // Deprecated, but still support Darwin for historical reasons
                 case llvm::Triple::MacOSX:
                     break;
-                    
+#if defined(__APPLE__)
+                // Only accept "vendor" for vendor if the host is Apple and
+                // it "unknown" wasn't specified (it was just returned becasue it
+                // was NOT specified)
                 case llvm::Triple::UnknownOS:
                     create = !arch->TripleOSWasSpecified();
                     break;
-                    
+#endif
                 default:
                     create = false;
                     break;
@@ -113,20 +120,19 @@ PlatformMacOSX::CreateInstance (bool force, const ArchSpec *arch)
     return NULL;
 }
 
-
-const char *
-PlatformMacOSX::GetPluginNameStatic ()
-{
-    return "PlatformMacOSX";
-}
-
-const char *
-PlatformMacOSX::GetShortPluginNameStatic (bool is_host)
+lldb_private::ConstString
+PlatformMacOSX::GetPluginNameStatic (bool is_host)
 {
     if (is_host)
-        return Platform::GetHostPlatformName ();
+    {
+        static ConstString g_host_name(Platform::GetHostPlatformName ());
+        return g_host_name;
+    }
     else
-        return "remote-macosx";
+    {
+        static ConstString g_remote_name("remote-macosx");
+        return g_remote_name;
+    }
 }
 
 const char *
@@ -193,8 +199,7 @@ PlatformMacOSX::GetFile (const lldb_private::FileSpec &platform_file,
         {
             // try to find the file in the cache
             std::string cache_path(GetLocalCacheDirectory());
-            std::string module_path;
-            platform_file.GetPath(module_path);
+            std::string module_path (platform_file.GetPath());
             cache_path.append(module_path);
             FileSpec module_cache_spec(cache_path.c_str(),false);
             if (module_cache_spec.Exists())

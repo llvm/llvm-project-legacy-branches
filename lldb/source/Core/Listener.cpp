@@ -32,14 +32,14 @@ Listener::Listener(const char *name) :
     m_events_mutex (Mutex::eMutexTypeRecursive),
     m_cond_wait()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
         log->Printf ("%p Listener::Listener('%s')", this, m_name.c_str());
 }
 
 Listener::~Listener()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     Mutex::Locker locker (m_broadcasters_mutex);
     
     size_t num_managers = m_broadcaster_managers.size();
@@ -84,7 +84,7 @@ Listener::StartListeningForEvents (Broadcaster* broadcaster, uint32_t event_mask
         {
 
         }
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS));
         if (log)
             log->Printf ("%p Listener::StartListeningForEvents (broadcaster = %p, mask = 0x%8.8x) acquired_mask = 0x%8.8x for %s",
                          this,
@@ -113,7 +113,7 @@ Listener::StartListeningForEvents (Broadcaster* broadcaster, uint32_t event_mask
 
         uint32_t acquired_mask = broadcaster->AddListener (this, event_mask);
 
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS));
         if (log)
             log->Printf ("%p Listener::StartListeningForEvents (broadcaster = %p, mask = 0x%8.8x, callback = %p, user_data = %p) acquired_mask = 0x%8.8x for %s",
                         this, broadcaster, event_mask, callback, callback_user_data, acquired_mask, m_name.c_str());
@@ -183,7 +183,7 @@ Listener::BroadcasterManagerWillDestruct (BroadcasterManager *manager)
 void
 Listener::AddEvent (EventSP &event_sp)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS));
     if (log)
         log->Printf ("%p Listener('%s')::AddEvent (event_sp = {%p})", this, m_name.c_str(), event_sp.get());
 
@@ -270,7 +270,7 @@ Listener::FindNextEventInternal
     EventSP &event_sp,
     bool remove)
 {
-    //LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS));
 
     Mutex::Locker lock(m_events_mutex);
 
@@ -292,6 +292,18 @@ Listener::FindNextEventInternal
     if (pos != m_events.end())
     {
         event_sp = *pos;
+        
+        if (log)
+            log->Printf ("%p '%s' Listener::FindNextEventInternal(broadcaster=%p, broadcaster_names=%p[%u], event_type_mask=0x%8.8x, remove=%i) event %p",
+                         this,
+                         GetName(),
+                         broadcaster,
+                         broadcaster_names,
+                         num_broadcaster_names,
+                         event_type_mask,
+                         remove,
+                         event_sp.get());
+
         if (remove)
         {
             m_events.erase(pos);
@@ -388,7 +400,7 @@ Listener::WaitForEventsInternal
     EventSP &event_sp
 )
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS));
     bool timed_out = false;
 
     if (log)
@@ -399,12 +411,24 @@ Listener::WaitForEventsInternal
 
     while (1)
     {
+        // Note, we don't want to lock the m_events_mutex in the call to GetNextEventInternal, since the DoOnRemoval
+        // code might require that new events be serviced.  For instance, the Breakpoint Command's 
         if (GetNextEventInternal (broadcaster, broadcaster_names, num_broadcaster_names, event_type_mask, event_sp))
-            return true;
+                return true;
 
-        // Reset condition value to false, so we can wait for new events to be
-        // added that might meet our current filter
-        m_cond_wait.SetValue (false, eBroadcastNever);
+        {
+            // Reset condition value to false, so we can wait for new events to be
+            // added that might meet our current filter
+            // But first poll for any new event that might satisfy our condition, and if so consume it,
+            // otherwise wait.
+            
+            Mutex::Locker event_locker(m_events_mutex);
+            const bool remove = false;
+            if (FindNextEventInternal (broadcaster, broadcaster_names, num_broadcaster_names, event_type_mask, event_sp, remove))
+                continue;
+            else
+                m_cond_wait.SetValue (false, eBroadcastNever);
+        }
 
         if (m_cond_wait.WaitForValueEqualTo (true, timeout, &timed_out))
             continue;
@@ -413,14 +437,14 @@ Listener::WaitForEventsInternal
         {
             log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS);
             if (log)
-                log->Printf ("%p Listener::WaitForEvents() timed out for %s", this, m_name.c_str());
+                log->Printf ("%p Listener::WaitForEventsInternal() timed out for %s", this, m_name.c_str());
             break;
         }
         else
         {
             log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EVENTS);
             if (log)
-                log->Printf ("%p Listener::WaitForEvents() unknown error for %s", this, m_name.c_str());
+                log->Printf ("%p Listener::WaitForEventsInternal() unknown error for %s", this, m_name.c_str());
             break;
         }
     }
@@ -509,6 +533,9 @@ uint32_t
 Listener::StartListeningForEventSpec (BroadcasterManager &manager, 
                              const BroadcastEventSpec &event_spec)
 {
+    // The BroadcasterManager mutex must be locked before m_broadcasters_mutex 
+    // to avoid violating the lock hierarchy (manager before broadcasters).
+    Mutex::Locker manager_locker(manager.m_manager_mutex);
     Mutex::Locker locker(m_broadcasters_mutex);
 
     uint32_t bits_acquired = manager.RegisterListenerForEvents(*this, event_spec);

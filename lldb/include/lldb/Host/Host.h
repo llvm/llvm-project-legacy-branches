@@ -14,6 +14,7 @@
 #include <stdarg.h>
 
 #include <map>
+#include <string>
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/StringList.h"
@@ -100,6 +101,16 @@ public:
     //------------------------------------------------------------------
     static lldb::ByteOrder
     GetByteOrder ();
+
+    //------------------------------------------------------------------
+    /// Returns the number of CPUs on this current host.
+    ///
+    /// @return
+    ///     Number of CPUs on this current host, or zero if the number
+    ///     of CPUs can't be determined on this host.
+    //------------------------------------------------------------------
+    static uint32_t
+    GetNumberCPUS ();
 
     static bool
     GetOSVersion (uint32_t &major, 
@@ -269,11 +280,9 @@ public:
     ///     The thread ID for which we are trying retrieve the name of.
     ///
     /// @return
-    ///     A NULL terminate C string name that is owned by a static
-    ///     global string pool, or NULL if there is no matching thread
-    ///     name. This string does not need to be freed.
+    ///     A std::string containing the thread name.
     //------------------------------------------------------------------
-    static const char *
+    static std::string
     GetThreadName (lldb::pid_t pid, lldb::tid_t tid);
 
     //------------------------------------------------------------------
@@ -292,7 +301,7 @@ public:
     ///     \b true if the thread name was able to be set, \b false
     ///     otherwise.
     //------------------------------------------------------------------
-    static void
+    static bool
     SetThreadName (lldb::pid_t pid, lldb::tid_t tid, const char *name);
 
     //------------------------------------------------------------------
@@ -407,7 +416,12 @@ public:
     static uint32_t
     FindProcesses (const ProcessInstanceInfoMatch &match_info,
                    ProcessInstanceInfoList &proc_infos);
-    
+
+    typedef std::map<lldb::pid_t, bool> TidMap;
+    typedef std::pair<lldb::pid_t, bool> TidPair;
+    static bool
+    FindProcessThreads (const lldb::pid_t pid, TidMap &tids_to_attach);
+
     static bool
     GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &proc_info);
     
@@ -423,7 +437,8 @@ public:
                      int *status_ptr,               // Pass NULL if you don't want the process exit status
                      int *signo_ptr,                // Pass NULL if you don't want the signal that caused the process to exit
                      std::string *command_output,   // Pass NULL if you don't want the command output
-                     uint32_t timeout_sec);         // Timeout in seconds to wait for shell program to finish
+                     uint32_t timeout_sec,
+                     const char *shell = "/bin/bash");
     
     static lldb::DataBufferSP
     GetAuxvData (lldb_private::Process *process);
@@ -466,16 +481,26 @@ public:
     static lldb::user_id_t
     OpenFile (const FileSpec& file_spec,
               uint32_t flags,
-              mode_t mode);
+              mode_t mode,
+              Error &error);
     
     static bool
-    CloseFile (lldb::user_id_t fd);
+    CloseFile (lldb::user_id_t fd,
+               Error &error);
     
-    static uint32_t
-    WriteFile (lldb::user_id_t fd, uint64_t offset, void* data, size_t data_len);
+    static uint64_t
+    WriteFile (lldb::user_id_t fd,
+               uint64_t offset,
+               const void* src,
+               uint64_t src_len,
+               Error &error);
     
-    static uint32_t
-    ReadFile (lldb::user_id_t fd, uint64_t offset, void* data_ptr, size_t len_wanted);
+    static uint64_t
+    ReadFile (lldb::user_id_t fd,
+              uint64_t offset,
+              void* dst,
+              uint64_t dst_len,
+              Error &error);
 
     static lldb::user_id_t
     GetFileSize (const FileSpec& file_spec);

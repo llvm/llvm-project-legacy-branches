@@ -20,20 +20,6 @@
 #include <sys/syslimits.h>
 #include <unistd.h>
 
-#include <ciso646>  // detect C++ lib
-
-#ifdef _LIBCPP_VERSION
-#include <memory>
-#define STD_SHARED_PTR(T) std::shared_ptr<T>
-#define STD_WEAK_PTR(T) std::weak_ptr<T>
-#define STD_ENABLE_SHARED_FROM_THIS(T) std::enable_shared_from_this<T>
-#else
-#include <tr1/memory>
-#define STD_SHARED_PTR(T) std::tr1::shared_ptr<T>
-#define STD_WEAK_PTR(T) std::tr1::weak_ptr<T>
-#define STD_ENABLE_SHARED_FROM_THIS(T) std::tr1::enable_shared_from_this<T>
-#endif
-
 //----------------------------------------------------------------------
 // Define nub_addr_t and the invalid address value from the architecture
 //----------------------------------------------------------------------
@@ -73,7 +59,7 @@ typedef uint32_t        nub_break_t;
 typedef uint32_t        nub_watch_t;
 typedef uint32_t        nub_index_t;
 typedef pid_t           nub_process_t;
-typedef unsigned int    nub_thread_t;
+typedef uint64_t        nub_thread_t;
 typedef uint32_t        nub_event_t;
 typedef uint32_t        nub_bool_t;
 
@@ -134,12 +120,12 @@ enum
     eEventProcessStoppedStateChanged = 1 << 1,  // The process has changed state to stopped
     eEventSharedLibsStateChange = 1 << 2,       // Shared libraries loaded/unloaded state has changed
     eEventStdioAvailable = 1 << 3,              // Something is available on stdout/stderr
-    eEventProcessAsyncInterrupt = 1 << 4,               // Gives the ability for any infinite wait calls to be interrupted
+    eEventProfileDataAvailable = 1 << 4,        // Profile data ready for retrieval
     kAllEventsMask = eEventProcessRunningStateChanged |
                      eEventProcessStoppedStateChanged |
                      eEventSharedLibsStateChange |
                      eEventStdioAvailable |
-                     eEventProcessAsyncInterrupt
+                     eEventProfileDataAvailable
 };
 
 #define LOG_VERBOSE             (1u << 0)
@@ -228,6 +214,8 @@ struct DNBRegisterInfo
     uint32_t    reg_dwarf;      // DWARF register number (INVALID_NUB_REGNUM when none)
     uint32_t    reg_generic;    // Generic register number (INVALID_NUB_REGNUM when none)
     uint32_t    reg_gdb;        // The GDB register number (INVALID_NUB_REGNUM when none)
+    uint32_t    *pseudo_regs;   // If this register is a part of another register, list the one or more registers
+    uint32_t    *update_regs;   // If modifying this register will invalidate other registers, list them here
 };
 
 struct DNBRegisterSetInfo
@@ -249,7 +237,8 @@ enum DNBThreadStopType
 {
     eStopTypeInvalid = 0,
     eStopTypeSignal,
-    eStopTypeException
+    eStopTypeException,
+    eStopTypeExec
 };
 
 enum DNBMemoryPermissions
@@ -352,6 +341,24 @@ struct DNBRegionInfo
     nub_addr_t addr;
     nub_addr_t size;
     uint32_t permissions;
+};
+
+enum DNBProfileDataScanType
+{
+    eProfileHostCPU             = (1 << 0),
+    eProfileCPU                 = (1 << 1),
+    
+    eProfileThreadsCPU          = (1 << 2), // By default excludes eProfileThreadName and eProfileQueueName.
+    eProfileThreadName          = (1 << 3), // Assume eProfileThreadsCPU, get thread name as well.
+    eProfileQueueName           = (1 << 4), // Assume eProfileThreadsCPU, get queue name as well.
+    
+    eProfileHostMemory          = (1 << 5),
+    
+    eProfileMemory              = (1 << 6), // By default, excludes eProfileMemoryDirtyPage.
+    eProfileMemoryDirtyPage     = (1 << 7), // Assume eProfileMemory, get Dirty Page size as well.
+    eProfileMemoryAnonymous     = (1 << 8), // Assume eProfileMemory, get Anonymous memory as well.
+    
+    eProfileAll                 = 0xffffffff
 };
 
 typedef nub_bool_t (*DNBCallbackBreakpointHit)(nub_process_t pid, nub_thread_t tid, nub_break_t breakID, void *baton);

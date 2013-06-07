@@ -435,7 +435,7 @@ public:
     Block *
     FindBlockByID (lldb::user_id_t block_id);
 
-    uint32_t
+    size_t
     GetNumRanges () const
     {
         return m_ranges.GetSize();
@@ -446,6 +446,9 @@ public:
 
     bool
     GetRangeContainingAddress (const Address& addr, AddressRange &range);
+    
+    bool
+    GetRangeContainingLoadAddress (lldb::addr_t load_addr, Target &target, AddressRange &range);
 
     uint32_t
     GetRangeIndexContainingAddress (const Address& addr);

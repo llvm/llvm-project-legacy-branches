@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Target/Process.h"
 
 #include "lldb/lldb-private-log.h"
@@ -18,6 +20,7 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/InputReader.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/State.h"
 #include "lldb/Expression/ClangUserExpression.h"
@@ -41,15 +44,200 @@
 using namespace lldb;
 using namespace lldb_private;
 
+
+// Comment out line below to disable memory caching, overriding the process setting
+// target.process.disable-memory-cache
+#define ENABLE_MEMORY_CACHING
+
+#ifdef ENABLE_MEMORY_CACHING
+#define DISABLE_MEM_CACHE_DEFAULT false
+#else
+#define DISABLE_MEM_CACHE_DEFAULT true
+#endif
+
+class ProcessOptionValueProperties : public OptionValueProperties
+{
+public:
+    ProcessOptionValueProperties (const ConstString &name) :
+        OptionValueProperties (name)
+    {
+    }
+    
+    // This constructor is used when creating ProcessOptionValueProperties when it
+    // is part of a new lldb_private::Process instance. It will copy all current
+    // global property values as needed
+    ProcessOptionValueProperties (ProcessProperties *global_properties) :
+        OptionValueProperties(*global_properties->GetValueProperties())
+    {
+    }
+    
+    virtual const Property *
+    GetPropertyAtIndex (const ExecutionContext *exe_ctx, bool will_modify, uint32_t idx) const
+    {
+        // When gettings the value for a key from the process options, we will always
+        // try and grab the setting from the current process if there is one. Else we just
+        // use the one from this instance.
+        if (exe_ctx)
+        {
+            Process *process = exe_ctx->GetProcessPtr();
+            if (process)
+            {
+                ProcessOptionValueProperties *instance_properties = static_cast<ProcessOptionValueProperties *>(process->GetValueProperties().get());
+                if (this != instance_properties)
+                    return instance_properties->ProtectedGetPropertyAtIndex (idx);
+            }
+        }
+        return ProtectedGetPropertyAtIndex (idx);
+    }
+};
+
+static PropertyDefinition
+g_properties[] =
+{
+    { "disable-memory-cache" , OptionValue::eTypeBoolean, false, DISABLE_MEM_CACHE_DEFAULT, NULL, NULL, "Disable reading and caching of memory in fixed-size units." },
+    { "extra-startup-command", OptionValue::eTypeArray  , false, OptionValue::eTypeString, NULL, NULL, "A list containing extra commands understood by the particular process plugin used.  "
+                                                                                                       "For instance, to turn on debugserver logging set this to \"QSetLogging:bitmask=LOG_DEFAULT;\"" },
+    { "ignore-breakpoints-in-expressions", OptionValue::eTypeBoolean, true, true, NULL, NULL, "If true, breakpoints will be ignored during expression evaluation." },
+    { "unwind-on-error-in-expressions", OptionValue::eTypeBoolean, true, true, NULL, NULL, "If true, errors in expression evaluation will unwind the stack back to the state before the call." },
+    { "python-os-plugin-path", OptionValue::eTypeFileSpec, false, true, NULL, NULL, "A path to a python OS plug-in module file that contains a OperatingSystemPlugIn class." },
+    { "stop-on-sharedlibrary-events" , OptionValue::eTypeBoolean, true, false, NULL, NULL, "If true, stop when a shared library is loaded or unloaded." },
+    { "detach-keeps-stopped" , OptionValue::eTypeBoolean, true, false, NULL, NULL, "If true, detach will attempt to keep the process stopped." },
+    {  NULL                  , OptionValue::eTypeInvalid, false, 0, NULL, NULL, NULL  }
+};
+
+enum {
+    ePropertyDisableMemCache,
+    ePropertyExtraStartCommand,
+    ePropertyIgnoreBreakpointsInExpressions,
+    ePropertyUnwindOnErrorInExpressions,
+    ePropertyPythonOSPluginPath,
+    ePropertyStopOnSharedLibraryEvents,
+    ePropertyDetachKeepsStopped
+};
+
+ProcessProperties::ProcessProperties (bool is_global) :
+    Properties ()
+{
+    if (is_global)
+    {
+        m_collection_sp.reset (new ProcessOptionValueProperties(ConstString("process")));
+        m_collection_sp->Initialize(g_properties);
+        m_collection_sp->AppendProperty(ConstString("thread"),
+                                        ConstString("Settings specific to threads."),
+                                        true,
+                                        Thread::GetGlobalProperties()->GetValueProperties());
+    }
+    else
+        m_collection_sp.reset (new ProcessOptionValueProperties(Process::GetGlobalProperties().get()));
+}
+
+ProcessProperties::~ProcessProperties()
+{
+}
+
+bool
+ProcessProperties::GetDisableMemoryCache() const
+{
+    const uint32_t idx = ePropertyDisableMemCache;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+
+Args
+ProcessProperties::GetExtraStartupCommands () const
+{
+    Args args;
+    const uint32_t idx = ePropertyExtraStartCommand;
+    m_collection_sp->GetPropertyAtIndexAsArgs(NULL, idx, args);
+    return args;
+}
+
+void
+ProcessProperties::SetExtraStartupCommands (const Args &args)
+{
+    const uint32_t idx = ePropertyExtraStartCommand;
+    m_collection_sp->SetPropertyAtIndexFromArgs(NULL, idx, args);
+}
+
+FileSpec
+ProcessProperties::GetPythonOSPluginPath () const
+{
+    const uint32_t idx = ePropertyPythonOSPluginPath;
+    return m_collection_sp->GetPropertyAtIndexAsFileSpec(NULL, idx);
+}
+
+void
+ProcessProperties::SetPythonOSPluginPath (const FileSpec &file)
+{
+    const uint32_t idx = ePropertyPythonOSPluginPath;
+    m_collection_sp->SetPropertyAtIndexAsFileSpec(NULL, idx, file);
+}
+
+
+bool
+ProcessProperties::GetIgnoreBreakpointsInExpressions () const
+{
+    const uint32_t idx = ePropertyIgnoreBreakpointsInExpressions;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean(NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+    
+void
+ProcessProperties::SetIgnoreBreakpointsInExpressions (bool ignore)
+{
+    const uint32_t idx = ePropertyIgnoreBreakpointsInExpressions;
+    m_collection_sp->SetPropertyAtIndexAsBoolean(NULL, idx, ignore);
+}
+
+bool
+ProcessProperties::GetUnwindOnErrorInExpressions () const
+{
+    const uint32_t idx = ePropertyUnwindOnErrorInExpressions;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean(NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+    
+void
+ProcessProperties::SetUnwindOnErrorInExpressions (bool ignore)
+{
+    const uint32_t idx = ePropertyUnwindOnErrorInExpressions;
+    m_collection_sp->SetPropertyAtIndexAsBoolean(NULL, idx, ignore);
+}
+
+bool
+ProcessProperties::GetStopOnSharedLibraryEvents () const
+{
+    const uint32_t idx = ePropertyStopOnSharedLibraryEvents;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean(NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+    
+void
+ProcessProperties::SetStopOnSharedLibraryEvents (bool stop)
+{
+    const uint32_t idx = ePropertyStopOnSharedLibraryEvents;
+    m_collection_sp->SetPropertyAtIndexAsBoolean(NULL, idx, stop);
+}
+
+bool
+ProcessProperties::GetDetachKeepsStopped () const
+{
+    const uint32_t idx = ePropertyDetachKeepsStopped;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean(NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+    
+void
+ProcessProperties::SetDetachKeepsStopped (bool stop)
+{
+    const uint32_t idx = ePropertyDetachKeepsStopped;
+    m_collection_sp->SetPropertyAtIndexAsBoolean(NULL, idx, stop);
+}
+
 void
 ProcessInstanceInfo::Dump (Stream &s, Platform *platform) const
 {
     const char *cstr;
     if (m_pid != LLDB_INVALID_PROCESS_ID)       
-        s.Printf ("    pid = %llu\n", m_pid);
+        s.Printf ("    pid = %" PRIu64 "\n", m_pid);
 
     if (m_parent_pid != LLDB_INVALID_PROCESS_ID)
-        s.Printf (" parent = %llu\n", m_parent_pid);
+        s.Printf (" parent = %" PRIu64 "\n", m_parent_pid);
 
     if (m_executable)
     {
@@ -136,7 +324,7 @@ ProcessInstanceInfo::DumpAsTableRow (Stream &s, Platform *platform, bool show_ar
     if (m_pid != LLDB_INVALID_PROCESS_ID)
     {
         const char *cstr;
-        s.Printf ("%-6llu %-6llu ", m_pid, m_parent_pid);
+        s.Printf ("%-6" PRIu64 " %-6" PRIu64 " ", m_pid, m_parent_pid);
 
     
         if (verbose)
@@ -198,9 +386,7 @@ ProcessInstanceInfo::DumpAsTableRow (Stream &s, Platform *platform, bool show_ar
 
 
 void
-ProcessInfo::SetArguments (char const **argv,
-                           bool first_arg_is_executable,
-                           bool first_arg_is_executable_and_argument)
+ProcessInfo::SetArguments (char const **argv, bool first_arg_is_executable)
 {
     m_arguments.SetArguments (argv);
         
@@ -215,18 +401,11 @@ ProcessInfo::SetArguments (char const **argv,
             // could be a remote platform path
             const bool resolve = false;
             m_executable.SetFile(first_arg, resolve); 
-            
-            // If argument zero is an executable and shouldn't be included
-            // in the arguments, remove it from the front of the arguments
-            if (first_arg_is_executable_and_argument == false)
-                m_arguments.DeleteArgumentAtIndex (0);
         }
     }
 }
 void
-ProcessInfo::SetArguments (const Args& args, 
-                           bool first_arg_is_executable,
-                           bool first_arg_is_executable_and_argument)
+ProcessInfo::SetArguments (const Args& args, bool first_arg_is_executable)
 {
     // Copy all arguments
     m_arguments = args;
@@ -242,11 +421,6 @@ ProcessInfo::SetArguments (const Args& args,
             // could be a remote platform path
             const bool resolve = false;
             m_executable.SetFile(first_arg, resolve); 
-    
-            // If argument zero is an executable and shouldn't be included
-            // in the arguments, remove it from the front of the arguments
-            if (first_arg_is_executable_and_argument == false)
-                m_arguments.DeleteArgumentAtIndex (0);
         }
     }
 }
@@ -270,9 +444,9 @@ ProcessLaunchInfo::FinalizeFileActions (Target *target, bool default_to_use_pty)
             // (lldb) settings set target.input-path
             // (lldb) settings set target.output-path
             // (lldb) settings set target.error-path
-            const char *in_path = NULL;
-            const char *out_path = NULL;
-            const char *err_path = NULL;
+            FileSpec in_path;
+            FileSpec out_path;
+            FileSpec err_path;
             if (target)
             {
                 in_path = target->GetStandardInputPath();
@@ -280,23 +454,28 @@ ProcessLaunchInfo::FinalizeFileActions (Target *target, bool default_to_use_pty)
                 err_path = target->GetStandardErrorPath();
             }
             
-            if (default_to_use_pty && (!in_path && !out_path && !err_path))
+            if (in_path || out_path || err_path)
+            {
+                char path[PATH_MAX];
+                if (in_path && in_path.GetPath(path, sizeof(path)))
+                    AppendOpenFileAction(STDIN_FILENO, path, true, false);
+                
+                if (out_path && out_path.GetPath(path, sizeof(path)))
+                    AppendOpenFileAction(STDOUT_FILENO, path, false, true);
+                
+                if (err_path && err_path.GetPath(path, sizeof(path)))
+                    AppendOpenFileAction(STDERR_FILENO, path, false, true);
+            }
+            else if (default_to_use_pty)
             {
                 if (m_pty.OpenFirstAvailableMaster (O_RDWR|O_NOCTTY, NULL, 0))
                 {
-                    in_path = out_path = err_path = m_pty.GetSlaveName (NULL, 0);
+                    const char *slave_path = m_pty.GetSlaveName (NULL, 0);
+                    AppendOpenFileAction(STDIN_FILENO, slave_path, true, false);
+                    AppendOpenFileAction(STDOUT_FILENO, slave_path, false, true);
+                    AppendOpenFileAction(STDERR_FILENO, slave_path, false, true);
                 }
             }
-
-            if (in_path)
-                AppendOpenFileAction(STDIN_FILENO, in_path, true, false);
-            
-            if (out_path)
-                AppendOpenFileAction(STDOUT_FILENO, out_path, false, true);
-
-            if (err_path)
-                AppendOpenFileAction(STDERR_FILENO, err_path, false, true);
-
         }
     }
 }
@@ -334,19 +513,57 @@ ProcessLaunchInfo::ConvertArgumentsForLaunchingInShell (Error &error,
                 shell_executable = shell_resolved_path;
             }
             
+            const char **argv = GetArguments().GetConstArgumentVector ();
+            if (argv == NULL || argv[0] == NULL)
+                return false;
             Args shell_arguments;
             std::string safe_arg;
             shell_arguments.AppendArgument (shell_executable);
             shell_arguments.AppendArgument ("-c");
-
             StreamString shell_command;
             if (will_debug)
             {
+                // Add a modified PATH environment variable in case argv[0]
+                // is a relative path
+                const char *argv0 = argv[0];
+                if (argv0 && (argv0[0] != '/' && argv0[0] != '~'))
+                {
+                    // We have a relative path to our executable which may not work if
+                    // we just try to run "a.out" (without it being converted to "./a.out")
+                    const char *working_dir = GetWorkingDirectory();
+                    // Be sure to put quotes around PATH's value in case any paths have spaces...
+                    std::string new_path("PATH=\"");
+                    const size_t empty_path_len = new_path.size();
+                    
+                    if (working_dir && working_dir[0])
+                    {
+                        new_path += working_dir;
+                    }
+                    else
+                    {
+                        char current_working_dir[PATH_MAX];
+                        const char *cwd = getcwd(current_working_dir, sizeof(current_working_dir));
+                        if (cwd && cwd[0])
+                            new_path += cwd;
+                    }
+                    const char *curr_path = getenv("PATH");
+                    if (curr_path)
+                    {
+                        if (new_path.size() > empty_path_len)
+                            new_path += ':';
+                        new_path += curr_path;
+                    }
+                    new_path += "\" ";
+                    shell_command.PutCString(new_path.c_str());
+                }
+
                 shell_command.PutCString ("exec");
+
+                // Only Apple supports /usr/bin/arch being able to specify the architecture
                 if (GetArchitecture().IsValid())
                 {
                     shell_command.Printf(" /usr/bin/arch -arch %s", GetArchitecture().GetArchitectureName());
-                    // Set the resume count to 2: 
+                    // Set the resume count to 2:
                     // 1 - stop in shell
                     // 2 - stop in /usr/bin/arch
                     // 3 - then we will stop in our program
@@ -354,39 +571,30 @@ ProcessLaunchInfo::ConvertArgumentsForLaunchingInShell (Error &error,
                 }
                 else
                 {
-                    // Set the resume count to 1: 
+                    // Set the resume count to 1:
                     // 1 - stop in shell
                     // 2 - then we will stop in our program
                     SetResumeCount(1);
                 }
             }
-            
-            const char **argv = GetArguments().GetConstArgumentVector ();
-            if (argv)
+        
+            if (first_arg_is_full_shell_command)
             {
-                if (first_arg_is_full_shell_command)
-                {
-                    // There should only be one argument that is the shell command itself to be used as is
-                    if (argv[0] && !argv[1])
-                        shell_command.Printf("%s", argv[0]);
-                    else
-                        return false;
-                }
+                // There should only be one argument that is the shell command itself to be used as is
+                if (argv[0] && !argv[1])
+                    shell_command.Printf("%s", argv[0]);
                 else
-                {
-                    for (size_t i=0; argv[i] != NULL; ++i)
-                    {
-                        const char *arg = Args::GetShellSafeArgument (argv[i], safe_arg);
-                        shell_command.Printf(" %s", arg);
-                    }
-                }
-                shell_arguments.AppendArgument (shell_command.GetString().c_str());
+                    return false;
             }
             else
             {
-                return false;
+                for (size_t i=0; argv[i] != NULL; ++i)
+                {
+                    const char *arg = Args::GetShellSafeArgument (argv[i], safe_arg);
+                    shell_command.Printf(" %s", arg);
+                }
             }
-
+            shell_arguments.AppendArgument (shell_command.GetString().c_str());
             m_executable.SetFile(shell_executable, false);
             m_arguments = shell_arguments;
             return true;
@@ -522,10 +730,6 @@ ProcessLaunchInfo::FileAction::AddPosixSpawnFileAction (posix_spawn_file_actions
                                    file_actions, info->m_fd, info->m_path.c_str(), oflag, mode);
             }
             break;
-        
-        default:
-            error.SetErrorStringWithFormat ("invalid file action: %i", info->m_action);
-            break;
     }
     return error.Success();
 }
@@ -534,7 +738,7 @@ Error
 ProcessLaunchCommandOptions::SetOptionValue (uint32_t option_idx, const char *option_arg)
 {
     Error error;
-    char short_option = (char) m_getopt_table[option_idx].val;
+    const int short_option = m_getopt_table[option_idx].val;
     
     switch (short_option)
     {
@@ -625,14 +829,14 @@ ProcessLaunchCommandOptions::g_option_table[] =
 { LLDB_OPT_SET_ALL, false, "stop-at-entry", 's', no_argument,       NULL, 0, eArgTypeNone,          "Stop at the entry point of the program when launching a process."},
 { LLDB_OPT_SET_ALL, false, "disable-aslr",  'A', no_argument,       NULL, 0, eArgTypeNone,          "Disable address space layout randomization when launching a process."},
 { LLDB_OPT_SET_ALL, false, "plugin",        'p', required_argument, NULL, 0, eArgTypePlugin,        "Name of the process plugin you want to use."},
-{ LLDB_OPT_SET_ALL, false, "working-dir",   'w', required_argument, NULL, 0, eArgTypePath,          "Set the current working directory to <path> when running the inferior."},
+{ LLDB_OPT_SET_ALL, false, "working-dir",   'w', required_argument, NULL, 0, eArgTypeDirectoryName,          "Set the current working directory to <path> when running the inferior."},
 { LLDB_OPT_SET_ALL, false, "arch",          'a', required_argument, NULL, 0, eArgTypeArchitecture,  "Set the architecture for the process to launch when ambiguous."},
 { LLDB_OPT_SET_ALL, false, "environment",   'v', required_argument, NULL, 0, eArgTypeNone,          "Specify an environment variable name/value stirng (--environement NAME=VALUE). Can be specified multiple times for subsequent environment entries."},
-{ LLDB_OPT_SET_ALL, false, "shell",         'c', optional_argument, NULL, 0, eArgTypePath,          "Run the process in a shell (not supported on all platforms)."},
+{ LLDB_OPT_SET_ALL, false, "shell",         'c', optional_argument, NULL, 0, eArgTypeFilename,          "Run the process in a shell (not supported on all platforms)."},
 
-{ LLDB_OPT_SET_1  , false, "stdin",         'i', required_argument, NULL, 0, eArgTypePath,    "Redirect stdin for the process to <path>."},
-{ LLDB_OPT_SET_1  , false, "stdout",        'o', required_argument, NULL, 0, eArgTypePath,    "Redirect stdout for the process to <path>."},
-{ LLDB_OPT_SET_1  , false, "stderr",        'e', required_argument, NULL, 0, eArgTypePath,    "Redirect stderr for the process to <path>."},
+{ LLDB_OPT_SET_1  , false, "stdin",         'i', required_argument, NULL, 0, eArgTypeFilename,    "Redirect stdin for the process to <filename>."},
+{ LLDB_OPT_SET_1  , false, "stdout",        'o', required_argument, NULL, 0, eArgTypeFilename,    "Redirect stdout for the process to <filename>."},
+{ LLDB_OPT_SET_1  , false, "stderr",        'e', required_argument, NULL, 0, eArgTypeFilename,    "Redirect stderr for the process to <filename>."},
 
 { LLDB_OPT_SET_2  , false, "tty",           't', no_argument,       NULL, 0, eArgTypeNone,    "Start the process in a terminal (not supported on all platforms)."},
 
@@ -686,7 +890,7 @@ ProcessInstanceInfoMatch::Matches (const ProcessInstanceInfo &proc_info) const
         return false;
     
     if (m_match_info.GetArchitecture().IsValid() && 
-        m_match_info.GetArchitecture() != proc_info.GetArchitecture())
+        !m_match_info.GetArchitecture().IsCompatibleMatch(proc_info.GetArchitecture()))
         return false;
     return true;
 }
@@ -736,17 +940,24 @@ ProcessInstanceInfoMatch::Clear()
 ProcessSP
 Process::FindPlugin (Target &target, const char *plugin_name, Listener &listener, const FileSpec *crash_file_path)
 {
+    static uint32_t g_process_unique_id = 0;
+
     ProcessSP process_sp;
     ProcessCreateInstance create_callback = NULL;
     if (plugin_name)
     {
-        create_callback  = PluginManager::GetProcessCreateCallbackForPluginName (plugin_name);
+        ConstString const_plugin_name(plugin_name);
+        create_callback  = PluginManager::GetProcessCreateCallbackForPluginName (const_plugin_name);
         if (create_callback)
         {
             process_sp = create_callback(target, listener, crash_file_path);
             if (process_sp)
             {
-                if (!process_sp->CanDebug(target, true))
+                if (process_sp->CanDebug(target, true))
+                {
+                    process_sp->m_process_unique_id = ++g_process_unique_id;
+                }
+                else
                     process_sp.reset();
             }
         }
@@ -758,10 +969,13 @@ Process::FindPlugin (Target &target, const char *plugin_name, Listener &listener
             process_sp = create_callback(target, listener, crash_file_path);
             if (process_sp)
             {
-                if (!process_sp->CanDebug(target, false))
-                    process_sp.reset();
-                else
+                if (process_sp->CanDebug(target, false))
+                {
+                    process_sp->m_process_unique_id = ++g_process_unique_id;
                     break;
+                }
+                else
+                    process_sp.reset();
             }
         }
     }
@@ -779,9 +993,10 @@ Process::GetStaticBroadcasterClass ()
 // Process constructor
 //----------------------------------------------------------------------
 Process::Process(Target &target, Listener &listener) :
+    ProcessProperties (false),
     UserID (LLDB_INVALID_PROCESS_ID),
     Broadcaster (&(target.GetDebugger()), "lldb.process"),
-    ProcessInstanceSettings (GetSettingsController()),
+    m_reservation_cache (*this),
     m_target (target),
     m_public_state (eStateUnloaded),
     m_private_state (eStateUnloaded),
@@ -791,9 +1006,13 @@ Process::Process(Target &target, Listener &listener) :
     m_private_state_control_wait(),
     m_private_state_thread (LLDB_INVALID_HOST_THREAD),
     m_mod_id (),
+    m_process_unique_id(0),
     m_thread_index_id (0),
+    m_thread_id_to_index_id_map (),
     m_exit_status (-1),
     m_exit_string (),
+    m_thread_mutex (Mutex::eMutexTypeRecursive),
+    m_thread_list_real (this),
     m_thread_list (this),
     m_notifications (),
     m_image_tokens (),
@@ -807,19 +1026,24 @@ Process::Process(Target &target, Listener &listener) :
     m_stdio_communication_mutex (Mutex::eMutexTypeRecursive),
     m_stdout_data (),
     m_stderr_data (),
+    m_profile_data_comm_mutex (Mutex::eMutexTypeRecursive),
+    m_profile_data (),
     m_memory_cache (*this),
     m_allocated_memory_cache (*this),
     m_should_detach (false),
     m_next_event_action_ap(),
-    m_run_lock (),
+    m_public_run_lock (),
+    m_private_run_lock (),
     m_currently_handling_event(false),
+    m_finalize_called(false),
+    m_clear_thread_plans_on_stop (false),
+    m_last_broadcast_state (eStateInvalid),
+    m_destroy_in_process (false),
     m_can_jit(eCanJITDontKnow)
 {
-    UpdateInstanceName();
-    
     CheckInWithManager ();
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
         log->Printf ("%p Process::Process()", this);
 
@@ -827,12 +1051,18 @@ Process::Process(Target &target, Listener &listener) :
     SetEventName (eBroadcastBitInterrupt, "interrupt");
     SetEventName (eBroadcastBitSTDOUT, "stdout-available");
     SetEventName (eBroadcastBitSTDERR, "stderr-available");
+    SetEventName (eBroadcastBitProfileData, "profile-data-available");
     
+    m_private_state_control_broadcaster.SetEventName (eBroadcastInternalStateControlStop  , "control-stop"  );
+    m_private_state_control_broadcaster.SetEventName (eBroadcastInternalStateControlPause , "control-pause" );
+    m_private_state_control_broadcaster.SetEventName (eBroadcastInternalStateControlResume, "control-resume");
+
     listener.StartListeningForEvents (this,
                                       eBroadcastBitStateChanged |
                                       eBroadcastBitInterrupt |
                                       eBroadcastBitSTDOUT |
-                                      eBroadcastBitSTDERR);
+                                      eBroadcastBitSTDERR |
+                                      eBroadcastBitProfileData);
 
     m_private_state_listener.StartListeningForEvents(&m_private_state_broadcaster,
                                                      eBroadcastBitStateChanged |
@@ -849,10 +1079,19 @@ Process::Process(Target &target, Listener &listener) :
 //----------------------------------------------------------------------
 Process::~Process()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
         log->Printf ("%p Process::~Process()", this);
     StopPrivateStateThread();
+}
+
+const ProcessPropertiesSP &
+Process::GetGlobalProperties()
+{
+    static ProcessPropertiesSP g_settings_sp;
+    if (!g_settings_sp)
+        g_settings_sp.reset (new ProcessProperties (true));
+    return g_settings_sp;
 }
 
 void
@@ -869,7 +1108,11 @@ Process::Finalize()
         case eStateCrashed:
         case eStateSuspended:
             if (GetShouldDetach())
-                Detach();
+            {
+                // FIXME: This will have to be a process setting:
+                bool keep_stopped = false;
+                Detach(keep_stopped);
+            }
             else
                 Destroy();
             break;
@@ -893,6 +1136,7 @@ Process::Finalize()
     m_abi_sp.reset();
     m_os_ap.reset();
     m_dyld_ap.reset();
+    m_thread_list_real.Destroy();
     m_thread_list.Destroy();
     std::vector<Notifications> empty_notifications;
     m_notifications.swap(empty_notifications);
@@ -901,6 +1145,24 @@ Process::Finalize()
     m_allocated_memory_cache.Clear();
     m_language_runtimes.clear();
     m_next_event_action_ap.reset();
+//#ifdef LLDB_CONFIGURATION_DEBUG
+//    StreamFile s(stdout, false);
+//    EventSP event_sp;
+//    while (m_private_state_listener.GetNextEvent(event_sp))
+//    {
+//        event_sp->Dump (&s);
+//        s.EOL();
+//    }
+//#endif
+    // We have to be very careful here as the m_private_state_listener might
+    // contain events that have ProcessSP values in them which can keep this
+    // process around forever. These events need to be cleared out.
+    m_private_state_listener.Clear();
+    m_public_run_lock.WriteTryLock(); // This will do nothing if already locked
+    m_public_run_lock.WriteUnlock();
+    m_private_run_lock.WriteTryLock(); // This will do nothing if already locked
+    m_private_run_lock.WriteUnlock();
+    m_finalize_called = true;
 }
 
 void
@@ -960,12 +1222,13 @@ Process::GetNextEvent (EventSP &event_sp)
 
 
 StateType
-Process::WaitForProcessToStop (const TimeValue *timeout)
+Process::WaitForProcessToStop (const TimeValue *timeout, lldb::EventSP *event_sp_ptr)
 {
     // We can't just wait for a "stopped" event, because the stopped event may have restarted the target.
     // We have to actually check each event, and in the case of a stopped event check the restarted flag
     // on the event.
-    EventSP event_sp;
+    if (event_sp_ptr)
+        event_sp_ptr->reset();
     StateType state = GetState();
     // If we are exited or detached, we won't ever get back to any
     // other valid state...
@@ -974,7 +1237,11 @@ Process::WaitForProcessToStop (const TimeValue *timeout)
 
     while (state != eStateInvalid)
     {
+        EventSP event_sp;
         state = WaitForStateChangedEvents (timeout, event_sp);
+        if (event_sp_ptr && event_sp)
+            *event_sp_ptr = event_sp;
+
         switch (state)
         {
         case eStateCrashed:
@@ -1060,7 +1327,7 @@ Process::RestorePrivateProcessEvents ()
 StateType
 Process::WaitForStateChangedEvents (const TimeValue *timeout, EventSP &event_sp)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
     if (log)
         log->Printf ("Process::%s (timeout = %p, event_sp)...", __FUNCTION__, timeout);
@@ -1088,7 +1355,7 @@ Process::WaitForStateChangedEvents (const TimeValue *timeout, EventSP &event_sp)
 Event *
 Process::PeekAtStateChangedEvents ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
     if (log)
         log->Printf ("Process::%s...", __FUNCTION__);
@@ -1116,7 +1383,7 @@ Process::PeekAtStateChangedEvents ()
 StateType
 Process::WaitForStateChangedEventsPrivate (const TimeValue *timeout, EventSP &event_sp)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
     if (log)
         log->Printf ("Process::%s (timeout = %p, event_sp)...", __FUNCTION__, timeout);
@@ -1145,7 +1412,7 @@ Process::WaitForStateChangedEventsPrivate (const TimeValue *timeout, EventSP &ev
 bool
 Process::WaitForEventsPrivate (const TimeValue *timeout, EventSP &event_sp, bool control_only)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
     if (log)
         log->Printf ("Process::%s (timeout = %p, event_sp)...", __FUNCTION__, timeout);
@@ -1182,7 +1449,7 @@ Process::GetExitDescription ()
 bool
 Process::SetExitStatus (int status, const char *cstr)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STATE | LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STATE | LIBLLDB_LOG_PROCESS));
     if (log)
         log->Printf("Process::SetExitStatus (status=%i (0x%8.8x), description=%s%s%s)", 
                     status, status,
@@ -1222,9 +1489,9 @@ Process::SetProcessExitStatus (void *callback_baton,
                                int exit_status     // Exit value of process if signal is zero
 )
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf ("Process::SetProcessExitStatus (baton=%p, pid=%llu, exited=%i, signal=%i, exit_status=%i)\n", 
+        log->Printf ("Process::SetProcessExitStatus (baton=%p, pid=%" PRIu64 ", exited=%i, signal=%i, exit_status=%i)\n",
                      callback_baton,
                      pid,
                      exited,
@@ -1265,14 +1532,38 @@ Process::UpdateThreadListIfNeeded ()
             // m_thread_list does have its own mutex, but we need to
             // hold onto the mutex between the call to UpdateThreadList(...)
             // and the os->UpdateThreadList(...) so it doesn't change on us
+            ThreadList &old_thread_list = m_thread_list;
+            ThreadList real_thread_list(this);
             ThreadList new_thread_list(this);
             // Always update the thread list with the protocol specific
             // thread list, but only update if "true" is returned
-            if (UpdateThreadList (m_thread_list, new_thread_list))
+            if (UpdateThreadList (m_thread_list_real, real_thread_list))
             {
-                OperatingSystem *os = GetOperatingSystem ();
-                if (os)
-                    os->UpdateThreadList (m_thread_list, new_thread_list);
+                // Don't call into the OperatingSystem to update the thread list if we are shutting down, since
+                // that may call back into the SBAPI's, requiring the API lock which is already held by whoever is
+                // shutting us down, causing a deadlock.
+                if (!m_destroy_in_process)
+                {
+                    OperatingSystem *os = GetOperatingSystem ();
+                    if (os)
+                    {
+                        // Clear any old backing threads where memory threads might have been
+                        // backed by actual threads from the lldb_private::Process subclass
+                        size_t num_old_threads = old_thread_list.GetSize(false);
+                        for (size_t i=0; i<num_old_threads; ++i)
+                            old_thread_list.GetThreadAtIndex(i, false)->ClearBackingThread();
+
+                        // Now let the OperatingSystem plug-in update the thread list
+                        os->UpdateThreadList (old_thread_list,  // Old list full of threads created by OS plug-in
+                                              real_thread_list, // The actual thread list full of threads created by each lldb_private::Process subclass
+                                              new_thread_list); // The new thread list that we will show to the user that gets filled in
+                    }
+                    else
+                    {
+                        // No OS plug-in, the new thread list is the same as the real thread list
+                        new_thread_list = real_thread_list;
+                    }
+                }
                 m_thread_list.Update (new_thread_list);
                 m_thread_list.SetStopID (stop_id);
             }
@@ -1280,10 +1571,60 @@ Process::UpdateThreadListIfNeeded ()
     }
 }
 
+ThreadSP
+Process::CreateOSPluginThread (lldb::tid_t tid, lldb::addr_t context)
+{
+    OperatingSystem *os = GetOperatingSystem ();
+    if (os)
+        return os->CreateThread(tid, context);
+    return ThreadSP();
+}
+
+
+
+// This is obsoleted. Staged removal for Xcode.
 uint32_t
 Process::GetNextThreadIndexID ()
 {
     return ++m_thread_index_id;
+}
+
+uint32_t
+Process::GetNextThreadIndexID (uint64_t thread_id)
+{
+    return AssignIndexIDToThread(thread_id);
+}
+
+bool
+Process::HasAssignedIndexIDToThread(uint64_t thread_id)
+{
+    std::map<uint64_t, uint32_t>::iterator iterator = m_thread_id_to_index_id_map.find(thread_id);
+    if (iterator == m_thread_id_to_index_id_map.end())
+    {
+        return false;
+    }
+    else
+    {
+        return true;
+    }
+}
+
+uint32_t
+Process::AssignIndexIDToThread(uint64_t thread_id)
+{
+    uint32_t result = 0;
+    std::map<uint64_t, uint32_t>::iterator iterator = m_thread_id_to_index_id_map.find(thread_id);
+    if (iterator == m_thread_id_to_index_id_map.end())
+    {
+        result = ++m_thread_index_id;
+        m_thread_id_to_index_id_map[thread_id] = result;
+    }
+    else
+    {
+        result = iterator->second;
+    }
+    
+    return result;
 }
 
 StateType
@@ -1294,11 +1635,11 @@ Process::GetState()
 }
 
 void
-Process::SetPublicState (StateType new_state)
+Process::SetPublicState (StateType new_state, bool restarted)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STATE | LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STATE | LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf("Process::SetPublicState (%s)", StateAsCString(new_state));
+        log->Printf("Process::SetPublicState (state = %s, restarted = %i)", StateAsCString(new_state), restarted);
     const StateType old_state = m_public_state.GetValue();
     m_public_state.SetValue (new_state);
     
@@ -1311,19 +1652,19 @@ Process::SetPublicState (StateType new_state)
         {
             if (log)
                 log->Printf("Process::SetPublicState (%s) -- unlocking run lock for detach", StateAsCString(new_state));
-            m_run_lock.WriteUnlock();
+            m_public_run_lock.WriteUnlock();
         }
         else
         {
             const bool old_state_is_stopped = StateIsStoppedState(old_state, false);
             const bool new_state_is_stopped = StateIsStoppedState(new_state, false);
-            if (old_state_is_stopped != new_state_is_stopped)
+            if ((old_state_is_stopped != new_state_is_stopped))
             {
-                if (new_state_is_stopped)
+                if (new_state_is_stopped && !restarted)
                 {
                     if (log)
                         log->Printf("Process::SetPublicState (%s) -- unlocking run lock", StateAsCString(new_state));
-                    m_run_lock.WriteUnlock();
+                    m_public_run_lock.WriteUnlock();
                 }
             }
         }
@@ -1333,10 +1674,10 @@ Process::SetPublicState (StateType new_state)
 Error
 Process::Resume ()
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STATE | LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STATE | LIBLLDB_LOG_PROCESS));
     if (log)
         log->Printf("Process::Resume -- locking run lock");
-    if (!m_run_lock.WriteTryLock())
+    if (!m_public_run_lock.WriteTryLock())
     {
         Error error("Resume request failed - process still running.");
         if (log)
@@ -1355,12 +1696,13 @@ Process::GetPrivateState ()
 void
 Process::SetPrivateState (StateType new_state)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STATE | LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STATE | LIBLLDB_LOG_PROCESS));
     bool state_changed = false;
 
     if (log)
         log->Printf("Process::SetPrivateState (%s)", StateAsCString(new_state));
 
+    Mutex::Locker thread_locker(m_thread_list.GetMutex());
     Mutex::Locker locker(m_private_state.GetMutex());
 
     const StateType old_state = m_private_state.GetValueNoLock ();
@@ -1369,28 +1711,44 @@ Process::SetPrivateState (StateType new_state)
     // the private process state with another run lock. Right now it doesn't
     // seem like we need to do this, but if we ever do, we can uncomment and
     // use this code.
-//    const bool old_state_is_stopped = StateIsStoppedState(old_state, false);
-//    const bool new_state_is_stopped = StateIsStoppedState(new_state, false);
-//    if (old_state_is_stopped != new_state_is_stopped)
-//    {
-//        if (new_state_is_stopped)
-//            m_private_run_lock.WriteUnlock();
-//        else
-//            m_private_run_lock.WriteLock();
-//    }
+    const bool old_state_is_stopped = StateIsStoppedState(old_state, false);
+    const bool new_state_is_stopped = StateIsStoppedState(new_state, false);
+    if (old_state_is_stopped != new_state_is_stopped)
+    {
+        if (new_state_is_stopped)
+            m_private_run_lock.WriteUnlock();
+        else
+            m_private_run_lock.WriteLock();
+    }
 
     if (state_changed)
     {
         m_private_state.SetValueNoLock (new_state);
         if (StateIsStoppedState(new_state, false))
         {
+            // Note, this currently assumes that all threads in the list
+            // stop when the process stops.  In the future we will want to
+            // support a debugging model where some threads continue to run
+            // while others are stopped.  When that happens we will either need
+            // a way for the thread list to identify which threads are stopping
+            // or create a special thread list containing only threads which
+            // actually stopped.
+            //
+            // The process plugin is responsible for managing the actual
+            // behavior of the threads and should have stopped any threads
+            // that are going to stop before we get here.
+            m_thread_list.DidStop();
+
             m_mod_id.BumpStopID();
             m_memory_cache.Clear();
             if (log)
                 log->Printf("Process::SetPrivateState (%s) stop_id = %u", StateAsCString(new_state), m_mod_id.GetStopID());
         }
         // Use our target to get a shared pointer to ourselves...
-        m_private_state_broadcaster.BroadcastEvent (eBroadcastBitStateChanged, new ProcessEventData (GetTarget().GetProcessSP(), new_state));
+        if (m_finalize_called && PrivateStateThreadIsValid() == false)
+            BroadcastEvent (eBroadcastBitStateChanged, new ProcessEventData (shared_from_this(), new_state));
+        else
+            m_private_state_broadcaster.BroadcastEvent (eBroadcastBitStateChanged, new ProcessEventData (shared_from_this(), new_state));
     }
     else
     {
@@ -1445,12 +1803,23 @@ Process::LoadImage (const FileSpec &image_spec, Error &error)
             {
                 ExecutionContext exe_ctx;
                 frame_sp->CalculateExecutionContext (exe_ctx);
-                bool unwind_on_error = true;
+                const bool unwind_on_error = true;
+                const bool ignore_breakpoints = true;
                 StreamString expr;
                 expr.Printf("dlopen (\"%s\", 2)", path);
                 const char *prefix = "extern \"C\" void* dlopen (const char *path, int mode);\n";
                 lldb::ValueObjectSP result_valobj_sp;
-                ClangUserExpression::Evaluate (exe_ctx, eExecutionPolicyAlways, lldb::eLanguageTypeUnknown, ClangUserExpression::eResultTypeAny, unwind_on_error, expr.GetData(), prefix, result_valobj_sp);
+                ClangUserExpression::Evaluate (exe_ctx,
+                                               eExecutionPolicyAlways,
+                                               lldb::eLanguageTypeUnknown,
+                                               ClangUserExpression::eResultTypeAny,
+                                               unwind_on_error,
+                                               ignore_breakpoints,
+                                               expr.GetData(),
+                                               prefix,
+                                               result_valobj_sp,
+                                               true,
+                                               ClangUserExpression::kDefaultTimeout);
                 error = result_valobj_sp->GetError();
                 if (error.Success())
                 {
@@ -1511,12 +1880,23 @@ Process::UnloadImage (uint32_t image_token)
                     {
                         ExecutionContext exe_ctx;
                         frame_sp->CalculateExecutionContext (exe_ctx);
-                        bool unwind_on_error = true;
+                        const bool unwind_on_error = true;
+                        const bool ignore_breakpoints = true;
                         StreamString expr;
-                        expr.Printf("dlclose ((void *)0x%llx)", image_addr);
+                        expr.Printf("dlclose ((void *)0x%" PRIx64 ")", image_addr);
                         const char *prefix = "extern \"C\" int dlclose(void* handle);\n";
                         lldb::ValueObjectSP result_valobj_sp;
-                        ClangUserExpression::Evaluate (exe_ctx, eExecutionPolicyAlways, lldb::eLanguageTypeUnknown, ClangUserExpression::eResultTypeAny, unwind_on_error, expr.GetData(), prefix, result_valobj_sp);
+                        ClangUserExpression::Evaluate (exe_ctx,
+                                                       eExecutionPolicyAlways,
+                                                       lldb::eLanguageTypeUnknown,
+                                                       ClangUserExpression::eResultTypeAny,
+                                                       unwind_on_error,
+                                                       ignore_breakpoints,
+                                                       expr.GetData(),
+                                                       prefix,
+                                                       result_valobj_sp,
+                                                       true,
+                                                       ClangUserExpression::kDefaultTimeout);
                         if (result_valobj_sp->GetError().Success())
                         {
                             Scalar scalar;
@@ -1631,7 +2011,7 @@ Process::DisableAllBreakpointSites ()
     size_t num_sites = m_breakpoint_site_list.GetSize();
     for (size_t i = 0; i < num_sites; i++)
     {
-        DisableBreakpoint (m_breakpoint_site_list.GetByIndex(i).get());
+        DisableBreakpointSite (m_breakpoint_site_list.GetByIndex(i).get());
     }
 }
 
@@ -1654,11 +2034,11 @@ Process::DisableBreakpointSiteByID (lldb::user_id_t break_id)
     if (bp_site_sp)
     {
         if (bp_site_sp->IsEnabled())
-            error = DisableBreakpoint (bp_site_sp.get());
+            error = DisableBreakpointSite (bp_site_sp.get());
     }
     else
     {
-        error.SetErrorStringWithFormat("invalid breakpoint site ID: %llu", break_id);
+        error.SetErrorStringWithFormat("invalid breakpoint site ID: %" PRIu64, break_id);
     }
 
     return error;
@@ -1672,11 +2052,11 @@ Process::EnableBreakpointSiteByID (lldb::user_id_t break_id)
     if (bp_site_sp)
     {
         if (!bp_site_sp->IsEnabled())
-            error = EnableBreakpoint (bp_site_sp.get());
+            error = EnableBreakpointSite (bp_site_sp.get());
     }
     else
     {
-        error.SetErrorStringWithFormat("invalid breakpoint site ID: %llu", break_id);
+        error.SetErrorStringWithFormat("invalid breakpoint site ID: %" PRIu64, break_id);
     }
     return error;
 }
@@ -1702,10 +2082,10 @@ Process::CreateBreakpointSite (const BreakpointLocationSP &owner, bool use_hardw
         }
         else
         {
-            bp_site_sp.reset (new BreakpointSite (&m_breakpoint_site_list, owner, load_addr, LLDB_INVALID_THREAD_ID, use_hardware));
+            bp_site_sp.reset (new BreakpointSite (&m_breakpoint_site_list, owner, load_addr, use_hardware));
             if (bp_site_sp)
             {
-                if (EnableBreakpoint (bp_site_sp.get()).Success())
+                if (EnableBreakpointSite (bp_site_sp.get()).Success())
                 {
                     owner->SetBreakpointSite (bp_site_sp);
                     return m_breakpoint_site_list.Add (bp_site_sp);
@@ -1724,7 +2104,9 @@ Process::RemoveOwnerFromBreakpointSite (lldb::user_id_t owner_id, lldb::user_id_
     uint32_t num_owners = bp_site_sp->RemoveOwner (owner_id, owner_loc_id);
     if (num_owners == 0)
     {
-        DisableBreakpoint(bp_site_sp.get());
+        // Don't try to disable the site if we don't have a live process anymore.
+        if (IsAlive())
+            DisableBreakpointSite (bp_site_sp.get());
         m_breakpoint_site_list.RemoveByAddress(bp_site_sp->GetLoadAddress());
     }
 }
@@ -1777,14 +2159,14 @@ Process::EnableSoftwareBreakpoint (BreakpointSite *bp_site)
 {
     Error error;
     assert (bp_site != NULL);
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
     const addr_t bp_addr = bp_site->GetLoadAddress();
     if (log)
-        log->Printf ("Process::EnableSoftwareBreakpoint (site_id = %d) addr = 0x%llx", bp_site->GetID(), (uint64_t)bp_addr);
+        log->Printf ("Process::EnableSoftwareBreakpoint (site_id = %d) addr = 0x%" PRIx64, bp_site->GetID(), (uint64_t)bp_addr);
     if (bp_site->IsEnabled())
     {
         if (log)
-            log->Printf ("Process::EnableSoftwareBreakpoint (site_id = %d) addr = 0x%llx -- already enabled", bp_site->GetID(), (uint64_t)bp_addr);
+            log->Printf ("Process::EnableSoftwareBreakpoint (site_id = %d) addr = 0x%" PRIx64 " -- already enabled", bp_site->GetID(), (uint64_t)bp_addr);
         return error;
     }
 
@@ -1799,7 +2181,7 @@ Process::EnableSoftwareBreakpoint (BreakpointSite *bp_site)
 
     if (bp_opcode_size == 0)
     {
-        error.SetErrorStringWithFormat ("Process::GetSoftwareBreakpointTrapOpcode() returned zero, unable to get breakpoint trap for address 0x%llx", bp_addr);
+        error.SetErrorStringWithFormat ("Process::GetSoftwareBreakpointTrapOpcode() returned zero, unable to get breakpoint trap for address 0x%" PRIx64, bp_addr);
     }
     else
     {
@@ -1825,7 +2207,7 @@ Process::EnableSoftwareBreakpoint (BreakpointSite *bp_site)
                         bp_site->SetEnabled(true);
                         bp_site->SetType (BreakpointSite::eSoftware);
                         if (log)
-                            log->Printf ("Process::EnableSoftwareBreakpoint (site_id = %d) addr = 0x%llx -- SUCCESS",
+                            log->Printf ("Process::EnableSoftwareBreakpoint (site_id = %d) addr = 0x%" PRIx64 " -- SUCCESS",
                                          bp_site->GetID(),
                                          (uint64_t)bp_addr);
                     }
@@ -1842,7 +2224,7 @@ Process::EnableSoftwareBreakpoint (BreakpointSite *bp_site)
             error.SetErrorString("Unable to read memory at breakpoint address.");
     }
     if (log && error.Fail())
-        log->Printf ("Process::EnableSoftwareBreakpoint (site_id = %d) addr = 0x%llx -- FAILED: %s",
+        log->Printf ("Process::EnableSoftwareBreakpoint (site_id = %d) addr = 0x%" PRIx64 " -- FAILED: %s",
                      bp_site->GetID(),
                      (uint64_t)bp_addr,
                      error.AsCString());
@@ -1854,11 +2236,11 @@ Process::DisableSoftwareBreakpoint (BreakpointSite *bp_site)
 {
     Error error;
     assert (bp_site != NULL);
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
     addr_t bp_addr = bp_site->GetLoadAddress();
     lldb::user_id_t breakID = bp_site->GetID();
     if (log)
-        log->Printf ("Process::DisableBreakpoint (breakID = %llu) addr = 0x%llx", breakID, (uint64_t)bp_addr);
+        log->Printf ("Process::DisableSoftwareBreakpoint (breakID = %" PRIu64 ") addr = 0x%" PRIx64, breakID, (uint64_t)bp_addr);
 
     if (bp_site->IsHardware())
     {
@@ -1912,7 +2294,7 @@ Process::DisableSoftwareBreakpoint (BreakpointSite *bp_site)
                             // SUCCESS
                             bp_site->SetEnabled(false);
                             if (log)
-                                log->Printf ("Process::DisableSoftwareBreakpoint (site_id = %d) addr = 0x%llx -- SUCCESS", bp_site->GetID(), (uint64_t)bp_addr);
+                                log->Printf ("Process::DisableSoftwareBreakpoint (site_id = %d) addr = 0x%" PRIx64 " -- SUCCESS", bp_site->GetID(), (uint64_t)bp_addr);
                             return error;
                         }
                         else
@@ -1932,12 +2314,12 @@ Process::DisableSoftwareBreakpoint (BreakpointSite *bp_site)
     else
     {
         if (log)
-            log->Printf ("Process::DisableSoftwareBreakpoint (site_id = %d) addr = 0x%llx -- already disabled", bp_site->GetID(), (uint64_t)bp_addr);
+            log->Printf ("Process::DisableSoftwareBreakpoint (site_id = %d) addr = 0x%" PRIx64 " -- already disabled", bp_site->GetID(), (uint64_t)bp_addr);
         return error;
     }
 
     if (log)
-        log->Printf ("Process::DisableSoftwareBreakpoint (site_id = %d) addr = 0x%llx -- FAILED: %s",
+        log->Printf ("Process::DisableSoftwareBreakpoint (site_id = %d) addr = 0x%" PRIx64 " -- FAILED: %s",
                      bp_site->GetID(),
                      (uint64_t)bp_addr,
                      error.AsCString());
@@ -1945,9 +2327,6 @@ Process::DisableSoftwareBreakpoint (BreakpointSite *bp_site)
 
 }
 
-// Comment out line below to disable memory caching, overriding the process setting
-// target.process.disable-memory-cache
-#define ENABLE_MEMORY_CACHING
 // Uncomment to verify memory caching works after making changes to caching code
 //#define VERIFY_MEMORY_READS
 
@@ -2017,6 +2396,60 @@ Process::ReadCStringFromMemory (addr_t addr, std::string &out_str, Error &error)
 }
 
 
+size_t
+Process::ReadStringFromMemory (addr_t addr, char *dst, size_t max_bytes, Error &error,
+                                size_t type_width)
+{
+    size_t total_bytes_read = 0;
+    if (dst && max_bytes && type_width && max_bytes >= type_width)
+    {
+        // Ensure a null terminator independent of the number of bytes that is read.
+        memset (dst, 0, max_bytes);
+        size_t bytes_left = max_bytes - type_width;
+
+        const char terminator[4] = {'\0', '\0', '\0', '\0'};
+        assert(sizeof(terminator) >= type_width &&
+               "Attempting to validate a string with more than 4 bytes per character!");
+
+        addr_t curr_addr = addr;
+        const size_t cache_line_size = m_memory_cache.GetMemoryCacheLineSize();
+        char *curr_dst = dst;
+
+        error.Clear();
+        while (bytes_left > 0 && error.Success())
+        {
+            addr_t cache_line_bytes_left = cache_line_size - (curr_addr % cache_line_size);
+            addr_t bytes_to_read = std::min<addr_t>(bytes_left, cache_line_bytes_left);
+            size_t bytes_read = ReadMemory (curr_addr, curr_dst, bytes_to_read, error);
+
+            if (bytes_read == 0)
+                break;
+
+            // Search for a null terminator of correct size and alignment in bytes_read
+            size_t aligned_start = total_bytes_read - total_bytes_read % type_width;
+            for (size_t i = aligned_start; i + type_width <= total_bytes_read + bytes_read; i += type_width)
+                if (::strncmp(&dst[i], terminator, type_width) == 0)
+                {
+                    error.Clear();
+                    return i;
+                }
+
+            total_bytes_read += bytes_read;
+            curr_dst += bytes_read;
+            curr_addr += bytes_read;
+            bytes_left -= bytes_read;
+        }
+    }
+    else
+    {
+        if (max_bytes)
+            error.SetErrorString("invalid arguments");
+    }
+    return total_bytes_read;
+}
+
+// Deprecated in favor of ReadStringFromMemory which has wchar support and correct code to find
+// null terminators.
 size_t
 Process::ReadCStringFromMemory (addr_t addr, char *dst, size_t dst_max_len, Error &result_error)
 {
@@ -2224,7 +2657,7 @@ Process::WriteMemory (addr_t addr, const void *buf, size_t size, Error &error)
 }
 
 size_t
-Process::WriteScalarToMemory (addr_t addr, const Scalar &scalar, uint32_t byte_size, Error &error)
+Process::WriteScalarToMemory (addr_t addr, const Scalar &scalar, size_t byte_size, Error &error)
 {
     if (byte_size == UINT32_MAX)
         byte_size = scalar.GetByteSize();
@@ -2251,20 +2684,26 @@ Process::ReadScalarIntegerFromMemory (addr_t addr,
                                       Scalar &scalar, 
                                       Error &error)
 {
-    uint64_t uval;
-
-    if (byte_size <= sizeof(uval))
+    uint64_t uval = 0;
+    if (byte_size == 0)
     {
-        size_t bytes_read = ReadMemory (addr, &uval, byte_size, error);
+        error.SetErrorString ("byte size is zero");
+    }
+    else if (byte_size & (byte_size - 1))
+    {
+        error.SetErrorStringWithFormat ("byte size %u is not a power of 2", byte_size);
+    }
+    else if (byte_size <= sizeof(uval))
+    {
+        const size_t bytes_read = ReadMemory (addr, &uval, byte_size, error);
         if (bytes_read == byte_size)
         {
             DataExtractor data (&uval, sizeof(uval), GetByteOrder(), GetAddressByteSize());
-            uint32_t offset = 0;
+            lldb::offset_t offset = 0;
             if (byte_size <= 4)
                 scalar = data.GetMaxU32 (&offset, byte_size);
             else
                 scalar = data.GetMaxU64 (&offset, byte_size);
-
             if (is_signed)
                 scalar.SignExtend(byte_size * 8);
             return bytes_read;
@@ -2288,9 +2727,9 @@ Process::AllocateMemory(size_t size, uint32_t permissions, Error &error)
     return m_allocated_memory_cache.AllocateMemory(size, permissions, error);
 #else
     addr_t allocated_addr = DoAllocateMemory (size, permissions, error);
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf("Process::AllocateMemory(size=%4zu, permissions=%s) => 0x%16.16llx (m_stop_id = %u m_memory_id = %u)", 
+        log->Printf("Process::AllocateMemory(size=%4zu, permissions=%s) => 0x%16.16" PRIx64 " (m_stop_id = %u m_memory_id = %u)",
                     size, 
                     GetPermissionsAsCString (permissions),
                     (uint64_t)allocated_addr,
@@ -2335,14 +2774,14 @@ Process::DeallocateMemory (addr_t ptr)
 #if defined (USE_ALLOCATE_MEMORY_CACHE)
     if (!m_allocated_memory_cache.DeallocateMemory(ptr))
     {
-        error.SetErrorStringWithFormat ("deallocation of memory at 0x%llx failed.", (uint64_t)ptr);
+        error.SetErrorStringWithFormat ("deallocation of memory at 0x%" PRIx64 " failed.", (uint64_t)ptr);
     }
 #else
     error = DoDeallocateMemory (ptr);
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf("Process::DeallocateMemory(addr=0x%16.16llx) => err = %s (m_stop_id = %u, m_memory_id = %u)", 
+        log->Printf("Process::DeallocateMemory(addr=0x%16.16" PRIx64 ") => err = %s (m_stop_id = %u, m_memory_id = %u)",
                     ptr, 
                     error.AsCString("SUCCESS"),
                     m_mod_id.GetStopID(),
@@ -2351,11 +2790,10 @@ Process::DeallocateMemory (addr_t ptr)
     return error;
 }
 
+
 ModuleSP
 Process::ReadModuleFromMemory (const FileSpec& file_spec, 
-                               lldb::addr_t header_addr, 
-                               bool add_image_to_target,
-                               bool load_sections_in_target)
+                               lldb::addr_t header_addr)
 {
     ModuleSP module_sp (new Module (file_spec, ArchSpec()));
     if (module_sp)
@@ -2363,24 +2801,13 @@ Process::ReadModuleFromMemory (const FileSpec& file_spec,
         Error error;
         ObjectFile *objfile = module_sp->GetMemoryObjectFile (shared_from_this(), header_addr, error);
         if (objfile)
-        {
-            if (add_image_to_target)
-            {
-                m_target.GetImages().Append(module_sp);
-                if (load_sections_in_target)
-                {
-                    bool changed = false;
-                    module_sp->SetLoadAddress (m_target, 0, changed);
-                }
-            }
             return module_sp;
-        }
     }
     return ModuleSP();
 }
 
 Error
-Process::EnableWatchpoint (Watchpoint *watchpoint)
+Process::EnableWatchpoint (Watchpoint *watchpoint, bool notify)
 {
     Error error;
     error.SetErrorString("watchpoints are not supported");
@@ -2388,7 +2815,7 @@ Process::EnableWatchpoint (Watchpoint *watchpoint)
 }
 
 Error
-Process::DisableWatchpoint (Watchpoint *watchpoint)
+Process::DisableWatchpoint (Watchpoint *watchpoint, bool notify)
 {
     Error error;
     error.SetErrorString("watchpoints are not supported");
@@ -2443,11 +2870,20 @@ Process::Launch (const ProcessLaunchInfo &launch_info)
             error = WillLaunch (exe_module);
             if (error.Success())
             {
-                SetPublicState (eStateLaunching);
+                const bool restarted = false;
+                SetPublicState (eStateLaunching, restarted);
                 m_should_detach = false;
 
-                // Now launch using these arguments.
-                error = DoLaunch (exe_module, launch_info);
+                if (m_public_run_lock.WriteTryLock())
+                {
+                    // Now launch using these arguments.
+                    error = DoLaunch (exe_module, launch_info);
+                }
+                else
+                {
+                    // This shouldn't happen
+                    error.SetErrorString("failed to acquire process run lock");
+                }
 
                 if (error.Fail())
                 {
@@ -2562,11 +2998,13 @@ Process::AttachCompletionHandler::PerformAction (lldb::EventSP &event_sp)
                 // During attach, prior to sending the eStateStopped event, 
                 // lldb_private::Process subclasses must set the new process ID.
                 assert (m_process->GetID() != LLDB_INVALID_PROCESS_ID);
+                // We don't want these events to be reported, so go set the ShouldReportStop here:
+                m_process->GetThreadList().SetShouldReportStop (eVoteNo);
+                
                 if (m_exec_count > 0)
                 {
                     --m_exec_count;
-                    m_process->PrivateResume ();
-                    Process::ProcessEventData::SetRestartedInEvent (event_sp.get(), true);
+                    RequestResume();
                     return eEventActionRetry;
                 }
                 else
@@ -2622,10 +3060,20 @@ Process::Attach (ProcessAttachInfo &attach_info)
                 error = WillAttachToProcessWithName(process_name, wait_for_launch);
                 if (error.Success())
                 {
-                    m_should_detach = true;
+                    if (m_public_run_lock.WriteTryLock())
+                    {
+                        m_should_detach = true;
+                        const bool restarted = false;
+                        SetPublicState (eStateAttaching, restarted);
+                        // Now attach using these arguments.
+                        error = DoAttachToProcessWithName (process_name, wait_for_launch, attach_info);
+                    }
+                    else
+                    {
+                        // This shouldn't happen
+                        error.SetErrorString("failed to acquire process run lock");
+                    }
 
-                    SetPublicState (eStateAttaching);
-                    error = DoAttachToProcessWithName (process_name, wait_for_launch, attach_info);
                     if (error.Fail())
                     {
                         if (GetID() != LLDB_INVALID_PROCESS_ID)
@@ -2689,10 +3137,21 @@ Process::Attach (ProcessAttachInfo &attach_info)
         error = WillAttachToProcessWithID(attach_pid);
         if (error.Success())
         {
-            m_should_detach = true;
-            SetPublicState (eStateAttaching);
 
-            error = DoAttachToProcessWithID (attach_pid, attach_info);
+            if (m_public_run_lock.WriteTryLock())
+            {
+                // Now attach using these arguments.
+                m_should_detach = true;
+                const bool restarted = false;
+                SetPublicState (eStateAttaching, restarted);
+                error = DoAttachToProcessWithID (attach_pid, attach_info);
+            }
+            else
+            {
+                // This shouldn't happen
+                error.SetErrorString("failed to acquire process run lock");
+            }
+
             if (error.Success())
             {
                 
@@ -2730,7 +3189,7 @@ Process::CompleteAttach ()
     if (platform_sp)
     {
         const ArchSpec &target_arch = m_target.GetArchitecture();
-        if (target_arch.IsValid() && !platform_sp->IsCompatibleArchitecture (target_arch))
+        if (target_arch.IsValid() && !platform_sp->IsCompatibleArchitecture (target_arch, false, NULL))
         {
             ArchSpec platform_arch;
             platform_sp = platform_sp->GetPlatformForArchitecture (target_arch, &platform_arch);
@@ -2745,7 +3204,7 @@ Process::CompleteAttach ()
             ProcessInstanceInfo process_info;
             platform_sp->GetProcessInfo (GetID(), process_info);
             const ArchSpec &process_arch = process_info.GetArchitecture();
-            if (process_arch.IsValid() && m_target.GetArchitecture() != process_arch)
+            if (process_arch.IsValid() && !m_target.GetArchitecture().IsExactMatch(process_arch))
                 m_target.SetArchitecture (process_arch);
         }
     }
@@ -2758,7 +3217,7 @@ Process::CompleteAttach ()
 
     m_os_ap.reset (OperatingSystem::FindPlugin (this, NULL));
     // Figure out which one is the executable, and set that in our target:
-    ModuleList &target_modules = m_target.GetImages();
+    const ModuleList &target_modules = m_target.GetImages();
     Mutex::Locker modules_locker(target_modules.GetMutex());
     size_t num_modules = target_modules.GetSize();
     ModuleSP new_executable_module_sp;
@@ -2778,7 +3237,7 @@ Process::CompleteAttach ()
 }
 
 Error
-Process::ConnectRemote (const char *remote_url)
+Process::ConnectRemote (Stream *strm, const char *remote_url)
 {
     m_abi_sp.reset();
     m_process_input_reader.reset();
@@ -2786,7 +3245,7 @@ Process::ConnectRemote (const char *remote_url)
     // Find the process and its architecture.  Make sure it matches the architecture
     // of the current Target, and if not adjust it.
     
-    Error error (DoConnectRemote (remote_url));
+    Error error (DoConnectRemote (strm, remote_url));
     if (error.Success())
     {
         if (GetID() != LLDB_INVALID_PROCESS_ID)
@@ -2819,9 +3278,9 @@ Process::ConnectRemote (const char *remote_url)
 Error
 Process::PrivateResume ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_PROCESS|LIBLLDB_LOG_STEP));
     if (log)
-        log->Printf("Process::Resume() m_stop_id = %u, public state: %s private state: %s", 
+        log->Printf("Process::PrivateResume() m_stop_id = %u, public state: %s private state: %s", 
                     m_mod_id.GetStopID(),
                     StateAsCString(m_public_state.GetValue()),
                     StateAsCString(m_private_state.GetValue()));
@@ -2837,13 +3296,13 @@ Process::PrivateResume ()
         // that they are supposed to have when the process is resumed
         // (suspended/running/stepping). Threads should also check
         // their resume signal in lldb::Thread::GetResumeSignal()
-        // to see if they are suppoed to start back up with a signal.
+        // to see if they are supposed to start back up with a signal.
         if (m_thread_list.WillResume())
         {
             // Last thing, do the PreResumeActions.
             if (!RunPreResumeActions())
             {
-                error.SetErrorStringWithFormat ("Process::Resume PreResumeActions failed, not resuming.");
+                error.SetErrorStringWithFormat ("Process::PrivateResume PreResumeActions failed, not resuming.");
             }
             else
             {
@@ -2860,17 +3319,28 @@ Process::PrivateResume ()
         }
         else
         {
-            error.SetErrorStringWithFormat("Process::WillResume() thread list returned false after WillResume");
+            // Somebody wanted to run without running.  So generate a continue & a stopped event,
+            // and let the world handle them.
+            if (log)
+                log->Printf ("Process::PrivateResume() asked to simulate a start & stop.");
+            
+            SetPrivateState(eStateRunning);
+            SetPrivateState(eStateStopped);
         }
     }
     else if (log)
-        log->Printf ("Process::WillResume() got an error \"%s\".", error.AsCString("<unknown error>"));
+        log->Printf ("Process::PrivateResume() got an error \"%s\".", error.AsCString("<unknown error>"));
     return error;
 }
 
 Error
-Process::Halt ()
+Process::Halt (bool clear_thread_plans)
 {
+    // Don't clear the m_clear_thread_plans_on_stop, only set it to true if
+    // in case it was already set and some thread plan logic calls halt on its
+    // own.
+    m_clear_thread_plans_on_stop |= clear_thread_plans;
+    
     // First make sure we aren't in the middle of handling an event, or we might restart.  This is pretty weak, since
     // we could just straightaway get another event.  It just narrows the window...
     m_currently_handling_event.WaitForValueEqualTo(false);
@@ -2931,7 +3401,7 @@ Process::Halt ()
                         }
                         else
                         {
-                            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+                            Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
                             if (log)
                                 log->Printf("Process::Halt() failed to stop, state is: %s", StateAsCString(state));
                             error.SetErrorString ("Did not get stopped event after halt.");
@@ -2956,65 +3426,134 @@ Process::Halt ()
 }
 
 Error
-Process::Detach ()
+Process::HaltForDestroyOrDetach(lldb::EventSP &exit_event_sp)
 {
-    Error error (WillDetach());
-
-    if (error.Success())
+    Error error;
+    if (m_public_state.GetValue() == eStateRunning)
     {
-        DisableAllBreakpointSites();
-        error = DoDetach(); 
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+        if (log)
+            log->Printf("Process::Destroy() About to halt.");
+        error = Halt();
         if (error.Success())
         {
-            DidDetach();
-            StopPrivateStateThread();
+            // Consume the halt event.
+            TimeValue timeout (TimeValue::Now());
+            timeout.OffsetWithSeconds(1);
+            StateType state = WaitForProcessToStop (&timeout, &exit_event_sp);
+            
+            // If the process exited while we were waiting for it to stop, put the exited event into
+            // the shared pointer passed in and return.  Our caller doesn't need to do anything else, since
+            // they don't have a process anymore...
+            
+            if (state == eStateExited || m_private_state.GetValue() == eStateExited)
+            {
+                if (log)
+                    log->Printf("Process::HaltForDestroyOrDetach() Process exited while waiting to Halt.");
+                return error;
+            }
+            else
+                exit_event_sp.reset(); // It is ok to consume any non-exit stop events
+    
+            if (state != eStateStopped)
+            {
+                if (log)
+                    log->Printf("Process::HaltForDestroyOrDetach() Halt failed to stop, state is: %s", StateAsCString(state));
+                // If we really couldn't stop the process then we should just error out here, but if the
+                // lower levels just bobbled sending the event and we really are stopped, then continue on.
+                StateType private_state = m_private_state.GetValue();
+                if (private_state != eStateStopped)
+                {
+                    return error;
+                }
+            }
+        }
+        else
+        {
+            if (log)
+                log->Printf("Process::HaltForDestroyOrDetach() Halt got error: %s", error.AsCString());
         }
     }
     return error;
 }
 
 Error
+Process::Detach (bool keep_stopped)
+{
+    EventSP exit_event_sp;
+    Error error;
+    m_destroy_in_process = true;
+    
+    error = WillDetach();
+
+    if (error.Success())
+    {
+        if (DetachRequiresHalt())
+        {
+            error = HaltForDestroyOrDetach (exit_event_sp);
+            if (!error.Success())
+            {
+                m_destroy_in_process = false;
+                return error;
+            }
+            else if (exit_event_sp)
+            {
+                // We shouldn't need to do anything else here.  There's no process left to detach from...
+                StopPrivateStateThread();
+                m_destroy_in_process = false;
+                return error;
+            }
+        }
+    
+        error = DoDetach(keep_stopped);
+        if (error.Success())
+        {
+            DidDetach();
+            StopPrivateStateThread();
+        }
+        else
+        {
+            return error;
+        }
+    }
+    m_destroy_in_process = false;
+    
+    // If we exited when we were waiting for a process to stop, then
+    // forward the event here so we don't lose the event
+    if (exit_event_sp)
+    {
+        // Directly broadcast our exited event because we shut down our
+        // private state thread above
+        BroadcastEvent(exit_event_sp);
+    }
+
+    // If we have been interrupted (to kill us) in the middle of running, we may not end up propagating
+    // the last events through the event system, in which case we might strand the write lock.  Unlock
+    // it here so when we do to tear down the process we don't get an error destroying the lock.
+    
+    m_public_run_lock.WriteUnlock();
+    return error;
+}
+
+Error
 Process::Destroy ()
 {
+    
+    // Tell ourselves we are in the process of destroying the process, so that we don't do any unnecessary work
+    // that might hinder the destruction.  Remember to set this back to false when we are done.  That way if the attempt
+    // failed and the process stays around for some reason it won't be in a confused state.
+    
+    m_destroy_in_process = true;
+
     Error error (WillDestroy());
     if (error.Success())
     {
-        if (m_public_state.GetValue() == eStateRunning)
+        EventSP exit_event_sp;
+        if (DestroyRequiresHalt())
         {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TEMPORARY));
-            if (log)
-                log->Printf("Process::Destroy() About to halt.");
-            error = Halt();
-            if (error.Success())
-            {
-                // Consume the halt event.
-                EventSP stop_event;
-                TimeValue timeout (TimeValue::Now());
-                timeout.OffsetWithSeconds(1);
-                StateType state = WaitForProcessToStop (&timeout);
-                if (state != eStateStopped)
-                {
-                    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TEMPORARY));
-                    if (log)
-                        log->Printf("Process::Destroy() Halt failed to stop, state is: %s", StateAsCString(state));
-                    // If we really couldn't stop the process then we should just error out here, but if the
-                    // lower levels just bobbled sending the event and we really are stopped, then continue on.
-                    StateType private_state = m_private_state.GetValue();
-                    if (private_state != eStateStopped && private_state != eStateExited)
-                    {
-                        return error;
-                    }
-                }
-            }
-            else
-            {
-                    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TEMPORARY));
-                    if (log)
-                        log->Printf("Process::Destroy() Halt got error: %s", error.AsCString());
-                    return error;
-            }
+            error = HaltForDestroyOrDetach(exit_event_sp);
         }
-
+        
         if (m_public_state.GetValue() != eStateRunning)
         {
             // Ditch all thread plans, and remove all our breakpoints: in case we have to restart the target to
@@ -3024,7 +3563,7 @@ Process::Destroy ()
             m_thread_list.DiscardThreadPlans();
             DisableAllBreakpointSites();
         }
-        
+
         error = DoDestroy();
         if (error.Success())
         {
@@ -3037,12 +3576,24 @@ Process::Destroy ()
             m_target.GetDebugger().PopInputReader (m_process_input_reader);
         if (m_process_input_reader)
             m_process_input_reader.reset();
-            
+        
+        // If we exited when we were waiting for a process to stop, then
+        // forward the event here so we don't lose the event
+        if (exit_event_sp)
+        {
+            // Directly broadcast our exited event because we shut down our
+            // private state thread above
+            BroadcastEvent(exit_event_sp);
+        }
+
         // If we have been interrupted (to kill us) in the middle of running, we may not end up propagating
         // the last events through the event system, in which case we might strand the write lock.  Unlock
         // it here so when we do to tear down the process we don't get an error destroying the lock.
-        m_run_lock.WriteUnlock();
+        m_public_run_lock.WriteUnlock();
     }
+    
+    m_destroy_in_process = false;
+    
     return error;
 }
 
@@ -3077,8 +3628,8 @@ Process::ShouldBroadcastEvent (Event *event_ptr)
 {
     const StateType state = Process::ProcessEventData::GetStateFromEvent (event_ptr);
     bool return_value = true;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EVENTS));
-
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_EVENTS | LIBLLDB_LOG_PROCESS));
+    
     switch (state)
     {
         case eStateConnected:
@@ -3103,7 +3654,7 @@ Process::ShouldBroadcastEvent (Event *event_ptr)
             // stopped -> running: Report except when there is one or more no votes
             //     and no yes votes.
             SynchronouslyNotifyStateChanged (state);
-            switch (m_public_state.GetValue())
+            switch (m_last_broadcast_state)
             {
                 case eStateRunning:
                 case eStateStepping:
@@ -3121,7 +3672,6 @@ Process::ShouldBroadcastEvent (Event *event_ptr)
                     // This is a transition from stop to run.
                     switch (m_thread_list.ShouldReportRun (event_ptr))
                     {
-                        default:
                         case eVoteYes:
                         case eVoteNoOpinion:
                             return_value = true;
@@ -3141,33 +3691,57 @@ Process::ShouldBroadcastEvent (Event *event_ptr)
             // If we are going to stop, then we always broadcast the event.
             // If we aren't going to stop, let the thread plans decide if we're going to report this event.
             // If no thread has an opinion, we don't report it.
-            
+
             RefreshStateAfterStop ();
             if (ProcessEventData::GetInterruptedFromEvent (event_ptr))
             {
                 if (log)
-                    log->Printf ("Process::ShouldBroadcastEvent (%p) stopped due to an interrupt, state: %s", event_ptr, StateAsCString(state));
-                return true;
+                    log->Printf ("Process::ShouldBroadcastEvent (%p) stopped due to an interrupt, state: %s",
+                                 event_ptr,
+                                 StateAsCString(state));
+                return_value = true;
             }
             else
             {
-
-                if (m_thread_list.ShouldStop (event_ptr) == false)
+                bool was_restarted = ProcessEventData::GetRestartedFromEvent (event_ptr);
+                bool should_resume = false;
+                
+                // It makes no sense to ask "ShouldStop" if we've already been restarted...
+                // Asking the thread list is also not likely to go well, since we are running again.
+                // So in that case just report the event.
+                
+                if (!was_restarted)
+                    should_resume = m_thread_list.ShouldStop (event_ptr) == false;
+                
+                if (was_restarted || should_resume || m_resume_requested)
                 {
-                    switch (m_thread_list.ShouldReportStop (event_ptr))
+                    Vote stop_vote = m_thread_list.ShouldReportStop (event_ptr);
+                    if (log)
+                        log->Printf ("Process::ShouldBroadcastEvent: should_stop: %i state: %s was_restarted: %i stop_vote: %d.",
+                                     should_resume,
+                                     StateAsCString(state),
+                                     was_restarted,
+                                     stop_vote);
+                    
+                    switch (stop_vote)
                     {
                         case eVoteYes:
-                            Process::ProcessEventData::SetRestartedInEvent (event_ptr, true);
-                            // Intentional fall-through here.
+                            return_value = true;
+                            break;
                         case eVoteNoOpinion:
                         case eVoteNo:
                             return_value = false;
                             break;
                     }
-
-                    if (log)
-                        log->Printf ("Process::ShouldBroadcastEvent (%p) Restarting process from state: %s", event_ptr, StateAsCString(state));
-                    PrivateResume ();
+                    
+                    if (!was_restarted)
+                    {
+                        if (log)
+                            log->Printf ("Process::ShouldBroadcastEvent (%p) Restarting process from state: %s", event_ptr, StateAsCString(state));
+                        ProcessEventData::SetRestartedInEvent(event_ptr, true);
+                        PrivateResume ();
+                    }
+                    
                 }
                 else
                 {
@@ -3176,10 +3750,25 @@ Process::ShouldBroadcastEvent (Event *event_ptr)
                 }
             }
         }
+        break;
     }
-
+    
+    // We do some coalescing of events (for instance two consecutive running events get coalesced.)
+    // But we only coalesce against events we actually broadcast.  So we use m_last_broadcast_state
+    // to track that.  NB - you can't use "m_public_state.GetValue()" for that purpose, as was originally done,
+    // because the PublicState reflects the last event pulled off the queue, and there may be several
+    // events stacked up on the queue unserviced.  So the PublicState may not reflect the last broadcasted event
+    // yet.  m_last_broadcast_state gets updated here.
+    
+    if (return_value)
+        m_last_broadcast_state = state;
+    
     if (log)
-        log->Printf ("Process::ShouldBroadcastEvent (%p) => %s - %s", event_ptr, StateAsCString(state), return_value ? "YES" : "NO");
+        log->Printf ("Process::ShouldBroadcastEvent (%p) => new state: %s, last broadcast state: %s - %s",
+                     event_ptr,
+                     StateAsCString(state),
+                     StateAsCString(m_last_broadcast_state),
+                     return_value ? "YES" : "NO");
     return return_value;
 }
 
@@ -3187,7 +3776,7 @@ Process::ShouldBroadcastEvent (Event *event_ptr)
 bool
 Process::StartPrivateStateThread (bool force)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EVENTS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EVENTS));
 
     bool already_running = PrivateStateThreadIsValid ();
     if (log)
@@ -3200,9 +3789,9 @@ Process::StartPrivateStateThread (bool force)
     // events make it to clients (into the DCProcess event queue).
     char thread_name[1024];
     if (already_running)
-        snprintf(thread_name, sizeof(thread_name), "<lldb.process.internal-state-override(pid=%llu)>", GetID());
+        snprintf(thread_name, sizeof(thread_name), "<lldb.process.internal-state-override(pid=%" PRIu64 ")>", GetID());
     else
-        snprintf(thread_name, sizeof(thread_name), "<lldb.process.internal-state(pid=%llu)>", GetID());
+        snprintf(thread_name, sizeof(thread_name), "<lldb.process.internal-state(pid=%" PRIu64 ")>", GetID());
         
     // Create the private state thread, and start it running.
     m_private_state_thread = Host::ThreadCreate (thread_name, Process::PrivateStateThread, this, NULL);
@@ -3235,16 +3824,16 @@ Process::StopPrivateStateThread ()
         ControlPrivateStateThread (eBroadcastInternalStateControlStop);
     else
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_PROCESS));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_PROCESS));
         if (log)
-            printf ("Went to stop the private state thread, but it was already invalid.");
+            log->Printf ("Went to stop the private state thread, but it was already invalid.");
     }
 }
 
 void
 Process::ControlPrivateStateThread (uint32_t signal)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_PROCESS));
 
     assert (signal == eBroadcastInternalStateControlStop ||
             signal == eBroadcastInternalStateControlPause ||
@@ -3310,7 +3899,9 @@ Process::SendAsyncInterrupt ()
 void
 Process::HandlePrivateEvent (EventSP &event_sp)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    m_resume_requested = false;
+    
     m_currently_handling_event.SetValue(true, eBroadcastNever);
     
     const StateType new_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
@@ -3319,6 +3910,9 @@ Process::HandlePrivateEvent (EventSP &event_sp)
     if (m_next_event_action_ap.get() != NULL)
     {
         NextEventAction::EventActionResult action_result = m_next_event_action_ap->PerformAction(event_sp);
+        if (log)
+            log->Printf ("Ran next event action, result was %d.", action_result);
+        
         switch (action_result)
         {
             case NextEventAction::eEventActionSuccess:
@@ -3336,6 +3930,7 @@ Process::HandlePrivateEvent (EventSP &event_sp)
                 {
                     // FIXME: should cons up an exited event, and discard this one.
                     SetExitStatus(0, m_next_event_action_ap->GetExitString());
+                    m_currently_handling_event.SetValue(false, eBroadcastAlways);
                     SetNextEventAction(NULL);
                     return;
                 }
@@ -3351,7 +3946,7 @@ Process::HandlePrivateEvent (EventSP &event_sp)
     {
         if (log)
         {
-            log->Printf ("Process::%s (pid = %llu) broadcasting new state %s (old state %s) to %s", 
+            log->Printf ("Process::%s (pid = %" PRIu64 ") broadcasting new state %s (old state %s) to %s",
                          __FUNCTION__, 
                          GetID(), 
                          StateAsCString(new_state), 
@@ -3361,7 +3956,7 @@ Process::HandlePrivateEvent (EventSP &event_sp)
         Process::ProcessEventData::SetUpdateStateOnRemoval(event_sp.get());
         if (StateIsRunningState (new_state))
             PushProcessInputReader ();
-        else 
+        else if (!Process::ProcessEventData::GetRestartedFromEvent(event_sp.get()))
             PopProcessInputReader ();
 
         BroadcastEvent (event_sp);
@@ -3370,7 +3965,7 @@ Process::HandlePrivateEvent (EventSP &event_sp)
     {
         if (log)
         {
-            log->Printf ("Process::%s (pid = %llu) suppressing state %s (old state %s): should_broadcast == false", 
+            log->Printf ("Process::%s (pid = %" PRIu64 ") suppressing state %s (old state %s): should_broadcast == false",
                          __FUNCTION__, 
                          GetID(), 
                          StateAsCString(new_state), 
@@ -3394,9 +3989,9 @@ Process::RunPrivateStateThread ()
     bool control_only = true;
     m_private_state_control_wait.SetValue (false, eBroadcastNever);
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf ("Process::%s (arg = %p, pid = %llu) thread starting...", __FUNCTION__, this, GetID());
+        log->Printf ("Process::%s (arg = %p, pid = %" PRIu64 ") thread starting...", __FUNCTION__, this, GetID());
 
     bool exit_now = false;
     while (!exit_now)
@@ -3406,7 +4001,7 @@ Process::RunPrivateStateThread ()
         if (event_sp->BroadcasterIs(&m_private_state_control_broadcaster))
         {
             if (log)
-                log->Printf ("Process::%s (arg = %p, pid = %llu) got a control event: %d", __FUNCTION__, this, GetID(), event_sp->GetType());
+                log->Printf ("Process::%s (arg = %p, pid = %" PRIu64 ") got a control event: %d", __FUNCTION__, this, GetID(), event_sp->GetType());
 
             switch (event_sp->GetType())
             {
@@ -3431,13 +4026,13 @@ Process::RunPrivateStateThread ()
             if (m_public_state.GetValue() == eStateAttaching)
             {
                 if (log)
-                    log->Printf ("Process::%s (arg = %p, pid = %llu) woke up with an interrupt while attaching - forwarding interrupt.", __FUNCTION__, this, GetID());
+                    log->Printf ("Process::%s (arg = %p, pid = %" PRIu64 ") woke up with an interrupt while attaching - forwarding interrupt.", __FUNCTION__, this, GetID());
                 BroadcastEvent (eBroadcastBitInterrupt, NULL);
             }
             else
             {
                 if (log)
-                    log->Printf ("Process::%s (arg = %p, pid = %llu) woke up with an interrupt - Halting.", __FUNCTION__, this, GetID());
+                    log->Printf ("Process::%s (arg = %p, pid = %" PRIu64 ") woke up with an interrupt - Halting.", __FUNCTION__, this, GetID());
                 Halt();
             }
             continue;
@@ -3447,6 +4042,12 @@ Process::RunPrivateStateThread ()
 
         if (internal_state != eStateInvalid)
         {
+            if (m_clear_thread_plans_on_stop &&
+                StateIsStoppedState(internal_state, true))
+            {
+                m_clear_thread_plans_on_stop = false;
+                m_thread_list.DiscardThreadPlans();
+            }
             HandlePrivateEvent (event_sp);
         }
 
@@ -3455,7 +4056,7 @@ Process::RunPrivateStateThread ()
             internal_state == eStateDetached )
         {
             if (log)
-                log->Printf ("Process::%s (arg = %p, pid = %llu) about to exit with internal state %s...", __FUNCTION__, this, GetID(), StateAsCString(internal_state));
+                log->Printf ("Process::%s (arg = %p, pid = %" PRIu64 ") about to exit with internal state %s...", __FUNCTION__, this, GetID(), StateAsCString(internal_state));
 
             break;
         }
@@ -3463,8 +4064,9 @@ Process::RunPrivateStateThread ()
 
     // Verify log is still enabled before attempting to write to it...
     if (log)
-        log->Printf ("Process::%s (arg = %p, pid = %llu) thread exiting...", __FUNCTION__, this, GetID());
+        log->Printf ("Process::%s (arg = %p, pid = %" PRIu64 ") thread exiting...", __FUNCTION__, this, GetID());
 
+    m_public_run_lock.WriteUnlock();
     m_private_state_control_wait.SetValue (true, eBroadcastAlways);
     m_private_state_thread = LLDB_INVALID_HOST_THREAD;
     return NULL;
@@ -3519,12 +4121,11 @@ Process::ProcessEventData::DoOnRemoval (Event *event_ptr)
     // the public event queue, then other times when we're pretending that this is where we stopped at the
     // end of expression evaluation.  m_update_state is used to distinguish these
     // three cases; it is 0 when we're just pulling it off for private handling, 
-    // and > 1 for expression evaluation, and we don't want to do the breakpoint command handling then.
-    
+    // and > 1 for expression evaluation, and we don't want to do the breakpoint command handling then.    
     if (m_update_state != 1)
         return;
-        
-    m_process_sp->SetPublicState (m_state);
+    
+    m_process_sp->SetPublicState (m_state, Process::ProcessEventData::GetRestartedFromEvent(event_ptr));
         
     // If we're stopped and haven't restarted, then do the breakpoint commands here:
     if (m_state == eStateStopped && ! m_restarted)
@@ -3545,14 +4146,24 @@ Process::ProcessEventData::DoOnRemoval (Event *event_ptr)
         for (idx = 0; idx < num_threads; ++idx)
             thread_index_array[idx] = curr_thread_list.GetThreadAtIndex(idx)->GetIndexID();
         
-        bool still_should_stop = true;
+        // Use this to track whether we should continue from here.  We will only continue the target running if
+        // no thread says we should stop.  Of course if some thread's PerformAction actually sets the target running,
+        // then it doesn't matter what the other threads say...
+        
+        bool still_should_stop = false;
+        
+        // Sometimes - for instance if we have a bug in the stub we are talking to, we stop but no thread has a
+        // valid stop reason.  In that case we should just stop, because we have no way of telling what the right
+        // thing to do is, and it's better to let the user decide than continue behind their backs.
+        
+        bool does_anybody_have_an_opinion = false;
         
         for (idx = 0; idx < num_threads; ++idx)
         {
             curr_thread_list = m_process_sp->GetThreadList();
             if (curr_thread_list.GetSize() != num_threads)
             {
-                lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP | LIBLLDB_LOG_PROCESS));
+                Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP | LIBLLDB_LOG_PROCESS));
                 if (log)
                     log->Printf("Number of threads changed from %u to %u while processing event.", num_threads, curr_thread_list.GetSize());
                 break;
@@ -3562,7 +4173,7 @@ Process::ProcessEventData::DoOnRemoval (Event *event_ptr)
             
             if (thread_sp->GetIndexID() != thread_index_array[idx])
             {
-                lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP | LIBLLDB_LOG_PROCESS));
+                Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP | LIBLLDB_LOG_PROCESS));
                 if (log)
                     log->Printf("The thread at position %u changed from %u to %u while processing event.", 
                                 idx, 
@@ -3572,37 +4183,47 @@ Process::ProcessEventData::DoOnRemoval (Event *event_ptr)
             }
             
             StopInfoSP stop_info_sp = thread_sp->GetStopInfo ();
-            if (stop_info_sp)
+            if (stop_info_sp && stop_info_sp->IsValid())
             {
-                stop_info_sp->PerformAction(event_ptr);
-                // The stop action might restart the target.  If it does, then we want to mark that in the
-                // event so that whoever is receiving it will know to wait for the running event and reflect
-                // that state appropriately.
-                // We also need to stop processing actions, since they aren't expecting the target to be running.
+                does_anybody_have_an_opinion = true;
+                bool this_thread_wants_to_stop;
+                if (stop_info_sp->GetOverrideShouldStop())
+                {
+                    this_thread_wants_to_stop = stop_info_sp->GetOverriddenShouldStopValue();
+                }
+                else
+                {
+                    stop_info_sp->PerformAction(event_ptr);
+                    // The stop action might restart the target.  If it does, then we want to mark that in the
+                    // event so that whoever is receiving it will know to wait for the running event and reflect
+                    // that state appropriately.
+                    // We also need to stop processing actions, since they aren't expecting the target to be running.
+                    
+                    // FIXME: we might have run.
+                    if (stop_info_sp->HasTargetRunSinceMe())
+                    {
+                        SetRestarted (true);
+                        break;
+                    }
+                    
+                    this_thread_wants_to_stop = stop_info_sp->ShouldStop(event_ptr);
+                }
                 
-                // FIXME: we might have run.
-                if (stop_info_sp->HasTargetRunSinceMe())
-                {
-                    SetRestarted (true);
-                    break;
-                }
-                else if (!stop_info_sp->ShouldStop(event_ptr))
-                {
-                    still_should_stop = false;
-                }
+                if (still_should_stop == false)
+                    still_should_stop = this_thread_wants_to_stop;
             }
         }
 
         
-        if (m_process_sp->GetPrivateState() != eStateRunning)
+        if (!GetRestarted())
         {
-            if (!still_should_stop)
+            if (!still_should_stop && does_anybody_have_an_opinion)
             {
                 // We've been asked to continue, so do that here.
                 SetRestarted(true);
                 // Use the public resume method here, since this is just
                 // extending a public resume.
-                m_process_sp->Resume();
+                m_process_sp->PrivateResume();
             }
             else
             {
@@ -3613,7 +4234,6 @@ Process::ProcessEventData::DoOnRemoval (Event *event_ptr)
                     SetRestarted(true);
             }
         }
-        
     }
 }
 
@@ -3621,7 +4241,7 @@ void
 Process::ProcessEventData::Dump (Stream *s) const
 {
     if (m_process_sp)
-        s->Printf(" process = %p (pid = %llu), ", m_process_sp.get(), m_process_sp->GetID());
+        s->Printf(" process = %p (pid = %" PRIu64 "), ", m_process_sp.get(), m_process_sp->GetID());
 
     s->Printf("state = %s", StateAsCString(GetState()));
 }
@@ -3674,6 +4294,34 @@ Process::ProcessEventData::SetRestartedInEvent (Event *event_ptr, bool new_value
     ProcessEventData *data = const_cast<ProcessEventData *>(GetEventDataFromEvent (event_ptr));
     if (data != NULL)
         data->SetRestarted(new_value);
+}
+
+size_t
+Process::ProcessEventData::GetNumRestartedReasons(const Event *event_ptr)
+{
+    ProcessEventData *data = const_cast<ProcessEventData *>(GetEventDataFromEvent (event_ptr));
+    if (data != NULL)
+        return data->GetNumRestartedReasons();
+    else
+        return 0;
+}
+
+const char *
+Process::ProcessEventData::GetRestartedReasonAtIndex(const Event *event_ptr, size_t idx)
+{
+    ProcessEventData *data = const_cast<ProcessEventData *>(GetEventDataFromEvent (event_ptr));
+    if (data != NULL)
+        return data->GetRestartedReasonAtIndex(idx);
+    else
+        return NULL;
+}
+
+void
+Process::ProcessEventData::AddRestartedReason (Event *event_ptr, const char *reason)
+{
+    ProcessEventData *data = const_cast<ProcessEventData *>(GetEventDataFromEvent (event_ptr));
+    if (data != NULL)
+        data->AddRestartedReason(reason);
 }
 
 bool
@@ -3744,7 +4392,7 @@ Process::AppendSTDOUT (const char * s, size_t len)
 {
     Mutex::Locker locker (m_stdio_communication_mutex);
     m_stdout_data.append (s, len);
-    BroadcastEventIfUnique (eBroadcastBitSTDOUT, new ProcessEventData (GetTarget().GetProcessSP(), GetState()));
+    BroadcastEventIfUnique (eBroadcastBitSTDOUT, new ProcessEventData (shared_from_this(), GetState()));
 }
 
 void
@@ -3752,8 +4400,45 @@ Process::AppendSTDERR (const char * s, size_t len)
 {
     Mutex::Locker locker (m_stdio_communication_mutex);
     m_stderr_data.append (s, len);
-    BroadcastEventIfUnique (eBroadcastBitSTDERR, new ProcessEventData (GetTarget().GetProcessSP(), GetState()));
+    BroadcastEventIfUnique (eBroadcastBitSTDERR, new ProcessEventData (shared_from_this(), GetState()));
 }
+
+void
+Process::BroadcastAsyncProfileData(const char *s, size_t len)
+{
+    Mutex::Locker locker (m_profile_data_comm_mutex);
+    m_profile_data.push_back(s);
+    BroadcastEventIfUnique (eBroadcastBitProfileData, new ProcessEventData (shared_from_this(), GetState()));
+}
+
+size_t
+Process::GetAsyncProfileData (char *buf, size_t buf_size, Error &error)
+{
+    Mutex::Locker locker(m_profile_data_comm_mutex);
+    if (m_profile_data.empty())
+        return 0;
+
+    size_t bytes_available = m_profile_data.front().size();
+    if (bytes_available > 0)
+    {
+        Log *log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+        if (log)
+            log->Printf ("Process::GetProfileData (buf = %p, size = %" PRIu64 ")", buf, (uint64_t)buf_size);
+        if (bytes_available > buf_size)
+        {
+            memcpy(buf, m_profile_data.front().data(), buf_size);
+            m_profile_data.front().erase(0, buf_size);
+            bytes_available = buf_size;
+        }
+        else
+        {
+            memcpy(buf, m_profile_data.front().data(), bytes_available);
+            m_profile_data.erase(m_profile_data.begin());
+        }
+    }
+    return bytes_available;
+}
+
 
 //------------------------------------------------------------------
 // Process STDIO
@@ -3766,9 +4451,9 @@ Process::GetSTDOUT (char *buf, size_t buf_size, Error &error)
     size_t bytes_available = m_stdout_data.size();
     if (bytes_available > 0)
     {
-        LogSP log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+        Log *log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
         if (log)
-            log->Printf ("Process::GetSTDOUT (buf = %p, size = %zu)", buf, buf_size);
+            log->Printf ("Process::GetSTDOUT (buf = %p, size = %" PRIu64 ")", buf, (uint64_t)buf_size);
         if (bytes_available > buf_size)
         {
             memcpy(buf, m_stdout_data.c_str(), buf_size);
@@ -3792,9 +4477,9 @@ Process::GetSTDERR (char *buf, size_t buf_size, Error &error)
     size_t bytes_available = m_stderr_data.size();
     if (bytes_available > 0)
     {
-        LogSP log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+        Log *log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
         if (log)
-            log->Printf ("Process::GetSTDERR (buf = %p, size = %zu)", buf, buf_size);
+            log->Printf ("Process::GetSTDERR (buf = %p, size = %" PRIu64 ")", buf, (uint64_t)buf_size);
         if (bytes_available > buf_size)
         {
             memcpy(buf, m_stderr_data.c_str(), buf_size);
@@ -3874,7 +4559,7 @@ Process::SetSTDIOFileDescriptor (int file_descriptor)
 {
     // First set up the Read Thread for reading/handling process I/O
     
-    std::auto_ptr<ConnectionFileDescriptor> conn_ap (new ConnectionFileDescriptor (file_descriptor, true));
+    std::unique_ptr<ConnectionFileDescriptor> conn_ap (new ConnectionFileDescriptor (file_descriptor, true));
     
     if (conn_ap.get())
     {
@@ -3921,96 +4606,53 @@ Process::PopProcessInputReader ()
 void
 Process::SettingsInitialize ()
 {
-    static std::vector<OptionEnumValueElement> g_plugins;
-    
-    int i=0; 
-    const char *name;
-    OptionEnumValueElement option_enum;
-    while ((name = PluginManager::GetProcessPluginNameAtIndex (i)) != NULL)
-    {
-        if (name)
-        {
-            option_enum.value = i;
-            option_enum.string_value = name;
-            option_enum.usage = PluginManager::GetProcessPluginDescriptionAtIndex (i);
-            g_plugins.push_back (option_enum);
-        }
-        ++i;
-    }
-    option_enum.value = 0;
-    option_enum.string_value = NULL;
-    option_enum.usage = NULL;
-    g_plugins.push_back (option_enum);
-    
-    for (i=0; (name = SettingsController::instance_settings_table[i].var_name); ++i)
-    {
-        if (::strcmp (name, "plugin") == 0)
-        {
-            SettingsController::instance_settings_table[i].enum_values = &g_plugins[0];
-            break;
-        }
-    }
-    UserSettingsControllerSP &usc = GetSettingsController();
-    UserSettingsController::InitializeSettingsController (usc,
-                                                          SettingsController::global_settings_table,
-                                                          SettingsController::instance_settings_table);
-                                                          
-    // Now call SettingsInitialize() for each 'child' of Process settings
+//    static std::vector<OptionEnumValueElement> g_plugins;
+//    
+//    int i=0; 
+//    const char *name;
+//    OptionEnumValueElement option_enum;
+//    while ((name = PluginManager::GetProcessPluginNameAtIndex (i)) != NULL)
+//    {
+//        if (name)
+//        {
+//            option_enum.value = i;
+//            option_enum.string_value = name;
+//            option_enum.usage = PluginManager::GetProcessPluginDescriptionAtIndex (i);
+//            g_plugins.push_back (option_enum);
+//        }
+//        ++i;
+//    }
+//    option_enum.value = 0;
+//    option_enum.string_value = NULL;
+//    option_enum.usage = NULL;
+//    g_plugins.push_back (option_enum);
+//    
+//    for (i=0; (name = SettingsController::instance_settings_table[i].var_name); ++i)
+//    {
+//        if (::strcmp (name, "plugin") == 0)
+//        {
+//            SettingsController::instance_settings_table[i].enum_values = &g_plugins[0];
+//            break;
+//        }
+//    }
+//                                                          
     Thread::SettingsInitialize ();
 }
 
 void
 Process::SettingsTerminate ()
 {
-    // Must call SettingsTerminate() on each 'child' of Process settings before terminating Process settings.
-    
     Thread::SettingsTerminate ();
-    
-    // Now terminate Process Settings.
-    
-    UserSettingsControllerSP &usc = GetSettingsController();
-    UserSettingsController::FinalizeSettingsController (usc);
-    usc.reset();
-}
-
-UserSettingsControllerSP &
-Process::GetSettingsController ()
-{
-    static UserSettingsControllerSP g_settings_controller_sp;
-    if (!g_settings_controller_sp)
-    {
-        g_settings_controller_sp.reset (new Process::SettingsController);
-        // The first shared pointer to Process::SettingsController in
-        // g_settings_controller_sp must be fully created above so that 
-        // the TargetInstanceSettings can use a weak_ptr to refer back 
-        // to the master setttings controller
-        InstanceSettingsSP default_instance_settings_sp (new ProcessInstanceSettings (g_settings_controller_sp, 
-                                                                                      false,
-                                                                                      InstanceSettings::GetDefaultName().AsCString()));
-        g_settings_controller_sp->SetDefaultInstanceSettings (default_instance_settings_sp);
-    }
-    return g_settings_controller_sp;
-
-}
-
-void
-Process::UpdateInstanceName ()
-{
-    Module *module = GetTarget().GetExecutableModulePointer();
-    if (module && module->GetFileSpec().GetFilename())
-    {
-        GetSettingsController()->RenameInstanceSettings (GetInstanceName().AsCString(),
-                                                         module->GetFileSpec().GetFilename().AsCString());
-    }
 }
 
 ExecutionResults
 Process::RunThreadPlan (ExecutionContext &exe_ctx,
                         lldb::ThreadPlanSP &thread_plan_sp,
                         bool stop_others,
-                        bool try_all_threads,
-                        bool discard_on_error,
-                        uint32_t single_thread_timeout_usec,
+                        bool run_others,
+                        bool unwind_on_error,
+                        bool ignore_breakpoints,
+                        uint32_t timeout_usec,
                         Stream &errors)
 {
     ExecutionResults return_value = eExecutionSetupError;
@@ -4020,7 +4662,13 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
         errors.Printf("RunThreadPlan called with empty thread plan.");
         return eExecutionSetupError;
     }
-
+    
+    if (!thread_plan_sp->ValidatePlan(NULL))
+    {
+        errors.Printf ("RunThreadPlan called with an invalid thread plan.");
+        return eExecutionSetupError;
+    }
+    
     if (exe_ctx.GetProcessPtr() != this)
     {
         errors.Printf("RunThreadPlan called on wrong process.");
@@ -4049,7 +4697,19 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
     
     // Save the thread & frame from the exe_ctx for restoration after we run
     const uint32_t thread_idx_id = thread->GetIndexID();
-    StackID ctx_frame_id = thread->GetSelectedFrame()->GetStackID();
+    StackFrameSP selected_frame_sp = thread->GetSelectedFrame();
+    if (!selected_frame_sp)
+    {
+        thread->SetSelectedFrame(0);
+        selected_frame_sp = thread->GetSelectedFrame();
+        if (!selected_frame_sp)
+        {
+            errors.Printf("RunThreadPlan called without a selected frame on thread %d", thread_idx_id);
+            return eExecutionSetupError;
+        }
+    }
+    
+    StackID ctx_frame_id = selected_frame_sp->GetStackID();
 
     // N.B. Running the target may unset the currently selected thread and frame.  We don't want to do that either, 
     // so we should arrange to reset them as well.
@@ -4072,7 +4732,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
     lldb::StateType old_state;
     lldb::ThreadPlanSP stopper_base_plan_sp;
     
-    lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP | LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP | LIBLLDB_LOG_PROCESS));
     if (Host::GetCurrentThread() == m_private_state_thread)
     {
         // Yikes, we are running on the private state thread!  So we can't wait for public events on this thread, since
@@ -4080,7 +4740,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
         // The simplest thing to do is to spin up a temporary thread to handle private state thread events while
         // we are fielding public events here.
         if (log)
-			log->Printf ("Running thread plan on private state thread, spinning up another state thread to handle the events.");
+            log->Printf ("Running thread plan on private state thread, spinning up another state thread to handle the events.");
             
 
         backup_private_state_thread = m_private_state_thread;
@@ -4120,7 +4780,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
         {
             StreamString s;
             thread_plan_sp->GetDescription(&s, lldb::eDescriptionLevelVerbose);
-            log->Printf ("Process::RunThreadPlan(): Resuming thread %u - 0x%4.4llx to run thread plan \"%s\".",  
+            log->Printf ("Process::RunThreadPlan(): Resuming thread %u - 0x%4.4" PRIx64 " to run thread plan \"%s\".",
                          thread->GetIndexID(), 
                          thread->GetID(), 
                          s.GetData());
@@ -4133,49 +4793,113 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
         TimeValue* timeout_ptr = NULL;
         TimeValue real_timeout;
         
-        bool first_timeout = true;
+        bool before_first_timeout = true;  // This is set to false the first time that we have to halt the target.
         bool do_resume = true;
+        bool handle_running_event = true;
+        const uint64_t default_one_thread_timeout_usec = 250000;
+        
+        // This is just for accounting:
+        uint32_t num_resumes = 0;
+        
+        TimeValue one_thread_timeout = TimeValue::Now();
+        TimeValue final_timeout = one_thread_timeout;
+        
+        if (run_others)
+        {
+            // If we are running all threads then we take half the time to run all threads, bounded by
+            // .25 sec.
+            if (timeout_usec == 0)
+                one_thread_timeout.OffsetWithMicroSeconds(default_one_thread_timeout_usec);
+            else
+            {
+                uint64_t computed_timeout = timeout_usec / 2;
+                if (computed_timeout > default_one_thread_timeout_usec)
+                    computed_timeout = default_one_thread_timeout_usec;
+                one_thread_timeout.OffsetWithMicroSeconds(computed_timeout);
+            }
+            final_timeout.OffsetWithMicroSeconds (timeout_usec);
+        }
+        else
+        {
+            if (timeout_usec != 0)
+                final_timeout.OffsetWithMicroSeconds(timeout_usec);
+        }
+
+        // This while loop must exit out the bottom, there's cleanup that we need to do when we are done.
+        // So don't call return anywhere within it.
         
         while (1)
         {
             // We usually want to resume the process if we get to the top of the loop.
             // The only exception is if we get two running events with no intervening
             // stop, which can happen, we will just wait for then next stop event.
+            if (log)
+                log->Printf ("Top of while loop: do_resume: %i handle_running_event: %i before_first_timeout: %i.",
+                             do_resume,
+                             handle_running_event,
+                             before_first_timeout);
             
-            if (do_resume)
+            if (do_resume || handle_running_event)
             {
                 // Do the initial resume and wait for the running event before going further.
         
-                Error resume_error = PrivateResume ();
-                if (!resume_error.Success())
+                if (do_resume)
                 {
-                    errors.Printf("Error resuming inferior: \"%s\".\n", resume_error.AsCString());
-                    return_value = eExecutionSetupError;
-                    break;
+                    num_resumes++;
+                    Error resume_error = PrivateResume ();
+                    if (!resume_error.Success())
+                    {
+                        errors.Printf("Error resuming inferior the %d time: \"%s\".\n",
+                                      num_resumes,
+                                      resume_error.AsCString());
+                        return_value = eExecutionSetupError;
+                        break;
+                    }
                 }
-        
-                real_timeout = TimeValue::Now();
-                real_timeout.OffsetWithMicroSeconds(500000);
-                timeout_ptr = &real_timeout;
                 
-                got_event = listener.WaitForEvent(timeout_ptr, event_sp);
+                TimeValue resume_timeout = TimeValue::Now();
+                resume_timeout.OffsetWithMicroSeconds(500000);
+                
+                got_event = listener.WaitForEvent(&resume_timeout, event_sp);
                 if (!got_event)
                 {
                     if (log)
-                        log->PutCString("Process::RunThreadPlan(): didn't get any event after initial resume, exiting.");
+                        log->Printf ("Process::RunThreadPlan(): didn't get any event after resume %d, exiting.",
+                                        num_resumes);
 
-                    errors.Printf("Didn't get any event after initial resume, exiting.");
+                    errors.Printf("Didn't get any event after resume %d, exiting.", num_resumes);
                     return_value = eExecutionSetupError;
                     break;
                 }
                 
                 stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
+
                 if (stop_state != eStateRunning)
                 {
-                    if (log)
-                        log->Printf("Process::RunThreadPlan(): didn't get running event after initial resume, got %s instead.", StateAsCString(stop_state));
-
-                    errors.Printf("Didn't get running event after initial resume, got %s instead.", StateAsCString(stop_state));
+                    bool restarted = false;
+                    
+                    if (stop_state == eStateStopped)
+                    {
+                        restarted = Process::ProcessEventData::GetRestartedFromEvent(event_sp.get());
+                        if (log)
+                            log->Printf("Process::RunThreadPlan(): didn't get running event after "
+                                        "resume %d, got %s instead (restarted: %i, do_resume: %i, handle_running_event: %i).",
+                                        num_resumes,
+                                        StateAsCString(stop_state),
+                                        restarted,
+                                        do_resume,
+                                        handle_running_event);
+                    }
+                    
+                    if (restarted)
+                    {
+                        // This is probably an overabundance of caution, I don't think I should ever get a stopped & restarted
+                        // event here.  But if I do, the best thing is to Halt and then get out of here.
+                        Halt();
+                    }
+                    
+                    errors.Printf("Didn't get running event after initial resume, got %s instead.",
+                                  StateAsCString(stop_state));
                     return_value = eExecutionSetupError;
                     break;
                 }
@@ -4187,37 +4911,35 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                 // won't be able to gather the result at this point.
                 // We set the timeout AFTER the resume, since the resume takes some time and we
                 // don't want to charge that to the timeout.
-                
-                if (single_thread_timeout_usec != 0)
-                {
-                    // we have a > 0 timeout, let us set it so that we stop after the deadline
-                    real_timeout = TimeValue::Now();
-                    real_timeout.OffsetWithMicroSeconds(single_thread_timeout_usec);
-                        
-                    timeout_ptr = &real_timeout;
-                }
-                else if (first_timeout)
-                {
-                    // if we are willing to wait "forever" we still need to have an initial timeout
-                    // this timeout is going to induce all threads to run when hit. we do this so that
-                    // we can avoid ending locked up because of multithreaded contention issues
-                    real_timeout = TimeValue::Now();
-                    real_timeout.OffsetWithNanoSeconds(500000000UL);
-                    timeout_ptr = &real_timeout;
-                }
-                else
-                {
-                    timeout_ptr = NULL; // if we are in a no-timeout scenario, then we only need a fake timeout the first time through
-                    // at this point in the code, all threads will be running so we are willing to wait forever, and do not
-                    // need a timeout
-                }
             }
             else
             {
                 if (log)
-                    log->PutCString ("Process::RunThreadPlan(): handled an extra running event.");
-                do_resume = true;
+                    log->PutCString ("Process::RunThreadPlan(): waiting for next event.");
             }
+                        
+            if (before_first_timeout)
+            {
+                if (run_others)
+                    timeout_ptr = &one_thread_timeout;
+                else
+                {
+                    if (timeout_usec == 0)
+                        timeout_ptr = NULL;
+                    else
+                        timeout_ptr = &final_timeout;
+                }
+            }
+            else
+            {
+                if (timeout_usec == 0)
+                    timeout_ptr = NULL;
+                else
+                    timeout_ptr = &final_timeout;
+            }
+        
+            do_resume = true;
+            handle_running_event = true;
             
             // Now wait for the process to stop again:
             event_sp.reset();
@@ -4226,12 +4948,9 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
             {
                 if (timeout_ptr)
                 {
-                    StreamString s;
-                    s.Printf ("about to wait - timeout is:\n   ");
-                    timeout_ptr->Dump (&s, 120);
-                    s.Printf ("\nNow is:\n    ");
-                    TimeValue::Now().Dump (&s, 120);
-                    log->Printf ("Process::RunThreadPlan(): %s", s.GetData());
+                    log->Printf ("Process::RunThreadPlan(): about to wait - now is %" PRIu64 " - endpoint is %" PRIu64,
+                                 TimeValue::Now().GetAsMicroSecondsSinceJan1_1970(),
+                                 timeout_ptr->GetAsMicroSecondsSinceJan1_1970());
                 }
                 else
                 {
@@ -4249,11 +4968,11 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                     if (event_sp->GetType() == eBroadcastBitInterrupt)
                     {
                         Halt();
-                        keep_going = false;
                         return_value = eExecutionInterrupted;
                         errors.Printf ("Execution halted by user interrupt.");
                         if (log)
                             log->Printf ("Process::RunThreadPlan(): Got  interrupted by eBroadcastBitInterrupted, exiting.");
+                        break;
                     }
                     else
                     {
@@ -4265,7 +4984,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                         {
                         case lldb::eStateStopped:
                             {
-                                // Yay, we're done.  Now make sure that our thread plan actually completed.
+                                // We stopped, figure out what we are going to do now.
                                 ThreadSP thread_sp = GetThreadList().FindThreadByIndexID (thread_idx_id);
                                 if (!thread_sp)
                                 {
@@ -4276,40 +4995,66 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                                 }
                                 else
                                 {
-                                    StopInfoSP stop_info_sp (thread_sp->GetStopInfo ());
-                                    StopReason stop_reason = eStopReasonInvalid;
-                                    if (stop_info_sp)
-                                         stop_reason = stop_info_sp->GetStopReason();
-                                    if (stop_reason == eStopReasonPlanComplete)
+                                    // If we were restarted, we just need to go back up to fetch another event.
+                                    if (Process::ProcessEventData::GetRestartedFromEvent(event_sp.get()))
                                     {
                                         if (log)
-                                            log->PutCString ("Process::RunThreadPlan(): execution completed successfully.");
-                                        // Now mark this plan as private so it doesn't get reported as the stop reason
-                                        // after this point.  
-                                        if (thread_plan_sp)
-                                            thread_plan_sp->SetPrivate (orig_plan_private);
-                                        return_value = eExecutionCompleted;
+                                        {
+                                            log->Printf ("Process::RunThreadPlan(): Got a stop and restart, so we'll continue waiting.");
+                                        }
+                                       keep_going = true;
+                                       do_resume = false;
+                                       handle_running_event = true;
+                                       
                                     }
                                     else
                                     {
-                                        if (log)
-                                            log->PutCString ("Process::RunThreadPlan(): thread plan didn't successfully complete.");
-
-                                        return_value = eExecutionInterrupted;
+                                    
+                                        StopInfoSP stop_info_sp (thread_sp->GetStopInfo ());
+                                        StopReason stop_reason = eStopReasonInvalid;
+                                        if (stop_info_sp)
+                                             stop_reason = stop_info_sp->GetStopReason();
+                                        
+                                        
+                                        // FIXME: We only check if the stop reason is plan complete, should we make sure that
+                                        // it is OUR plan that is complete?
+                                        if (stop_reason == eStopReasonPlanComplete)
+                                        {
+                                            if (log)
+                                                log->PutCString ("Process::RunThreadPlan(): execution completed successfully.");
+                                            // Now mark this plan as private so it doesn't get reported as the stop reason
+                                            // after this point.  
+                                            if (thread_plan_sp)
+                                                thread_plan_sp->SetPrivate (orig_plan_private);
+                                            return_value = eExecutionCompleted;
+                                        }
+                                        else
+                                        {
+                                            // Something restarted the target, so just wait for it to stop for real.
+                                            if (stop_reason == eStopReasonBreakpoint)
+                                            {
+                                                if (log)
+                                                    log->Printf ("Process::RunThreadPlan() stopped for breakpoint: %s.", stop_info_sp->GetDescription());
+                                                return_value = eExecutionHitBreakpoint;
+                                            }
+                                            else
+                                            {
+                                                if (log)
+                                                    log->PutCString ("Process::RunThreadPlan(): thread plan didn't successfully complete.");
+                                                return_value = eExecutionInterrupted;
+                                            }
+                                        }
                                     }
                                 }
                             }        
                             break;
 
-                        case lldb::eStateCrashed:
-                            if (log)
-                                log->PutCString ("Process::RunThreadPlan(): execution crashed.");
-                            return_value = eExecutionInterrupted;
-                            break;
-
                         case lldb::eStateRunning:
+                            // This shouldn't really happen, but sometimes we do get two running events without an
+                            // intervening stop, and in that case we should just go back to waiting for the stop.
                             do_resume = false;
                             keep_going = true;
+                            handle_running_event = false;
                             break;
 
                         default:
@@ -4343,170 +5088,143 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                 // If we didn't get an event that means we've timed out...
                 // We will interrupt the process here.  Depending on what we were asked to do we will
                 // either exit, or try with all threads running for the same timeout.
-                // Not really sure what to do if Halt fails here...
                 
                 if (log) {
-                    if (try_all_threads)
+                    if (run_others)
                     {
-                        if (first_timeout)
-                            log->Printf ("Process::RunThreadPlan(): Running function with timeout: %d timed out, "
-                                         "trying with all threads enabled.",
-                                         single_thread_timeout_usec);
+                        uint64_t remaining_time = final_timeout - TimeValue::Now();
+                        if (before_first_timeout)
+                            log->Printf ("Process::RunThreadPlan(): Running function with one thread timeout timed out, "
+                                         "running till  for %" PRId64 " usec with all threads enabled.",
+                                         remaining_time);
                         else
                             log->Printf ("Process::RunThreadPlan(): Restarting function with all threads enabled "
-                                         "and timeout: %d timed out.",
-                                         single_thread_timeout_usec);
+                                         "and timeout: %d timed out, abandoning execution.",
+                                         timeout_usec);
                     }
                     else
                         log->Printf ("Process::RunThreadPlan(): Running function with timeout: %d timed out, "
-                                     "halt and abandoning execution.", 
-                                     single_thread_timeout_usec);
+                                     "abandoning execution.", 
+                                     timeout_usec);
                 }
                 
-                Error halt_error = Halt();
-                if (halt_error.Success())
+                // It is possible that between the time we issued the Halt, and we get around to calling Halt the target
+                // could have stopped.  That's fine, Halt will figure that out and send the appropriate Stopped event.
+                // BUT it is also possible that we stopped & restarted (e.g. hit a signal with "stop" set to false.)  In
+                // that case, we'll get the stopped & restarted event, and we should go back to waiting for the Halt's
+                // stopped event.  That's what this while loop does.
+                
+                bool back_to_top = true;
+                uint32_t try_halt_again = 0;
+                bool do_halt = true;
+                const uint32_t num_retries = 5;
+                while (try_halt_again < num_retries)
                 {
-                    if (log)
-                        log->PutCString ("Process::RunThreadPlan(): Halt succeeded.");
+                    Error halt_error;
+                    if (do_halt)
+                    {
+                        if (log)
+                            log->Printf ("Process::RunThreadPlan(): Running Halt.");
+                        halt_error = Halt();
+                    }
+                    if (halt_error.Success())
+                    {
+                        if (log)
+                            log->PutCString ("Process::RunThreadPlan(): Halt succeeded.");
+                            
+                        real_timeout = TimeValue::Now();
+                        real_timeout.OffsetWithMicroSeconds(500000);
+
+                        got_event = listener.WaitForEvent(&real_timeout, event_sp);
                         
-                    // If halt succeeds, it always produces a stopped event.  Wait for that:
-                    
-                    real_timeout = TimeValue::Now();
-                    real_timeout.OffsetWithMicroSeconds(500000);
-
-                    got_event = listener.WaitForEvent(&real_timeout, event_sp);
-                    
-                    if (got_event)
-                    {
-                        stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
-                        if (log)
+                        if (got_event)
                         {
-                            log->Printf ("Process::RunThreadPlan(): Stopped with event: %s", StateAsCString(stop_state));
-                            if (stop_state == lldb::eStateStopped 
-                                && Process::ProcessEventData::GetInterruptedFromEvent(event_sp.get()))
-                                log->PutCString ("    Event was the Halt interruption event.");
-                        }
-                        
-                        if (stop_state == lldb::eStateStopped)
-                        {
-                            // Between the time we initiated the Halt and the time we delivered it, the process could have
-                            // already finished its job.  Check that here:
-                            
-                            if (thread->IsThreadPlanDone (thread_plan_sp.get()))
+                            stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
+                            if (log)
                             {
-                                if (log)
-                                    log->PutCString ("Process::RunThreadPlan(): Even though we timed out, the call plan was done.  "
-                                                 "Exiting wait loop.");
-                                return_value = eExecutionCompleted;
-                                break;
-                            }
-
-                            if (!try_all_threads)
-                            {
-                                if (log)
-                                    log->PutCString ("Process::RunThreadPlan(): try_all_threads was false, we stopped so now we're quitting.");
-                                return_value = eExecutionInterrupted;
-                                break;
+                                log->Printf ("Process::RunThreadPlan(): Stopped with event: %s", StateAsCString(stop_state));
+                                if (stop_state == lldb::eStateStopped 
+                                    && Process::ProcessEventData::GetInterruptedFromEvent(event_sp.get()))
+                                    log->PutCString ("    Event was the Halt interruption event.");
                             }
                             
-                            if (first_timeout)
+                            if (stop_state == lldb::eStateStopped)
                             {
-                                // Set all the other threads to run, and return to the top of the loop, which will continue;
-                                first_timeout = false;
-                                thread_plan_sp->SetStopOthers (false);
-                                if (log)
-                                    log->PutCString ("Process::RunThreadPlan(): about to resume.");
+                                // Between the time we initiated the Halt and the time we delivered it, the process could have
+                                // already finished its job.  Check that here:
+                                
+                                if (thread->IsThreadPlanDone (thread_plan_sp.get()))
+                                {
+                                    if (log)
+                                        log->PutCString ("Process::RunThreadPlan(): Even though we timed out, the call plan was done.  "
+                                                     "Exiting wait loop.");
+                                    return_value = eExecutionCompleted;
+                                    back_to_top = false;
+                                    break;
+                                }
+                                
+                                if (Process::ProcessEventData::GetRestartedFromEvent(event_sp.get()))
+                                {
+                                    if (log)
+                                        log->PutCString ("Process::RunThreadPlan(): Went to halt but got a restarted event, there must be an un-restarted stopped event so try again...  "
+                                                     "Exiting wait loop.");
+                                    try_halt_again++;
+                                    do_halt = false;
+                                    continue;
+                                }
 
-                                continue;
-                            }
-                            else
-                            {
-                                // Running all threads failed, so return Interrupted.
-                                if (log)
-                                    log->PutCString("Process::RunThreadPlan(): running all threads timed out.");
-                                return_value = eExecutionInterrupted;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {   if (log)
-                            log->PutCString("Process::RunThreadPlan(): halt said it succeeded, but I got no event.  "
-                                    "I'm getting out of here passing Interrupted.");
-                        return_value = eExecutionInterrupted;
-                        break;
-                    }
-                }
-                else
-                {
-                    // This branch is to work around some problems with gdb-remote's Halt.  It is a little racy, and can return 
-                    // an error from halt, but if you wait a bit you'll get a stopped event anyway.
-                    if (log)
-                        log->Printf ("Process::RunThreadPlan(): halt failed: error = \"%s\", I'm just going to wait a little longer and see if I get a stopped event.", 
-                                     halt_error.AsCString());                
-                    real_timeout = TimeValue::Now();
-                    real_timeout.OffsetWithMicroSeconds(500000);
-                    timeout_ptr = &real_timeout;
-                    got_event = listener.WaitForEvent(&real_timeout, event_sp);
-                    if (!got_event || event_sp.get() == NULL)
-                    {
-                        // This is not going anywhere, bag out.
-                        if (log)
-                            log->PutCString ("Process::RunThreadPlan(): halt failed: and waiting for the stopped event failed.");
-                        return_value = eExecutionInterrupted;
-                        break;                
-                    }
-                    else
-                    {
-                        stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
-                        if (log)
-                            log->PutCString ("Process::RunThreadPlan(): halt failed: but then I got a stopped event.  Whatever...");
-                        if (stop_state == lldb::eStateStopped)
-                        {
-                            // Between the time we initiated the Halt and the time we delivered it, the process could have
-                            // already finished its job.  Check that here:
-                            
-                            if (thread->IsThreadPlanDone (thread_plan_sp.get()))
-                            {
-                                if (log)
-                                    log->PutCString ("Process::RunThreadPlan(): Even though we timed out, the call plan was done.  "
-                                                 "Exiting wait loop.");
-                                return_value = eExecutionCompleted;
-                                break;
-                            }
+                                if (!run_others)
+                                {
+                                    if (log)
+                                        log->PutCString ("Process::RunThreadPlan(): try_all_threads was false, we stopped so now we're quitting.");
+                                    return_value = eExecutionInterrupted;
+                                    back_to_top = false;
+                                    break;
+                                }
+                                
+                                if (before_first_timeout)
+                                {
+                                    // Set all the other threads to run, and return to the top of the loop, which will continue;
+                                    before_first_timeout = false;
+                                    thread_plan_sp->SetStopOthers (false);
+                                    if (log)
+                                        log->PutCString ("Process::RunThreadPlan(): about to resume.");
 
-                            if (first_timeout)
-                            {
-                                // Set all the other threads to run, and return to the top of the loop, which will continue;
-                                first_timeout = false;
-                                thread_plan_sp->SetStopOthers (false);
-                                if (log)
-                                    log->PutCString ("Process::RunThreadPlan(): About to resume.");
-
-                                continue;
-                            }
-                            else
-                            {
-                                // Running all threads failed, so return Interrupted.
-                                if (log)
-                                    log->PutCString ("Process::RunThreadPlan(): running all threads timed out.");
-                                return_value = eExecutionInterrupted;
-                                break;
+                                    back_to_top = true;
+                                    break;
+                                }
+                                else
+                                {
+                                    // Running all threads failed, so return Interrupted.
+                                    if (log)
+                                        log->PutCString("Process::RunThreadPlan(): running all threads timed out.");
+                                    return_value = eExecutionInterrupted;
+                                    back_to_top = false;
+                                    break;
+                                }
                             }
                         }
                         else
-                        {
-                            if (log)
-                                log->Printf ("Process::RunThreadPlan(): halt failed, I waited and didn't get"
-                                             " a stopped event, instead got %s.", StateAsCString(stop_state));
+                        {   if (log)
+                                log->PutCString("Process::RunThreadPlan(): halt said it succeeded, but I got no event.  "
+                                        "I'm getting out of here passing Interrupted.");
                             return_value = eExecutionInterrupted;
-                            break;                
+                            back_to_top = false;
+                            break;
                         }
                     }
+                    else
+                    {
+                        try_halt_again++;
+                        continue;
+                    }
                 }
-
+                
+                if (!back_to_top || try_halt_again > num_retries)
+                    break;
+                else
+                    continue;
             }
-            
         }  // END WAIT LOOP
         
         // If we had to start up a temporary private state thread to run this thread plan, shut it down now.
@@ -4523,9 +5241,22 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
 
         }
         
+        // Restore the thread state if we are going to discard the plan execution.  There are three cases where this
+        // could happen:
+        // 1) The execution successfully completed
+        // 2) We hit a breakpoint, and ignore_breakpoints was true
+        // 3) We got some other error, and discard_on_error was true
+        bool should_unwind = (return_value == eExecutionInterrupted && unwind_on_error)
+                             || (return_value == eExecutionHitBreakpoint && ignore_breakpoints);
+        
+        if (return_value == eExecutionCompleted
+            || should_unwind)
+        {
+            thread_plan_sp->RestoreThreadState();
+        }
         
         // Now do some processing on the results of the run:
-        if (return_value == eExecutionInterrupted)
+        if (return_value == eExecutionInterrupted || return_value == eExecutionHitBreakpoint)
         {
             if (log)
             {
@@ -4590,11 +5321,11 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                                 continue;
                             }
                             
-                            ts.Printf("<0x%4.4llx ", thread->GetID());
+                            ts.Printf("<0x%4.4" PRIx64 " ", thread->GetID());
                             RegisterContext *register_context = thread->GetRegisterContext().get();
                             
                             if (register_context)
-                                ts.Printf("[ip 0x%llx] ", register_context->GetPC());
+                                ts.Printf("[ip 0x%" PRIx64 "] ", register_context->GetPC());
                             else
                                 ts.Printf("[ip unknown] ");
                             
@@ -4618,7 +5349,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                     log->Printf("Process::RunThreadPlan(): execution interrupted: %s", s.GetData());
             }
             
-            if (discard_on_error && thread_plan_sp)
+            if (should_unwind && thread_plan_sp)
             {
                 if (log)
                     log->Printf ("Process::RunThreadPlan: ExecutionInterrupted - discarding thread plans up to %p.", thread_plan_sp.get());
@@ -4636,7 +5367,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
             if (log)
                 log->PutCString("Process::RunThreadPlan(): execution set up error.");
                 
-            if (discard_on_error && thread_plan_sp)
+            if (unwind_on_error && thread_plan_sp)
             {
                 thread->DiscardThreadPlansUpToPlan (thread_plan_sp);
                 thread_plan_sp->SetPrivate (orig_plan_private);
@@ -4660,10 +5391,10 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
             {
                 if (log)
                     log->PutCString("Process::RunThreadPlan(): thread plan stopped in mid course");
-                if (discard_on_error && thread_plan_sp)
+                if (unwind_on_error && thread_plan_sp)
                 {
                     if (log)
-                        log->PutCString("Process::RunThreadPlan(): discarding thread plan 'cause discard_on_error is set.");
+                        log->PutCString("Process::RunThreadPlan(): discarding thread plan 'cause unwind_on_error is set.");
                     thread->DiscardThreadPlansUpToPlan (thread_plan_sp);
                     thread_plan_sp->SetPrivate (orig_plan_private);
                 }
@@ -4722,6 +5453,9 @@ Process::ExecutionResultAsCString (ExecutionResults result)
         case eExecutionInterrupted:
             result_name = "eExecutionInterrupted";
             break;
+        case eExecutionHitBreakpoint:
+            result_name = "eExecutionHitBreakpoint";
+            break;
         case eExecutionSetupError:
             result_name = "eExecutionSetupError";
             break;
@@ -4742,7 +5476,7 @@ Process::GetStatus (Stream &strm)
         {
             int exit_status = GetExitStatus();
             const char *exit_description = GetExitDescription();
-            strm.Printf ("Process %llu exited with status = %i (0x%8.8x) %s\n",
+            strm.Printf ("Process %" PRIu64 " exited with status = %i (0x%8.8x) %s\n",
                           GetID(),
                           exit_status,
                           exit_status,
@@ -4753,12 +5487,12 @@ Process::GetStatus (Stream &strm)
             if (state == eStateConnected)
                 strm.Printf ("Connected to remote target.\n");
             else
-                strm.Printf ("Process %llu %s\n", GetID(), StateAsCString (state));
+                strm.Printf ("Process %" PRIu64 " %s\n", GetID(), StateAsCString (state));
         }
     }
     else
     {
-        strm.Printf ("Process %llu is running.\n", GetID());
+        strm.Printf ("Process %" PRIu64 " is running.\n", GetID());
     }
 }
 
@@ -4771,6 +5505,7 @@ Process::GetThreadStatus (Stream &strm,
 {
     size_t num_thread_infos_dumped = 0;
     
+    Mutex::Locker locker (GetThreadList().GetMutex());
     const size_t num_threads = GetThreadList().GetSize();
     for (uint32_t i = 0; i < num_threads; i++)
     {
@@ -4779,7 +5514,8 @@ Process::GetThreadStatus (Stream &strm,
         {
             if (only_threads_with_stop_reason)
             {
-                if (thread->GetStopInfo().get() == NULL)
+                StopInfoSP stop_info_sp = thread->GetStopInfo();
+                if (stop_info_sp.get() == NULL || !stop_info_sp->IsValid())
                     continue;
             }
             thread->GetStatus (strm, 
@@ -4836,221 +5572,80 @@ Process::Flush ()
     m_thread_list.Flush();
 }
 
-//--------------------------------------------------------------
-// class Process::SettingsController
-//--------------------------------------------------------------
-
-Process::SettingsController::SettingsController () :
-    UserSettingsController ("process", Target::GetSettingsController())
-{
-}
-
-Process::SettingsController::~SettingsController ()
-{
-}
-
-lldb::InstanceSettingsSP
-Process::SettingsController::CreateInstanceSettings (const char *instance_name)
-{
-    lldb::InstanceSettingsSP new_settings_sp (new ProcessInstanceSettings (GetSettingsController(),
-                                                                           false, 
-                                                                           instance_name));
-    return new_settings_sp;
-}
-
-//--------------------------------------------------------------
-// class ProcessInstanceSettings
-//--------------------------------------------------------------
-
-ProcessInstanceSettings::ProcessInstanceSettings
-(
-    const UserSettingsControllerSP &owner_sp, 
-    bool live_instance, 
-    const char *name
-) :
-    InstanceSettings (owner_sp, name ? name : InstanceSettings::InvalidName().AsCString(), live_instance)
-{
-    // CopyInstanceSettings is a pure virtual function in InstanceSettings; it therefore cannot be called
-    // until the vtables for ProcessInstanceSettings are properly set up, i.e. AFTER all the initializers.
-    // For this reason it has to be called here, rather than in the initializer or in the parent constructor.
-    // This is true for CreateInstanceName() too.
-    
-    if (GetInstanceName () == InstanceSettings::InvalidName())
-    {
-        ChangeInstanceName (std::string (CreateInstanceName().AsCString()));
-        owner_sp->RegisterInstanceSettings (this);
-    }
-    
-    if (live_instance)
-    {
-        const lldb::InstanceSettingsSP &pending_settings = owner_sp->FindPendingSettings (m_instance_name);
-        CopyInstanceSettings (pending_settings,false);
-    }
-}
-
-ProcessInstanceSettings::ProcessInstanceSettings (const ProcessInstanceSettings &rhs) :
-    InstanceSettings (Process::GetSettingsController(), CreateInstanceName().AsCString()),
-    m_disable_memory_cache(rhs.m_disable_memory_cache),
-    m_extra_startup_commands (rhs.m_extra_startup_commands)
-{
-    if (m_instance_name != InstanceSettings::GetDefaultName())
-    {
-        UserSettingsControllerSP owner_sp (m_owner_wp.lock());
-        if (owner_sp)
-        {
-            CopyInstanceSettings (owner_sp->FindPendingSettings (m_instance_name), false);
-            owner_sp->RemovePendingSettings (m_instance_name);
-        }
-    }
-}
-
-ProcessInstanceSettings::~ProcessInstanceSettings ()
-{
-}
-
-ProcessInstanceSettings&
-ProcessInstanceSettings::operator= (const ProcessInstanceSettings &rhs)
-{
-    if (this != &rhs)
-    {
-        m_disable_memory_cache = rhs.m_disable_memory_cache;
-        m_extra_startup_commands = rhs.m_extra_startup_commands;
-    }
-
-    return *this;
-}
-
-
 void
-ProcessInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var_name,
-                                                         const char *index_value,
-                                                         const char *value,
-                                                         const ConstString &instance_name,
-                                                         const SettingEntry &entry,
-                                                         VarSetOperationType op,
-                                                         Error &err,
-                                                         bool pending)
+Process::DidExec ()
 {
-    if (var_name == GetDisableMemoryCacheVarName())
-    {
-        bool success;
-        bool result = Args::StringToBoolean(value, false, &success);
-        
-        if (success)
-        {
-            m_disable_memory_cache = result;
-        }
-        else
-        {
-            err.SetErrorStringWithFormat ("Bad value \"%s\" for %s, should be Boolean.", value, GetDisableMemoryCacheVarName().AsCString());
-        }
-        
-    }
-    else if (var_name == GetExtraStartupCommandVarName())
-    {
-        UserSettingsController::UpdateStringArrayVariable (op, index_value, m_extra_startup_commands, value, err);
-    }
+    Target &target = GetTarget();
+    target.CleanupProcess ();
+    ModuleList unloaded_modules (target.GetImages());
+    target.ModulesDidUnload (unloaded_modules);
+    target.GetSectionLoadList().Clear();
+    m_dynamic_checkers_ap.reset();
+    m_abi_sp.reset();
+    m_os_ap.reset();
+    m_dyld_ap.reset();
+    m_image_tokens.clear();
+    m_allocated_memory_cache.Clear();
+    m_language_runtimes.clear();
+    m_thread_list.DiscardThreadPlans();
+    m_memory_cache.Clear(true);
+    DoDidExec();
+    CompleteAttach ();
+}
+
+Process::ReservationCache::ReservationCache (Process &process) : m_process(process)
+{
+    m_mod_id = process.GetModID();
 }
 
 void
-ProcessInstanceSettings::CopyInstanceSettings (const lldb::InstanceSettingsSP &new_settings,
-                                               bool pending)
+Process::ReservationCache::Reserve (lldb::addr_t addr, size_t size)
 {
-    if (new_settings.get() == NULL)
-        return;
-    
-    ProcessInstanceSettings *new_settings_ptr = static_cast <ProcessInstanceSettings *> (new_settings.get());
-    
-    if (!new_settings_ptr)
-        return;
-    
-    *this = *new_settings_ptr;
+    CheckModID();
+    m_reserved_cache[addr] = size;
 }
 
-bool
-ProcessInstanceSettings::GetInstanceSettingsValue (const SettingEntry &entry,
-                                                   const ConstString &var_name,
-                                                   StringList &value,
-                                                   Error *err)
+void
+Process::ReservationCache::Unreserve (lldb::addr_t addr)
 {
-    if (var_name == GetDisableMemoryCacheVarName())
+    CheckModID();
+    ReservedMap::iterator iter = m_reserved_cache.find(addr);
+    
+    if (iter != m_reserved_cache.end())
     {
-        value.AppendString(m_disable_memory_cache ? "true" : "false");
-        return true;
+        size_t size = iter->second;
+        m_reserved_cache.erase(iter);
+        m_free_cache[size].push_back(addr);
     }
-    else if (var_name == GetExtraStartupCommandVarName())
+}
+
+lldb::addr_t
+Process::ReservationCache::Find (size_t size)
+{
+    CheckModID();
+    lldb::addr_t ret = LLDB_INVALID_ADDRESS;
+    FreeMap::iterator map_iter = m_free_cache.find(size);
+    if (map_iter != m_free_cache.end())
     {
-        if (m_extra_startup_commands.GetArgumentCount() > 0)
+        if (!map_iter->second.empty())
         {
-            for (int i = 0; i < m_extra_startup_commands.GetArgumentCount(); ++i)
-                value.AppendString (m_extra_startup_commands.GetArgumentAtIndex (i));
+            ret = map_iter->second.back();
+            map_iter->second.pop_back();
+            m_reserved_cache[ret] = size;
         }
-        return true;
     }
-    else
+    
+    return ret;
+}
+
+void
+Process::ReservationCache::CheckModID()
+{
+    if (m_mod_id != m_process.GetModID())
     {
-        if (err)
-            err->SetErrorStringWithFormat ("unrecognized variable name '%s'", var_name.AsCString());
-        return false;
+        // wipe all our caches, they're invalid
+        m_reserved_cache.clear();
+        m_free_cache.clear();
+        m_mod_id = m_process.GetModID();
     }
 }
-
-const ConstString
-ProcessInstanceSettings::CreateInstanceName ()
-{
-    static int instance_count = 1;
-    StreamString sstr;
-
-    sstr.Printf ("process_%d", instance_count);
-    ++instance_count;
-
-    const ConstString ret_val (sstr.GetData());
-    return ret_val;
-}
-
-const ConstString &
-ProcessInstanceSettings::GetDisableMemoryCacheVarName () const
-{
-    static ConstString disable_memory_cache_var_name ("disable-memory-cache");
-    
-    return disable_memory_cache_var_name;
-}
-
-const ConstString &
-ProcessInstanceSettings::GetExtraStartupCommandVarName () const
-{
-    static ConstString extra_startup_command_var_name ("extra-startup-command");
-    
-    return extra_startup_command_var_name;
-}
-
-//--------------------------------------------------
-// SettingsController Variable Tables
-//--------------------------------------------------
-
-SettingEntry
-Process::SettingsController::global_settings_table[] =
-{
-  //{ "var-name",    var-type  ,        "default", enum-table, init'd, hidden, "help-text"},
-    {  NULL, eSetVarTypeNone, NULL, NULL, 0, 0, NULL }
-};
-
-
-SettingEntry
-Process::SettingsController::instance_settings_table[] =
-{
-  //{ "var-name",       var-type,              "default",       enum-table, init'd, hidden, "help-text"},
-    {  "disable-memory-cache", eSetVarTypeBoolean,
-#ifdef ENABLE_MEMORY_CACHING
-        "false",
-#else
-        "true",
-#endif
-        NULL,       false,  false,  "Disable reading and caching of memory in fixed-size units." },
-    { "extra-startup-command", eSetVarTypeArray, NULL, NULL, false,  false,  "A list containing extra commands understood by the particular process plugin used." },
-    {  NULL,            eSetVarTypeNone,        NULL,           NULL,       false,  false,  NULL }
-};
-
-
-
-

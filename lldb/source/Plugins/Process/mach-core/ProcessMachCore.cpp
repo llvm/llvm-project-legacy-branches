@@ -18,8 +18,12 @@
 // Other libraries and framework includes
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/PluginManager.h"
+#include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
+#include "lldb/Core/Section.h"
 #include "lldb/Core/State.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 
@@ -28,16 +32,18 @@
 #include "ThreadMachCore.h"
 #include "StopInfoMachException.h"
 
+// Needed for the plug-in names for the dynamic loaders.
 #include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
 #include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
 
 using namespace lldb;
 using namespace lldb_private;
 
-const char *
+ConstString
 ProcessMachCore::GetPluginNameStatic()
 {
-    return "mach-o-core";
+    static ConstString g_name("mach-o-core");
+    return g_name;
 }
 
 const char *
@@ -121,14 +127,8 @@ ProcessMachCore::~ProcessMachCore()
 //----------------------------------------------------------------------
 // PluginInterface
 //----------------------------------------------------------------------
-const char *
+ConstString
 ProcessMachCore::GetPluginName()
-{
-    return "Process debugging plug-in that loads mach-o core files.";
-}
-
-const char *
-ProcessMachCore::GetShortPluginName()
 {
     return GetPluginNameStatic();
 }
@@ -159,7 +159,7 @@ ProcessMachCore::GetDynamicLoaderAddress (lldb::addr_t addr)
     }
 
     // TODO: swap header if needed...
-    //printf("0x%16.16llx: magic = 0x%8.8x, file_type= %u\n", vaddr, header.magic, header.filetype);
+    //printf("0x%16.16" PRIx64 ": magic = 0x%8.8x, file_type= %u\n", vaddr, header.magic, header.filetype);
     if (header.magic == llvm::MachO::HeaderMagic32 ||
         header.magic == llvm::MachO::HeaderMagic64)
     {
@@ -171,14 +171,14 @@ ProcessMachCore::GetDynamicLoaderAddress (lldb::addr_t addr)
         switch (header.filetype)
         {
         case llvm::MachO::HeaderFileTypeDynamicLinkEditor:
-            //printf("0x%16.16llx: file_type = MH_DYLINKER\n", vaddr);
+            //printf("0x%16.16" PRIx64 ": file_type = MH_DYLINKER\n", vaddr);
             // Address of dyld "struct mach_header" in the core file
             m_dyld_plugin_name = DynamicLoaderMacOSXDYLD::GetPluginNameStatic();
             m_dyld_addr = addr;
             return true;
 
         case llvm::MachO::HeaderFileTypeExecutable:
-            //printf("0x%16.16llx: file_type = MH_EXECUTE\n", vaddr);
+            //printf("0x%16.16" PRIx64 ": file_type = MH_EXECUTE\n", vaddr);
             // Check MH_EXECUTABLE file types to see if the dynamic link object flag
             // is NOT set. If it isn't, then we have a mach_kernel.
             if ((header.flags & llvm::MachO::HeaderFlagBitIsDynamicLinkObject) == 0)
@@ -213,6 +213,13 @@ ProcessMachCore::DoLoadCore ()
         error.SetErrorString ("invalid core object file");   
         return error;
     }
+    
+    if (core_objfile->GetNumThreadContexts() == 0)
+    {
+        error.SetErrorString ("core file doesn't contain any LC_THREAD load commands, or the LC_THREAD architecture is not supported in this lldb");
+        return error;
+    }
+
     SectionList *section_list = core_objfile->GetSectionList();
     if (section_list == NULL)
     {
@@ -227,6 +234,8 @@ ProcessMachCore::DoLoadCore ()
         return error;
     }
     
+    SetCanJIT(false);
+
     llvm::MachO::mach_header header;
     DataExtractor data (&header, 
                         sizeof(header), 
@@ -250,7 +259,7 @@ ProcessMachCore::DoLoadCore ()
                 ranges_are_sorted = false;
             vm_addr = section->GetFileAddress();
             VMRangeToFileOffset::Entry *last_entry = m_core_aranges.Back();
-//            printf ("LC_SEGMENT[%u] arange=[0x%16.16llx - 0x%16.16llx), frange=[0x%8.8x - 0x%8.8x)\n", 
+//            printf ("LC_SEGMENT[%u] arange=[0x%16.16" PRIx64 " - 0x%16.16" PRIx64 "), frange=[0x%8.8x - 0x%8.8x)\n",
 //                    i, 
 //                    range_entry.GetRangeBase(),
 //                    range_entry.GetRangeEnd(),
@@ -295,36 +304,28 @@ ProcessMachCore::DoLoadCore ()
 
     if (m_dyld_addr == LLDB_INVALID_ADDRESS)
     {
-        // Check the magic kernel address for the mach image header address in case
-        // it is there. 
-        if (arch.GetAddressByteSize() == 8)
+        // We need to locate the main executable in the memory ranges
+        // we have in the core file. We already checked the first address
+        // in each memory zone above, so we just need to check each page
+        // except the first page in each range and stop once we have found
+        // our main executable
+        const size_t num_core_aranges = m_core_aranges.GetSize();
+        for (size_t i=0; i<num_core_aranges && m_dyld_addr == LLDB_INVALID_ADDRESS; ++i)
         {
-            Error header_addr_error;
-            addr_t header_addr = ReadPointerFromMemory (0xffffff8000002010ull, header_addr_error);
-            if (header_addr != LLDB_INVALID_ADDRESS)
-                GetDynamicLoaderAddress (header_addr);
+            const VMRangeToFileOffset::Entry *entry = m_core_aranges.GetEntryAtIndex(i);
+            lldb::addr_t section_vm_addr_start = entry->GetRangeBase();
+            lldb::addr_t section_vm_addr_end = entry->GetRangeEnd();
+            for (lldb::addr_t section_vm_addr = section_vm_addr_start + 0x1000;
+                 section_vm_addr < section_vm_addr_end;
+                 section_vm_addr += 0x1000)
+            {
+                if (GetDynamicLoaderAddress (section_vm_addr))
+                {
+                    break;
+                }
+            }
         }
-
-//        if (m_dyld_addr == LLDB_INVALID_ADDRESS)
-//        {
-//            // We haven't found our dyld or mach_kernel yet, 
-//            // so we need to exhaustively look
-//            const size_t num_core_aranges = m_core_aranges.GetSize();
-//            bool done = false;
-//            for (size_t i=0; !done && i<num_core_aranges; ++i)
-//            {
-//                const addr_t start_vaddr = m_core_aranges.GetEntryRef(i).GetRangeBase();
-//                const addr_t end_vaddr = m_core_aranges.GetEntryRef(i).GetRangeEnd();
-//                //            printf("core_arange[%u] [0x%16.16llx - 0x%16.16llx)\n", (uint32_t)i, start_vaddr, end_vaddr);
-//                
-//                for (addr_t vaddr = start_vaddr; !done && start_vaddr < end_vaddr; vaddr += 0x1000)
-//                {
-//                    done = GetDynamicLoaderAddress (vaddr);
-//                }
-//            }
-//        }
     }
-
     return error;
 }
 
@@ -332,7 +333,7 @@ lldb_private::DynamicLoader *
 ProcessMachCore::GetDynamicLoader ()
 {
     if (m_dyld_ap.get() == NULL)
-        m_dyld_ap.reset (DynamicLoader::FindPlugin(this, m_dyld_plugin_name.empty() ? NULL : m_dyld_plugin_name.c_str()));
+        m_dyld_ap.reset (DynamicLoader::FindPlugin(this, m_dyld_plugin_name.IsEmpty() ? NULL : m_dyld_plugin_name.GetCString()));
     return m_dyld_ap.get();
 }
 
@@ -350,7 +351,7 @@ ProcessMachCore::UpdateThreadList (ThreadList &old_thread_list, ThreadList &new_
             const uint32_t num_threads = core_objfile->GetNumThreadContexts ();
             for (lldb::tid_t tid = 0; tid < num_threads; ++tid)
             {
-                ThreadSP thread_sp(new ThreadMachCore (shared_from_this(), tid));
+                ThreadSP thread_sp(new ThreadMachCore (*this, tid));
                 new_thread_list.AddThread (thread_sp);
             }
         }
@@ -389,6 +390,12 @@ ProcessMachCore::IsAlive ()
     return true;
 }
 
+bool
+ProcessMachCore::WarnBeforeDetach () const
+{
+    return false;
+}
+
 //------------------------------------------------------------------
 // Process Memory
 //------------------------------------------------------------------
@@ -419,7 +426,7 @@ ProcessMachCore::DoReadMemory (addr_t addr, void *buf, size_t size, Error &error
         }
         else
         {
-            error.SetErrorStringWithFormat ("core file does not contain 0x%llx", addr);
+            error.SetErrorStringWithFormat ("core file does not contain 0x%" PRIx64, addr);
         }
     }
     return 0;
@@ -452,3 +459,8 @@ ProcessMachCore::GetImageInfoAddress()
 }
 
 
+lldb_private::ObjectFile *
+ProcessMachCore::GetCoreObjectFile ()
+{
+    return m_core_module_sp->GetObjectFile();
+}

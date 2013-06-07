@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class AliasTestCase(TestBase):
 
@@ -80,15 +81,16 @@ class AliasTestCase(TestBase):
         self.runCmd ("alias bpa bp command add")
         self.runCmd ("alias bpi bp list")
 
-        self.expect ("bp set -n foo",
-                     startstr = "Breakpoint created: 1: name = 'foo', locations = 1")
+        break_results = lldbutil.run_break_set_command (self, "bp set -n foo")
+        lldbutil.check_breakpoint_result (self, break_results, num_locations=1, symbol_name='foo', symbol_match_exact=False)
 
-        self.expect ("bp set -n sum",
-                     startstr = "Breakpoint created: 2: name = 'sum', locations = 1")
+        break_results = lldbutil.run_break_set_command (self, "bp set -n sum")
+        lldbutil.check_breakpoint_result (self, break_results, num_locations=1, symbol_name='sum', symbol_match_exact=False)
 
         self.runCmd ("alias bfl bp set -f %1 -l %2")
-        self.expect ("bfl main.cpp 32",
-                     startstr = "Breakpoint created: 3: file ='main.cpp', line = 32, locations = 1")
+
+        break_results = lldbutil.run_break_set_command (self, "bfl main.cpp 32")
+        lldbutil.check_breakpoint_result (self, break_results, num_locations=1, file_name='main.cpp', line_number=32)
 
         self.expect ("bpi",
                      startstr = "Current breakpoints:",
@@ -134,22 +136,22 @@ class AliasTestCase(TestBase):
                                  "= 0x00000044" ])
 
         self.runCmd ("alias exprf expr -f %1")
-        self.runCmd ("alias exprf2 expr -f %1 --")
+        self.runCmd ("alias exprf2 expr --raw -f %1 --")
         self.expect ("exprf x -- 1234",
                      substrs = [ "(int) $",
                                  "= 0x000004d2" ])
 
         self.expect ('exprf2 c "Hi there!"',
-                     substrs = [ "(const char) [0] = 'H'",
-                                 "(const char) [1] = 'i'",
-                                 "(const char) [2] = ' '",
-                                 "(const char) [3] = 't'",
-                                 "(const char) [4] = 'h'",
-                                 "(const char) [5] = 'e'",
-                                 "(const char) [6] = 'r'",
-                                 "(const char) [7] = 'e'",
-                                 "(const char) [8] = '!'",
-                                 "(const char) [9] = '\\0'" ])
+                     substrs = [ "[0] = 'H'",
+                                 "[1] = 'i'",
+                                 "[2] = ' '",
+                                 "[3] = 't'",
+                                 "[4] = 'h'",
+                                 "[5] = 'e'",
+                                 "[6] = 'r'",
+                                 "[7] = 'e'",
+                                 "[8] = '!'",
+                                 "[9] = '\\0'" ])
         
 
         self.expect ("exprf x 1234",

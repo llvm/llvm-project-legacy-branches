@@ -377,14 +377,14 @@ GetFreeBSDProcessArgs (const ProcessInstanceInfoMatch *match_info_ptr,
 {
     if (process_info.ProcessIDIsValid())
     {
-        int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_ARGS, process_info.GetProcessID() };
+        int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_ARGS, (int)process_info.GetProcessID() };
 
         char arg_data[8192];
         size_t arg_data_size = sizeof(arg_data);
         if (::sysctl (mib, 4, arg_data, &arg_data_size , NULL, 0) == 0)
         {
             DataExtractor data (arg_data, arg_data_size, lldb::endian::InlHostByteOrder(), sizeof(void *));
-            uint32_t offset = 0;
+            lldb::offset_t offset = 0;
             const char *cstr;
 
             cstr = data.GetCStr (&offset);
@@ -443,7 +443,7 @@ GetFreeBSDProcessUserAndGroup(ProcessInstanceInfo &process_info)
     if (process_info.ProcessIDIsValid()) 
     {
         int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID,
-            process_info.GetProcessID() };
+            (int)process_info.GetProcessID() };
         proc_kinfo_size = sizeof(struct kinfo_proc);
 
         if (::sysctl (mib, 4, &proc_kinfo, &proc_kinfo_size, NULL, 0) == 0)
@@ -573,14 +573,14 @@ Host::GetAuxvData(lldb_private::Process *process)
    struct ps_strings ps_strings;
    struct ptrace_io_desc pid;
    DataBufferSP buf_sp;
-   std::auto_ptr<DataBufferHeap> buf_ap(new DataBufferHeap(1024, 0));
+   std::unique_ptr<DataBufferHeap> buf_ap(new DataBufferHeap(1024, 0));
 
    if (::sysctl(mib, 2, &ps_strings_addr, &ps_strings_size, NULL, 0) == 0) {
            pid.piod_op = PIOD_READ_D;
            pid.piod_addr = &ps_strings;
            pid.piod_offs = ps_strings_addr;
            pid.piod_len = sizeof(ps_strings);
-           if (::ptrace(PT_IO, process->GetID(), (caddr_t)&pid, NULL)) {
+           if (::ptrace(PT_IO, process->GetID(), (caddr_t)&pid, 0)) {
                    perror("failed to fetch ps_strings");
                    buf_ap.release();
                    goto done;
@@ -591,7 +591,7 @@ Host::GetAuxvData(lldb_private::Process *process)
            pid.piod_addr = aux_info;
            pid.piod_offs = auxv_addr;
            pid.piod_len = sizeof(aux_info);
-           if (::ptrace(PT_IO, process->GetID(), (caddr_t)&pid, NULL)) {
+           if (::ptrace(PT_IO, process->GetID(), (caddr_t)&pid, 0)) {
                    perror("failed to fetch aux_info");
                    buf_ap.release();
                    goto done;

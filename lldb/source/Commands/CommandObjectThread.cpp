@@ -7,21 +7,25 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectThread.h"
 
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Interpreter/Options.h"
+#include "lldb/lldb-private.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/SourceManager.h"
-
 #include "lldb/Host/Host.h"
-
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
-
+#include "lldb/Interpreter/Options.h"
+#include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/Function.h"
+#include "lldb/Symbol/LineTable.h"
+#include "lldb/Symbol/LineEntry.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/Target.h"
@@ -31,8 +35,7 @@
 #include "lldb/Target/ThreadPlanStepOut.h"
 #include "lldb/Target/ThreadPlanStepRange.h"
 #include "lldb/Target/ThreadPlanStepInRange.h"
-#include "lldb/Symbol/LineTable.h"
-#include "lldb/Symbol/LineEntry.h"
+
 
 using namespace lldb;
 using namespace lldb_private;
@@ -66,7 +69,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -122,10 +125,14 @@ public:
 
     CommandObjectThreadBacktrace (CommandInterpreter &interpreter) :
         CommandObjectParsed (interpreter,
-                           "thread backtrace",
-                           "Show the stack for one or more threads.  If no threads are specified, show the currently selected thread.  Use the thread-index \"all\" to see all threads.",
-                           NULL,
-                           eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
+                             "thread backtrace",
+                             "Show the stack for one or more threads.  If no threads are specified, show the currently selected thread.  Use the thread-index \"all\" to see all threads.",
+                             NULL,
+                             eFlagRequiresProcess       |
+                             eFlagRequiresThread        |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   ),
         m_options(interpreter)
     {
         CommandArgumentEntry arg;
@@ -163,28 +170,20 @@ protected:
         const uint32_t num_frames_with_source = 0;
         if (command.GetArgumentCount() == 0)
         {
-            ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-            Thread *thread = exe_ctx.GetThreadPtr();
-            if (thread)
+            Thread *thread = m_exe_ctx.GetThreadPtr();
+            // Thread::GetStatus() returns the number of frames shown.
+            if (thread->GetStatus (strm,
+                                   m_options.m_start,
+                                   m_options.m_count,
+                                   num_frames_with_source))
             {
-                // Thread::GetStatus() returns the number of frames shown.
-                if (thread->GetStatus (strm,
-                                       m_options.m_start,
-                                       m_options.m_count,
-                                       num_frames_with_source))
-                {
-                    result.SetStatus (eReturnStatusSuccessFinishResult);
-                }
-            }
-            else
-            {
-                result.AppendError ("invalid thread");
-                result.SetStatus (eReturnStatusFailed);
+                result.SetStatus (eReturnStatusSuccessFinishResult);
             }
         }
         else if (command.GetArgumentCount() == 1 && ::strcmp (command.GetArgumentAtIndex(0), "all") == 0)
         {
-            Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+            Process *process = m_exe_ctx.GetProcessPtr();
+            Mutex::Locker locker (process->GetThreadList().GetMutex());
             uint32_t num_threads = process->GetThreadList().GetSize();
             for (uint32_t i = 0; i < num_threads; i++)
             {
@@ -206,11 +205,12 @@ protected:
         }
         else
         {
-            uint32_t num_args = command.GetArgumentCount();
-            Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+            const size_t num_args = command.GetArgumentCount();
+            Process *process = m_exe_ctx.GetProcessPtr();
+            Mutex::Locker locker (process->GetThreadList().GetMutex());
             std::vector<ThreadSP> thread_sps;
 
-            for (uint32_t i = 0; i < num_args; i++)
+            for (size_t i = 0; i < num_args; i++)
             {
                 bool success;
                 
@@ -293,7 +293,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -320,6 +320,13 @@ public:
                 }
                 break;
 
+            case 't':
+                {
+                    m_step_in_target.clear();
+                    m_step_in_target.assign(option_arg);
+
+                }
+                break;
             default:
                 error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
                 break;
@@ -334,6 +341,7 @@ public:
             m_avoid_no_debug = true;
             m_run_mode = eOnlyDuringStepping;
             m_avoid_regexp.clear();
+            m_step_in_target.clear();
         }
 
         const OptionDefinition*
@@ -350,16 +358,21 @@ public:
         bool m_avoid_no_debug;
         RunMode m_run_mode;
         std::string m_avoid_regexp;
+        std::string m_step_in_target;
     };
 
     CommandObjectThreadStepWithTypeAndScope (CommandInterpreter &interpreter,
                                              const char *name,
                                              const char *help,
                                              const char *syntax,
-                                             uint32_t flags,
                                              StepType step_type,
                                              StepScope step_scope) :
-        CommandObjectParsed (interpreter, name, help, syntax, flags),
+        CommandObjectParsed (interpreter, name, help, syntax,
+                             eFlagRequiresProcess       |
+                             eFlagRequiresThread        |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   ),
         m_step_type (step_type),
         m_step_scope (step_scope),
         m_options (interpreter)
@@ -394,163 +407,160 @@ protected:
     virtual bool
     DoExecute (Args& command, CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+        Process *process = m_exe_ctx.GetProcessPtr();
         bool synchronous_execution = m_interpreter.GetSynchronous();
 
-        if (process == NULL)
+        const uint32_t num_threads = process->GetThreadList().GetSize();
+        Thread *thread = NULL;
+
+        if (command.GetArgumentCount() == 0)
         {
-            result.AppendError ("need a valid process to step");
-            result.SetStatus (eReturnStatusFailed);
-
-        }
-        else
-        {
-            const uint32_t num_threads = process->GetThreadList().GetSize();
-            Thread *thread = NULL;
-
-            if (command.GetArgumentCount() == 0)
+            thread = process->GetThreadList().GetSelectedThread().get();
+            if (thread == NULL)
             {
-                thread = process->GetThreadList().GetSelectedThread().get();
-                if (thread == NULL)
-                {
-                    result.AppendError ("no selected thread in process");
-                    result.SetStatus (eReturnStatusFailed);
-                    return false;
-                }
-            }
-            else
-            {
-                const char *thread_idx_cstr = command.GetArgumentAtIndex(0);
-                uint32_t step_thread_idx = Args::StringToUInt32 (thread_idx_cstr, LLDB_INVALID_INDEX32);
-                if (step_thread_idx == LLDB_INVALID_INDEX32)
-                {
-                    result.AppendErrorWithFormat ("invalid thread index '%s'.\n", thread_idx_cstr);
-                    result.SetStatus (eReturnStatusFailed);
-                    return false;
-                }
-                thread = process->GetThreadList().FindThreadByIndexID(step_thread_idx).get();
-                if (thread == NULL)
-                {
-                    result.AppendErrorWithFormat ("Thread index %u is out of range (valid values are 0 - %u).\n", 
-                                                  step_thread_idx, num_threads);
-                    result.SetStatus (eReturnStatusFailed);
-                    return false;
-                }
-            }
-
-            const bool abort_other_plans = false;
-            const lldb::RunMode stop_other_threads = m_options.m_run_mode;
-            
-            // This is a bit unfortunate, but not all the commands in this command object support
-            // only while stepping, so I use the bool for them.
-            bool bool_stop_other_threads;
-            if (m_options.m_run_mode == eAllThreads)
-                bool_stop_other_threads = false;
-            else
-                bool_stop_other_threads = true;
-
-            ThreadPlan *new_plan = NULL;
-            
-            if (m_step_type == eStepTypeInto)
-            {
-                StackFrame *frame = thread->GetStackFrameAtIndex(0).get();
-
-                if (frame->HasDebugInformation ())
-                {
-                    new_plan = thread->QueueThreadPlanForStepRange (abort_other_plans, m_step_type, 
-                                                                    frame->GetSymbolContext(eSymbolContextEverything).line_entry.range, 
-                                                                    frame->GetSymbolContext(eSymbolContextEverything), 
-                                                                    stop_other_threads,
-                                                                    m_options.m_avoid_no_debug);
-                    if (new_plan && !m_options.m_avoid_regexp.empty())
-                    {
-                        ThreadPlanStepInRange *step_in_range_plan = static_cast<ThreadPlanStepInRange *> (new_plan);
-                        step_in_range_plan->SetAvoidRegexp(m_options.m_avoid_regexp.c_str());
-                    }
-                }
-                else
-                    new_plan = thread->QueueThreadPlanForStepSingleInstruction (false, abort_other_plans, bool_stop_other_threads);
-                    
-            }
-            else if (m_step_type == eStepTypeOver)
-            {
-                StackFrame *frame = thread->GetStackFrameAtIndex(0).get();
-
-                if (frame->HasDebugInformation())
-                    new_plan = thread->QueueThreadPlanForStepRange (abort_other_plans, 
-                                                                    m_step_type, 
-                                                                    frame->GetSymbolContext(eSymbolContextEverything).line_entry.range, 
-                                                                    frame->GetSymbolContext(eSymbolContextEverything), 
-                                                                    stop_other_threads,
-                                                                    false);
-                else
-                    new_plan = thread->QueueThreadPlanForStepSingleInstruction (true, 
-                                                                                abort_other_plans, 
-                                                                                bool_stop_other_threads);
-
-            }
-            else if (m_step_type == eStepTypeTrace)
-            {
-                new_plan = thread->QueueThreadPlanForStepSingleInstruction (false, abort_other_plans, bool_stop_other_threads);
-            }
-            else if (m_step_type == eStepTypeTraceOver)
-            {
-                new_plan = thread->QueueThreadPlanForStepSingleInstruction (true, abort_other_plans, bool_stop_other_threads);
-            }
-            else if (m_step_type == eStepTypeOut)
-            {
-                new_plan = thread->QueueThreadPlanForStepOut (abort_other_plans, 
-                                                              NULL, 
-                                                              false, 
-                                                              bool_stop_other_threads, 
-                                                              eVoteYes, 
-                                                              eVoteNoOpinion, 
-                                                              thread->GetSelectedFrameIndex());
-            }
-            else
-            {
-                result.AppendError ("step type is not supported");
+                result.AppendError ("no selected thread in process");
                 result.SetStatus (eReturnStatusFailed);
                 return false;
             }
-            
-            // If we got a new plan, then set it to be a master plan (User level Plans should be master plans
-            // so that they can be interruptible).  Then resume the process.
-            
-            if (new_plan != NULL)
+        }
+        else
+        {
+            const char *thread_idx_cstr = command.GetArgumentAtIndex(0);
+            uint32_t step_thread_idx = Args::StringToUInt32 (thread_idx_cstr, LLDB_INVALID_INDEX32);
+            if (step_thread_idx == LLDB_INVALID_INDEX32)
             {
-                new_plan->SetIsMasterPlan (true);
-                new_plan->SetOkayToDiscard (false);
+                result.AppendErrorWithFormat ("invalid thread index '%s'.\n", thread_idx_cstr);
+                result.SetStatus (eReturnStatusFailed);
+                return false;
+            }
+            thread = process->GetThreadList().FindThreadByIndexID(step_thread_idx).get();
+            if (thread == NULL)
+            {
+                result.AppendErrorWithFormat ("Thread index %u is out of range (valid values are 0 - %u).\n", 
+                                              step_thread_idx, num_threads);
+                result.SetStatus (eReturnStatusFailed);
+                return false;
+            }
+        }
 
-                process->GetThreadList().SetSelectedThreadByID (thread->GetID());
-                process->Resume ();
-            
+        const bool abort_other_plans = false;
+        const lldb::RunMode stop_other_threads = m_options.m_run_mode;
+        
+        // This is a bit unfortunate, but not all the commands in this command object support
+        // only while stepping, so I use the bool for them.
+        bool bool_stop_other_threads;
+        if (m_options.m_run_mode == eAllThreads)
+            bool_stop_other_threads = false;
+        else if (m_options.m_run_mode == eOnlyDuringStepping)
+        {
+            if (m_step_type == eStepTypeOut)
+                bool_stop_other_threads = false;
+            else
+                bool_stop_other_threads = true;
+        }
+        else
+            bool_stop_other_threads = true;
 
-                if (synchronous_execution)
+        ThreadPlan *new_plan = NULL;
+        
+        if (m_step_type == eStepTypeInto)
+        {
+            StackFrame *frame = thread->GetStackFrameAtIndex(0).get();
+
+            if (frame->HasDebugInformation ())
+            {
+                new_plan = thread->QueueThreadPlanForStepInRange (abort_other_plans,
+                                                                frame->GetSymbolContext(eSymbolContextEverything).line_entry.range, 
+                                                                frame->GetSymbolContext(eSymbolContextEverything),
+                                                                m_options.m_step_in_target.c_str(),
+                                                                stop_other_threads,
+                                                                m_options.m_avoid_no_debug);
+                if (new_plan && !m_options.m_avoid_regexp.empty())
                 {
-                    StateType state = process->WaitForProcessToStop (NULL);
-                    
-                    //EventSP event_sp;
-                    //StateType state = process->WaitForStateChangedEvents (NULL, event_sp);
-                    //while (! StateIsStoppedState (state))
-                    //  {
-                    //    state = process->WaitForStateChangedEvents (NULL, event_sp);
-                    //  }
-                    process->GetThreadList().SetSelectedThreadByID (thread->GetID());
-                    result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
-                    result.SetStatus (eReturnStatusSuccessFinishNoResult);
-                }
-                else
-                {
-                    result.SetStatus (eReturnStatusSuccessContinuingNoResult);
+                    ThreadPlanStepInRange *step_in_range_plan = static_cast<ThreadPlanStepInRange *> (new_plan);
+                    step_in_range_plan->SetAvoidRegexp(m_options.m_avoid_regexp.c_str());
                 }
             }
             else
+                new_plan = thread->QueueThreadPlanForStepSingleInstruction (false, abort_other_plans, bool_stop_other_threads);
+                
+        }
+        else if (m_step_type == eStepTypeOver)
+        {
+            StackFrame *frame = thread->GetStackFrameAtIndex(0).get();
+
+            if (frame->HasDebugInformation())
+                new_plan = thread->QueueThreadPlanForStepOverRange (abort_other_plans,
+                                                                    frame->GetSymbolContext(eSymbolContextEverything).line_entry.range, 
+                                                                    frame->GetSymbolContext(eSymbolContextEverything), 
+                                                                    stop_other_threads);
+            else
+                new_plan = thread->QueueThreadPlanForStepSingleInstruction (true, 
+                                                                            abort_other_plans, 
+                                                                            bool_stop_other_threads);
+
+        }
+        else if (m_step_type == eStepTypeTrace)
+        {
+            new_plan = thread->QueueThreadPlanForStepSingleInstruction (false, abort_other_plans, bool_stop_other_threads);
+        }
+        else if (m_step_type == eStepTypeTraceOver)
+        {
+            new_plan = thread->QueueThreadPlanForStepSingleInstruction (true, abort_other_plans, bool_stop_other_threads);
+        }
+        else if (m_step_type == eStepTypeOut)
+        {
+            new_plan = thread->QueueThreadPlanForStepOut (abort_other_plans, 
+                                                          NULL, 
+                                                          false, 
+                                                          bool_stop_other_threads, 
+                                                          eVoteYes, 
+                                                          eVoteNoOpinion, 
+                                                          thread->GetSelectedFrameIndex());
+        }
+        else
+        {
+            result.AppendError ("step type is not supported");
+            result.SetStatus (eReturnStatusFailed);
+            return false;
+        }
+        
+        // If we got a new plan, then set it to be a master plan (User level Plans should be master plans
+        // so that they can be interruptible).  Then resume the process.
+        
+        if (new_plan != NULL)
+        {
+            new_plan->SetIsMasterPlan (true);
+            new_plan->SetOkayToDiscard (false);
+
+            process->GetThreadList().SetSelectedThreadByID (thread->GetID());
+            process->Resume ();
+        
+
+            if (synchronous_execution)
             {
-                result.AppendError ("Couldn't find thread plan to implement step type.");
-                result.SetStatus (eReturnStatusFailed);
+                StateType state = process->WaitForProcessToStop (NULL);
+                
+                //EventSP event_sp;
+                //StateType state = process->WaitForStateChangedEvents (NULL, event_sp);
+                //while (! StateIsStoppedState (state))
+                //  {
+                //    state = process->WaitForStateChangedEvents (NULL, event_sp);
+                //  }
+                process->GetThreadList().SetSelectedThreadByID (thread->GetID());
+                result.SetDidChangeProcessState (true);
+                result.AppendMessageWithFormat ("Process %" PRIu64 " %s\n", process->GetID(), StateAsCString (state));
+                result.SetStatus (eReturnStatusSuccessFinishNoResult);
             }
+            else
+            {
+                result.SetStatus (eReturnStatusSuccessContinuingNoResult);
+            }
+        }
+        else
+        {
+            result.AppendError ("Couldn't find thread plan to implement step type.");
+            result.SetStatus (eReturnStatusFailed);
         }
         return result.Succeeded();
     }
@@ -583,7 +593,8 @@ CommandObjectThreadStepWithTypeAndScope::CommandOptions::g_option_table[] =
 {
 { LLDB_OPT_SET_1, false, "avoid-no-debug",  'a', required_argument, NULL,               0, eArgTypeBoolean,     "A boolean value that sets whether step-in will step over functions with no debug information."},
 { LLDB_OPT_SET_1, false, "run-mode",        'm', required_argument, g_tri_running_mode, 0, eArgTypeRunMode, "Determine how to run other threads while stepping the current thread."},
-{ LLDB_OPT_SET_1, false, "step-over-regexp",'r', required_argument, NULL,               0, eArgTypeRegularExpression,   "A regular expression that defines function names to step over."},
+{ LLDB_OPT_SET_1, false, "step-over-regexp",'r', required_argument, NULL,               0, eArgTypeRegularExpression,   "A regular expression that defines function names to not to stop at when stepping in."},
+{ LLDB_OPT_SET_1, false, "step-in-target",  't', required_argument, NULL,               0, eArgTypeFunctionName,   "The name of the directly called function step in should stop at when stepping into."},
 { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
@@ -601,7 +612,10 @@ public:
                              "thread continue",
                              "Continue execution of one or more threads in an active process.",
                              NULL,
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+                             eFlagRequiresThread        |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused)
     {
         CommandArgumentEntry arg;
         CommandArgumentData thread_idx_arg;
@@ -635,7 +649,7 @@ public:
             return false;
         }
 
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+        Process *process = m_exe_ctx.GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("no process exists. Cannot continue");
@@ -713,7 +727,7 @@ public:
                             thread->SetResumeState (eStateSuspended);
                         }
                     }
-                    result.AppendMessageWithFormat ("in process %llu\n", process->GetID());
+                    result.AppendMessageWithFormat ("in process %" PRIu64 "\n", process->GetID());
                 }
             }
             else
@@ -731,7 +745,7 @@ public:
                     Thread *thread = process->GetThreadList().GetThreadAtIndex(idx).get();
                     if (thread == current_thread)
                     {
-                        result.AppendMessageWithFormat ("Resuming thread 0x%4.4llx in process %llu\n", thread->GetID(), process->GetID());
+                        result.AppendMessageWithFormat ("Resuming thread 0x%4.4" PRIx64 " in process %" PRIu64 "\n", thread->GetID(), process->GetID());
                         thread->SetResumeState (eStateRunning);
                     }
                     else
@@ -744,13 +758,13 @@ public:
             Error error (process->Resume());
             if (error.Success())
             {
-                result.AppendMessageWithFormat ("Process %llu resuming\n", process->GetID());
+                result.AppendMessageWithFormat ("Process %" PRIu64 " resuming\n", process->GetID());
                 if (synchronous_execution)
                 {
                     state = process->WaitForProcessToStop (NULL);
                     
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                    result.AppendMessageWithFormat ("Process %" PRIu64 " %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else
@@ -808,7 +822,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -881,7 +895,10 @@ public:
                              "thread until",
                              "Run the current or specified thread until it reaches a given line number or leaves the current function.",
                              NULL,
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
+                             eFlagRequiresThread        |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   ),
         m_options (interpreter)
     {
         CommandArgumentEntry arg;
@@ -925,7 +942,7 @@ protected:
             return false;
         }
 
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+        Process *process = m_exe_ctx.GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("need a valid process to step");
@@ -1051,7 +1068,7 @@ protected:
                                                                 &address_list.front(), 
                                                                 address_list.size(), 
                                                                 m_options.m_stop_others, 
-                                                                thread->GetSelectedFrameIndex ());
+                                                                m_options.m_frame_idx);
                 // User level plans should be master plans so they can be interrupted (e.g. by hitting a breakpoint)
                 // and other plans executed by the user (stepping around the breakpoint) and then a "continue"
                 // will resume the original plan.
@@ -1072,13 +1089,13 @@ protected:
             Error error (process->Resume ());
             if (error.Success())
             {
-                result.AppendMessageWithFormat ("Process %llu resuming\n", process->GetID());
+                result.AppendMessageWithFormat ("Process %" PRIu64 " resuming\n", process->GetID());
                 if (synchronous_execution)
                 {
                     StateType state = process->WaitForProcessToStop (NULL);
 
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                    result.AppendMessageWithFormat ("Process %" PRIu64 " %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else
@@ -1123,7 +1140,10 @@ public:
                              "thread select",
                              "Select a thread as the currently active thread.",
                              NULL,
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+                             eFlagRequiresProcess       |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   )
     {
         CommandArgumentEntry arg;
         CommandArgumentData thread_idx_arg;
@@ -1149,7 +1169,7 @@ protected:
     virtual bool
     DoExecute (Args& command, CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+        Process *process = m_exe_ctx.GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("no process");
@@ -1173,17 +1193,9 @@ protected:
             return false;
         }
 
-        process->GetThreadList().SetSelectedThreadByID(new_thread->GetID());
+        process->GetThreadList().SetSelectedThreadByID(new_thread->GetID(), true);
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
         
-        const uint32_t start_frame = 0;
-        const uint32_t num_frames = 1;
-        const uint32_t num_frames_with_source = 1;
-        new_thread->GetStatus (result.GetOutputStream(), 
-                               start_frame,
-                               num_frames,
-                               num_frames_with_source);
-
         return result.Succeeded();
     }
 
@@ -1204,7 +1216,10 @@ public:
                              "thread list",
                              "Show a summary of all current threads in a process.",
                              "thread list",
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+                             eFlagRequiresProcess       |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   )
     {
     }
 
@@ -1218,28 +1233,233 @@ protected:
     {
         Stream &strm = result.GetOutputStream();
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        Process *process = exe_ctx.GetProcessPtr();
-        if (process)
-        {
-            const bool only_threads_with_stop_reason = false;
-            const uint32_t start_frame = 0;
-            const uint32_t num_frames = 0;
-            const uint32_t num_frames_with_source = 0;
-            process->GetStatus(strm);
-            process->GetThreadStatus (strm, 
-                                      only_threads_with_stop_reason, 
-                                      start_frame,
-                                      num_frames,
-                                      num_frames_with_source);            
-        }
-        else
-        {
-            result.AppendError ("no current location or status available");
-            result.SetStatus (eReturnStatusFailed);
-        }
+        Process *process = m_exe_ctx.GetProcessPtr();
+        const bool only_threads_with_stop_reason = false;
+        const uint32_t start_frame = 0;
+        const uint32_t num_frames = 0;
+        const uint32_t num_frames_with_source = 0;
+        process->GetStatus(strm);
+        process->GetThreadStatus (strm, 
+                                  only_threads_with_stop_reason, 
+                                  start_frame,
+                                  num_frames,
+                                  num_frames_with_source);            
         return result.Succeeded();
     }
+};
+
+//-------------------------------------------------------------------------
+// CommandObjectThreadReturn
+//-------------------------------------------------------------------------
+
+class CommandObjectThreadReturn : public CommandObjectRaw
+{
+public:
+    class CommandOptions : public Options
+    {
+    public:
+
+        CommandOptions (CommandInterpreter &interpreter) :
+            Options (interpreter),
+            m_from_expression (false)
+        {
+            // Keep default values of all options in one place: OptionParsingStarting ()
+            OptionParsingStarting ();
+        }
+
+        virtual
+        ~CommandOptions ()
+        {
+        }
+
+        virtual Error
+        SetOptionValue (uint32_t option_idx, const char *option_arg)
+        {
+            Error error;
+            const int short_option = m_getopt_table[option_idx].val;
+
+            switch (short_option)
+            {
+                case 'x':
+                {
+                    bool success;
+                    bool tmp_value = Args::StringToBoolean (option_arg, false, &success);
+                    if (success)
+                        m_from_expression = tmp_value;
+                    else
+                    {
+                        error.SetErrorStringWithFormat ("invalid boolean value '%s' for 'x' option", option_arg);
+                    }
+                }
+                break;
+                default:
+                    error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
+                    break;
+
+            }
+            return error;
+        }
+
+        void
+        OptionParsingStarting ()
+        {
+            m_from_expression = false;
+        }
+
+        const OptionDefinition*
+        GetDefinitions ()
+        {
+            return g_option_table;
+        }
+
+        bool m_from_expression;
+
+        // Options table: Required for subclasses of Options.
+
+        static OptionDefinition g_option_table[];
+
+        // Instance variables to hold the values for command options.
+    };
+
+    virtual
+    Options *
+    GetOptions ()
+    {
+        return &m_options;
+    }
+
+    CommandObjectThreadReturn (CommandInterpreter &interpreter) :
+        CommandObjectRaw (interpreter,
+                          "thread return",
+                          "Return from the currently selected frame, short-circuiting execution of the frames below it, with an optional return value,"
+                          " or with the -x option from the innermost function evaluation.",
+                          "thread return",
+                          eFlagRequiresFrame         |
+                          eFlagTryTargetAPILock      |
+                          eFlagProcessMustBeLaunched |
+                          eFlagProcessMustBePaused   ),
+        m_options (interpreter)
+    {
+        CommandArgumentEntry arg;
+        CommandArgumentData expression_arg;
+
+        // Define the first (and only) variant of this arg.
+        expression_arg.arg_type = eArgTypeExpression;
+        expression_arg.arg_repetition = eArgRepeatOptional;
+
+        // There is only one variant this argument could be; put it into the argument entry.
+        arg.push_back (expression_arg);
+
+        // Push the data for the first argument into the m_arguments vector.
+        m_arguments.push_back (arg);
+        
+        
+    }
+    
+    ~CommandObjectThreadReturn()
+    {
+    }
+    
+protected:
+
+    bool DoExecute
+    (
+        const char *command,
+        CommandReturnObject &result
+    )
+    {
+        // I am going to handle this by hand, because I don't want you to have to say:
+        // "thread return -- -5".
+        if (command[0] == '-' && command[1] == 'x')
+        {
+            if (command && command[2] != '\0')
+                result.AppendWarning("Return values ignored when returning from user called expressions");
+            
+            Thread *thread = m_exe_ctx.GetThreadPtr();
+            Error error;
+            error = thread->UnwindInnermostExpression();
+            if (!error.Success())
+            {
+                result.AppendErrorWithFormat ("Unwinding expression failed - %s.", error.AsCString());
+                result.SetStatus (eReturnStatusFailed);
+            }
+            else
+            {
+                bool success = thread->SetSelectedFrameByIndexNoisily (0, result.GetOutputStream());
+                if (success)
+                {
+                    m_exe_ctx.SetFrameSP(thread->GetSelectedFrame ());
+                    result.SetStatus (eReturnStatusSuccessFinishResult);
+                }
+                else
+                {
+                    result.AppendErrorWithFormat ("Could not select 0th frame after unwinding expression.");
+                    result.SetStatus (eReturnStatusFailed);
+                }
+            }
+            return result.Succeeded();
+        }
+        
+        ValueObjectSP return_valobj_sp;
+        
+        StackFrameSP frame_sp = m_exe_ctx.GetFrameSP();
+        uint32_t frame_idx = frame_sp->GetFrameIndex();
+        
+        if (frame_sp->IsInlined())
+        {
+            result.AppendError("Don't know how to return from inlined frames.");
+            result.SetStatus (eReturnStatusFailed);
+            return false;
+        }
+        
+        if (command && command[0] != '\0')
+        {
+            Target *target = m_exe_ctx.GetTargetPtr();
+            EvaluateExpressionOptions options;
+
+            options.SetUnwindOnError(true);
+            options.SetUseDynamic(eNoDynamicValues);
+            
+            ExecutionResults exe_results = eExecutionSetupError;
+            exe_results = target->EvaluateExpression (command,
+                                                      frame_sp.get(),
+                                                      return_valobj_sp,
+                                                      options);
+            if (exe_results != eExecutionCompleted)
+            {
+                if (return_valobj_sp)
+                    result.AppendErrorWithFormat("Error evaluating result expression: %s", return_valobj_sp->GetError().AsCString());
+                else
+                    result.AppendErrorWithFormat("Unknown error evaluating result expression.");
+                result.SetStatus (eReturnStatusFailed);
+                return false;
+            
+            }
+        }
+                
+        Error error;
+        ThreadSP thread_sp = m_exe_ctx.GetThreadSP();
+        const bool broadcast = true;
+        error = thread_sp->ReturnFromFrame (frame_sp, return_valobj_sp, broadcast);
+        if (!error.Success())
+        {
+            result.AppendErrorWithFormat("Error returning from frame %d of thread %d: %s.", frame_idx, thread_sp->GetIndexID(), error.AsCString());
+            result.SetStatus (eReturnStatusFailed);
+            return false;
+        }
+
+        result.SetStatus (eReturnStatusSuccessFinishResult);
+        return true;
+    }
+    
+    CommandOptions m_options;
+
+};
+OptionDefinition
+CommandObjectThreadReturn::CommandOptions::g_option_table[] =
+{
+{ LLDB_OPT_SET_ALL, false, "from-expression",  'x', no_argument, NULL,               0, eArgTypeNone,     "Return from the innermost expression evaluation."},
+{ 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
 //-------------------------------------------------------------------------
@@ -1255,6 +1475,7 @@ CommandObjectMultiwordThread::CommandObjectMultiwordThread (CommandInterpreter &
     LoadSubCommand ("backtrace",  CommandObjectSP (new CommandObjectThreadBacktrace (interpreter)));
     LoadSubCommand ("continue",   CommandObjectSP (new CommandObjectThreadContinue (interpreter)));
     LoadSubCommand ("list",       CommandObjectSP (new CommandObjectThreadList (interpreter)));
+    LoadSubCommand ("return",     CommandObjectSP (new CommandObjectThreadReturn (interpreter)));
     LoadSubCommand ("select",     CommandObjectSP (new CommandObjectThreadSelect (interpreter)));
     LoadSubCommand ("until",      CommandObjectSP (new CommandObjectThreadUntil (interpreter)));
     LoadSubCommand ("step-in",    CommandObjectSP (new CommandObjectThreadStepWithTypeAndScope (
@@ -1262,7 +1483,6 @@ CommandObjectMultiwordThread::CommandObjectMultiwordThread (CommandInterpreter &
                                                     "thread step-in",
                                                     "Source level single step in specified thread (current thread, if none specified).",
                                                     NULL,
-                                                    eFlagProcessMustBeLaunched | eFlagProcessMustBePaused,
                                                     eStepTypeInto,
                                                     eStepScopeSource)));
     
@@ -1271,7 +1491,6 @@ CommandObjectMultiwordThread::CommandObjectMultiwordThread (CommandInterpreter &
                                                     "thread step-out",
                                                     "Finish executing the function of the currently selected frame and return to its call site in specified thread (current thread, if none specified).",
                                                     NULL,
-                                                    eFlagProcessMustBeLaunched | eFlagProcessMustBePaused,
                                                     eStepTypeOut,
                                                     eStepScopeSource)));
 
@@ -1280,7 +1499,6 @@ CommandObjectMultiwordThread::CommandObjectMultiwordThread (CommandInterpreter &
                                                     "thread step-over",
                                                     "Source level single step in specified thread (current thread, if none specified), stepping over calls.",
                                                     NULL,
-                                                    eFlagProcessMustBeLaunched | eFlagProcessMustBePaused,
                                                     eStepTypeOver,
                                                     eStepScopeSource)));
 
@@ -1289,7 +1507,6 @@ CommandObjectMultiwordThread::CommandObjectMultiwordThread (CommandInterpreter &
                                                     "thread step-inst",
                                                     "Single step one instruction in specified thread (current thread, if none specified).",
                                                     NULL,
-                                                    eFlagProcessMustBeLaunched | eFlagProcessMustBePaused,
                                                     eStepTypeTrace,
                                                     eStepScopeInstruction)));
 
@@ -1298,7 +1515,6 @@ CommandObjectMultiwordThread::CommandObjectMultiwordThread (CommandInterpreter &
                                                     "thread step-inst-over",
                                                     "Single step one instruction in specified thread (current thread, if none specified), stepping over calls.",
                                                     NULL,
-                                                    eFlagProcessMustBeLaunched | eFlagProcessMustBePaused,
                                                     eStepTypeTraceOver,
                                                     eStepScopeInstruction)));
 }

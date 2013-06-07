@@ -21,7 +21,7 @@
 namespace lldb_private {
 
 class SymbolFileType :
-    public STD_ENABLE_SHARED_FROM_THIS(SymbolFileType),
+    public std::enable_shared_from_this<SymbolFileType>,
     public UserID
     {
     public:
@@ -50,7 +50,7 @@ class SymbolFileType :
     };
     
 class Type :
-    public STD_ENABLE_SHARED_FROM_THIS(Type),
+    public std::enable_shared_from_this<Type>,
     public UserID
 {
 public:
@@ -79,7 +79,7 @@ public:
     Type (lldb::user_id_t uid,
           SymbolFile* symbol_file,
           const ConstString &name,
-          uint32_t byte_size,
+          uint64_t byte_size,
           SymbolContextScope *context,
           lldb::user_id_t encoding_uid,
           EncodingDataType encoding_uid_type,
@@ -123,7 +123,7 @@ public:
     const ConstString&
     GetName();
 
-    uint32_t
+    uint64_t
     GetByteSize();
 
     uint32_t
@@ -146,9 +146,6 @@ public:
     
     lldb::TypeSP
     GetTypedefType();
-
-    void
-    SetByteSize(uint32_t byte_size);
 
     const ConstString &
     GetName () const
@@ -206,7 +203,7 @@ public:
     GetFormat ();
 
     lldb::Encoding
-    GetEncoding (uint32_t &count);
+    GetEncoding (uint64_t &count);
 
     SymbolContextScope *
     GetSymbolContextScope()
@@ -255,9 +252,10 @@ public:
     // From a fully qualified typename, split the type into the type basename
     // and the remaining type scope (namespaces/classes).
     static bool
-    GetTypeScopeAndBasename (const char* name_cstr,
+    GetTypeScopeAndBasename (const char* &name_cstr,
                              std::string &scope,
-                             std::string &basename);
+                             std::string &basename,
+                             lldb::TypeClass &type_class);
     void
     SetEncodingType (Type *encoding_type)
     {
@@ -301,9 +299,9 @@ protected:
     SymbolFile *m_symbol_file;
     SymbolContextScope *m_context; // The symbol context in which this type is defined
     Type *m_encoding_type;
-    uint32_t m_encoding_uid;
+    lldb::user_id_t m_encoding_uid;
     EncodingDataType m_encoding_uid_type;
-    uint32_t m_byte_size;
+    uint64_t m_byte_size;
     Declaration m_decl;
     lldb::clang_type_t m_clang_type;
     
@@ -339,6 +337,12 @@ public:
     TypeAndOrName &
     operator= (const TypeAndOrName &rhs);
     
+    bool
+    operator==(const TypeAndOrName &other) const;
+    
+    bool
+    operator!=(const TypeAndOrName &other) const;
+    
     ConstString GetName () const;
 
     lldb::TypeSP
@@ -348,16 +352,31 @@ public:
     }
     
     void
-    SetName (ConstString &type_name_const_str);
+    SetName (const ConstString &type_name);
     
     void 
-    SetName (const char *type_name_str);
+    SetName (const char *type_name_cstr);
     
     void
     SetTypeSP (lldb::TypeSP type_sp);
     
     bool
     IsEmpty ();
+    
+    bool
+    HasName ();
+    
+    bool
+    HasTypeSP ();
+    
+    void
+    Clear ();
+    
+    operator
+    bool ()
+    {
+        return !IsEmpty();
+    }
     
 private:
     lldb::TypeSP m_type_sp;

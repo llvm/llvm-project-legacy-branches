@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class LibcxxMapDataFormatterTestCase(TestBase):
 
@@ -18,6 +19,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
         self.buildDsym()
         self.data_formatter_commands()
 
+    @skipIfLinux # No standard locations for libc++ on Linux, so skip for now 
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
@@ -27,17 +29,12 @@ class LibcxxMapDataFormatterTestCase(TestBase):
     def setUp(self):
         # Call super's setUp().
         TestBase.setUp(self)
-        # Find the line number to break at.
-        self.line = line_number('main.cpp', '// Set break point at this line.')
 
     def data_formatter_commands(self):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_source_regexp (self, "Set break point at this line.")
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -60,18 +57,16 @@ class LibcxxMapDataFormatterTestCase(TestBase):
 
         self.expect('image list',substrs=['libc++.1.dylib','libc++abi.dylib'])
 
-        self.runCmd("frame variable ii -T")
-        
-        self.runCmd("type summary add -x \"std::__1::map<\" --summary-string \"map has ${svar%#} items\" -e") 
-        
+        self.runCmd("frame variable ii --show-types")
+                
         self.expect('frame variable ii',
-            substrs = ['map has 0 items',
+            substrs = ['size=0',
                        '{}'])
 
-        self.runCmd("n");self.runCmd("n");
+        self.runCmd("continue");
 
         self.expect('frame variable ii',
-                    substrs = ['map has 2 items',
+                    substrs = ['size=2',
                                '[0] = {',
                                'first = 0',
                                'second = 0',
@@ -79,10 +74,10 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                'first = 1',
                                'second = 1'])
 
-        self.runCmd("n");self.runCmd("n");
+        self.runCmd("continue");
 
         self.expect('frame variable ii',
-                    substrs = ['map has 4 items',
+                    substrs = ['size=4',
                                '[2] = {',
                                'first = 2',
                                'second = 0',
@@ -90,12 +85,10 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                'first = 3',
                                'second = 1'])
 
-        self.runCmd("n");self.runCmd("n");
-        self.runCmd("n");self.runCmd("n");
-        self.runCmd("frame select 0")
+        self.runCmd("continue");
 
         self.expect("frame variable ii",
-                    substrs = ['map has 8 items',
+                    substrs = ['size=8',
                                '[5] = {',
                                'first = 5',
                                'second = 0',
@@ -104,7 +97,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                'second = 1'])
 
         self.expect("p ii",
-                    substrs = ['map has 8 items',
+                    substrs = ['size=8',
                                '[5] = {',
                                'first = 5',
                                'second = 0',
@@ -120,6 +113,9 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                     substrs = ['first =',
                                'second =']);
 
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("ii").MightHaveChildren(), "ii.MightHaveChildren() says False for non empty!")
+
         # check that the expression parser does not make use of
         # synthetic children instead of running code
         # TOT clang has a fix for this, which makes the expression command here succeed
@@ -128,32 +124,30 @@ class LibcxxMapDataFormatterTestCase(TestBase):
         #self.expect("expression ii[8]", matching=False, error=True,
         #            substrs = ['1234567'])
 
-        self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd('frame select 0')
+        self.runCmd("continue");
         
         self.expect('frame variable ii',
-                    substrs = ['map has 0 items',
+                    substrs = ['size=0',
                                '{}'])
         
-        self.runCmd("frame variable si -T")
+        self.runCmd("frame variable si --show-types")
 
         self.expect('frame variable si',
-                    substrs = ['map has 0 items',
+                    substrs = ['size=0',
                                '{}'])
 
-        self.runCmd("n");self.runCmd("n");self.runCmd('frame select 0')
+        self.runCmd("continue");
 
         self.expect('frame variable si',
-                    substrs = ['map has 1 items',
+                    substrs = ['size=1',
                                '[0] = ',
                                'first = \"zero\"',
                                'second = 0'])
 
-        self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
-        self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n")
-        self.runCmd("n");self.runCmd("n");self.runCmd('frame select 0')
+        self.runCmd("continue");
 
         self.expect("frame variable si",
-                    substrs = ['map has 4 items',
+                    substrs = ['size=4',
                                '[0] = ',
                                'first = \"zero\"',
                                'second = 0',
@@ -168,7 +162,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                 'second = 3'])
 
         self.expect("p si",
-                    substrs = ['map has 4 items',
+                    substrs = ['size=4',
                                '[0] = ',
                                'first = \"zero\"',
                                'second = 0',
@@ -181,6 +175,9 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                '[3] = ',
                                'first = \"three\"',
                                'second = 3'])
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("si").MightHaveChildren(), "si.MightHaveChildren() says False for non empty!")
 
         # check access-by-index
         self.expect("frame variable si[0]",
@@ -195,23 +192,23 @@ class LibcxxMapDataFormatterTestCase(TestBase):
         #self.expect("expression si[0]", matching=False, error=True,
         #            substrs = ['first = ', 'zero'])
 
-        self.runCmd("n");self.runCmd("n");
+        self.runCmd("continue");
         
         self.expect('frame variable si',
-                    substrs = ['map has 0 items',
+                    substrs = ['size=0',
                                '{}'])
 
-        self.runCmd("n")
-        self.runCmd("frame variable is -T")
+        self.runCmd("continue");
+        self.runCmd("frame variable is --show-types")
         
         self.expect('frame variable is',
-                    substrs = ['map has 0 items',
+                    substrs = ['size=0',
                                '{}'])
 
-        self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
+        self.runCmd("continue");
 
         self.expect("frame variable is",
-                    substrs = ['map has 4 items',
+                    substrs = ['size=4',
                                '[0] = ',
                                'second = \"goofy\"',
                                'first = 85',
@@ -226,7 +223,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                'first = 3'])
         
         self.expect("p is",
-                    substrs = ['map has 4 items',
+                    substrs = ['size=4',
                                '[0] = ',
                                'second = \"goofy\"',
                                'first = 85',
@@ -239,6 +236,9 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                '[3] = ',
                                'second = \"!!!\"',
                                'first = 3'])
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("is").MightHaveChildren(), "is.MightHaveChildren() says False for non empty!")
 
         # check access-by-index
         self.expect("frame variable is[0]",
@@ -253,24 +253,23 @@ class LibcxxMapDataFormatterTestCase(TestBase):
         #self.expect("expression is[0]", matching=False, error=True,
         #            substrs = ['first = ', 'goofy'])
 
-        self.runCmd("n")
+        self.runCmd("continue");
         
         self.expect('frame variable is',
-                    substrs = ['map has 0 items',
+                    substrs = ['size=0',
                                '{}'])
 
-        self.runCmd("n");self.runCmd("n");
-        self.runCmd("frame variable ss -T")
+        self.runCmd("continue");
+        self.runCmd("frame variable ss --show-types")
         
         self.expect('frame variable ss',
-                    substrs = ['map has 0 items',
+                    substrs = ['size=0',
                                '{}'])
 
-        self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
-        self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd('frame select 0')
+        self.runCmd("continue");
 
         self.expect("frame variable ss",
-                    substrs = ['map has 3 items',
+                    substrs = ['size=3',
                                '[0] = ',
                                'second = \"hello\"',
                                'first = \"ciao\"',
@@ -282,7 +281,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                'first = \"gatto\"'])
         
         self.expect("p ss",
-                    substrs = ['map has 3 items',
+                    substrs = ['size=3',
                                '[0] = ',
                                'second = \"hello\"',
                                'first = \"ciao\"',
@@ -292,6 +291,9 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                '[2] = ',
                                'second = \"cat\"',
                                'first = \"gatto\"'])
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("ss").MightHaveChildren(), "ss.MightHaveChildren() says False for non empty!")
 
         # check access-by-index
         self.expect("frame variable ss[2]",
@@ -305,10 +307,10 @@ class LibcxxMapDataFormatterTestCase(TestBase):
         #self.expect("expression ss[3]", matching=False, error=True,
         #            substrs = ['gatto'])
 
-        self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd('frame select 0')
+        self.runCmd("continue");
         
         self.expect('frame variable ss',
-                    substrs = ['map has 0 items',
+                    substrs = ['size=0',
                                '{}'])
 
 if __name__ == '__main__':

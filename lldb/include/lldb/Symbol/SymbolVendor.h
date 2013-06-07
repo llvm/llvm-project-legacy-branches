@@ -36,17 +36,9 @@ class SymbolVendor :
     public PluginInterface
 {
 public:
-    static bool
-    RegisterPlugin (const char *name,
-                    const char *description,
-                    SymbolVendorCreateInstance create_callback);
-
-    static bool
-    UnregisterPlugin (SymbolVendorCreateInstance create_callback);
-
-
     static SymbolVendor*
-    FindPlugin (const lldb::ModuleSP &module_sp);
+    FindPlugin (const lldb::ModuleSP &module_sp,
+                lldb_private::Stream *feedback_strm);
 
     //------------------------------------------------------------------
     // Constructors and Destructors
@@ -62,6 +54,9 @@ public:
     virtual void
     Dump(Stream *s);
 
+    virtual lldb::LanguageType
+    ParseCompileUnitLanguage (const SymbolContext& sc);
+    
     virtual size_t
     ParseCompileUnitFunctions (const SymbolContext& sc);
 
@@ -96,20 +91,20 @@ public:
                           uint32_t resolve_scope,
                           SymbolContextList& sc_list);
 
-    virtual uint32_t
+    virtual size_t
     FindGlobalVariables (const ConstString &name,
                          const ClangNamespaceDecl *namespace_decl,
                          bool append,
-                         uint32_t max_matches,
+                         size_t max_matches,
                          VariableList& variables);
 
-    virtual uint32_t
+    virtual size_t
     FindGlobalVariables (const RegularExpression& regex,
                          bool append,
-                         uint32_t max_matches,
+                         size_t max_matches,
                          VariableList& variables);
 
-    virtual uint32_t
+    virtual size_t
     FindFunctions (const ConstString &name,
                    const ClangNamespaceDecl *namespace_decl,
                    uint32_t name_type_mask,
@@ -117,18 +112,18 @@ public:
                    bool append,
                    SymbolContextList& sc_list);
 
-    virtual uint32_t
+    virtual size_t
     FindFunctions (const RegularExpression& regex,
                    bool include_inlines,
                    bool append,
                    SymbolContextList& sc_list);
 
-    virtual uint32_t
+    virtual size_t
     FindTypes (const SymbolContext& sc, 
                const ConstString &name,
                const ClangNamespaceDecl *namespace_decl, 
                bool append, 
-               uint32_t max_matches, 
+               size_t max_matches,
                TypeList& types);
 
     virtual lldb_private::ClangNamespaceDecl
@@ -136,15 +131,15 @@ public:
                    const ConstString &name,
                    const ClangNamespaceDecl *parent_namespace_decl);
     
-    virtual uint32_t
+    virtual size_t
     GetNumCompileUnits();
 
     virtual bool
-    SetCompileUnitAtIndex (uint32_t cu_idx,
+    SetCompileUnitAtIndex (size_t cu_idx,
                            const lldb::CompUnitSP &cu_sp);
 
     virtual lldb::CompUnitSP
-    GetCompileUnitAtIndex(uint32_t idx);
+    GetCompileUnitAtIndex(size_t idx);
 
     TypeList&
     GetTypeList()
@@ -167,11 +162,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -187,7 +179,7 @@ protected:
     TypeList m_type_list; // Uniqued types for all parsers owned by this module
     CompileUnits m_compile_units; // The current compile units
     lldb::ObjectFileSP m_objfile_sp;    // Keep a reference to the object file in case it isn't the same as the module object file (debug symbols in a separate file)
-    std::auto_ptr<SymbolFile> m_sym_file_ap; // A single symbol file. Suclasses can add more of these if needed.
+    std::unique_ptr<SymbolFile> m_sym_file_ap; // A single symbol file. Suclasses can add more of these if needed.
 
 private:
     //------------------------------------------------------------------

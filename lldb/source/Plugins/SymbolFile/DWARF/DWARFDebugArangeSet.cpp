@@ -162,7 +162,7 @@ DWARFDebugArangeSet::AddDescriptor(const DWARFDebugArangeSet::Descriptor& range)
 }
 
 bool
-DWARFDebugArangeSet::Extract(const DataExtractor &data, uint32_t* offset_ptr)
+DWARFDebugArangeSet::Extract(const DataExtractor &data, lldb::offset_t *offset_ptr)
 {
     if (data.ValidOffset(*offset_ptr))
     {
@@ -243,7 +243,7 @@ DWARFDebugArangeSet::Dump(Stream *s) const
     DescriptorConstIter pos;
     DescriptorConstIter end = m_arange_descriptors.end();
     for (pos = m_arange_descriptors.begin(); pos != end; ++pos)
-        s->Printf("[0x%*.*llx - 0x%*.*llx)\n",
+        s->Printf("[0x%*.*" PRIx64 " - 0x%*.*" PRIx64 ")\n",
             hex_width, hex_width, pos->address,
             hex_width, hex_width, pos->end_address());
 }

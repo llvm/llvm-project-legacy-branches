@@ -24,6 +24,72 @@ class AppleObjCRuntimeV1 :
         public AppleObjCRuntime
 {
 public:
+    
+    class ClassDescriptorV1 : public ObjCLanguageRuntime::ClassDescriptor
+    {
+    public:
+        ClassDescriptorV1 (ValueObject &isa_pointer);
+        ClassDescriptorV1 (ObjCISA isa, lldb::ProcessSP process_sp);
+        
+        virtual ConstString
+        GetClassName ()
+        {
+            return m_name;
+        }
+        
+        virtual ClassDescriptorSP
+        GetSuperclass ();
+        
+        virtual bool
+        IsValid ()
+        {
+            return m_valid;
+        }
+        
+        // v1 does not support tagged pointers
+        virtual bool
+        GetTaggedPointerInfo (uint64_t* info_bits = NULL,
+                              uint64_t* value_bits = NULL,
+                              uint64_t* payload = NULL)
+        {
+            return false;
+        }
+        
+        virtual uint64_t
+        GetInstanceSize ()
+        {
+            return m_instance_size;
+        }
+        
+        virtual ObjCISA
+        GetISA ()
+        {
+            return m_isa;
+        }
+        
+        virtual bool
+        Describe (std::function <void (ObjCLanguageRuntime::ObjCISA)> const &superclass_func,
+                  std::function <bool (const char *, const char *)> const &instance_method_func,
+                  std::function <bool (const char *, const char *)> const &class_method_func,
+                  std::function <bool (const char *, const char *, lldb::addr_t, uint64_t)> const &ivar_func);
+        
+        virtual
+        ~ClassDescriptorV1 ()
+        {}
+        
+    protected:
+        void
+        Initialize (ObjCISA isa, lldb::ProcessSP process_sp);
+        
+    private:
+        ConstString m_name;
+        ObjCISA m_isa;
+        ObjCISA m_parent_isa;
+        bool m_valid;
+        lldb::ProcessWP m_process_wp;
+        uint64_t m_instance_size;
+    };
+    
     virtual ~AppleObjCRuntimeV1() { }
     
     // These are generic runtime functions:
@@ -48,14 +114,14 @@ public:
     static lldb_private::LanguageRuntime *
     CreateInstance (Process *process, lldb::LanguageType language);
     
+    static lldb_private::ConstString
+    GetPluginNameStatic();
+    
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual ConstString
     GetPluginName();
-    
-    virtual const char *
-    GetShortPluginName();
     
     virtual uint32_t
     GetPluginVersion();
@@ -66,38 +132,62 @@ public:
         return eAppleObjC_V1;
     }
     
-    virtual bool
-    IsValidISA(ObjCISA isa)
-    {
-        return false;
-    }
+    virtual void
+    UpdateISAToDescriptorMapIfNeeded();
     
-    virtual ObjCISA
-    GetISA(ValueObject& valobj)
-    {
-        return 0;
-    }
-    
-    virtual ConstString
-    GetActualTypeName(ObjCISA isa)
-    {
-        return ConstString(NULL);
-    }
-    
-    virtual ObjCISA
-    GetParentClass(ObjCISA isa)
-    {
-        return 0;
-    }
+    virtual TypeVendor *
+    GetTypeVendor();
 
 protected:
     virtual lldb::BreakpointResolverSP
     CreateExceptionResolver (Breakpoint *bkpt, bool catch_bp, bool throw_bp);
-            
+    
+    
+    class HashTableSignature
+    {
+    public:
+        HashTableSignature () :
+            m_count (0),
+            m_num_buckets (0),
+            m_buckets_ptr (LLDB_INVALID_ADDRESS)
+        {
+        }
+        
+        bool
+        NeedsUpdate (uint32_t count,
+                     uint32_t num_buckets,
+                     lldb::addr_t buckets_ptr)
+        {
+            return m_count       != count       ||
+                   m_num_buckets != num_buckets ||
+                   m_buckets_ptr != buckets_ptr ;
+        }
+        
+        void
+        UpdateSignature (uint32_t count,
+                         uint32_t num_buckets,
+                         lldb::addr_t buckets_ptr)
+        {
+            m_count = count;
+            m_num_buckets = num_buckets;
+            m_buckets_ptr = buckets_ptr;
+        }
+
+    protected:
+        uint32_t m_count;
+        uint32_t m_num_buckets;
+        lldb::addr_t m_buckets_ptr;
+    };
+    
+
+    lldb::addr_t
+    GetISAHashTablePointer ();
+    
+    HashTableSignature m_hash_signature;
+    lldb::addr_t m_isa_hash_table_ptr;
+    std::unique_ptr<TypeVendor> m_type_vendor_ap;
 private:
-    AppleObjCRuntimeV1(Process *process) : 
-        lldb_private::AppleObjCRuntime (process)
-     { } // Call CreateInstance instead.
+    AppleObjCRuntimeV1(Process *process);
 };
     
 } // namespace lldb_private

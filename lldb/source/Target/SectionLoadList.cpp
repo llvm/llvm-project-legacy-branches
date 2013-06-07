@@ -59,17 +59,15 @@ SectionLoadList::GetSectionLoadAddress (const lldb::SectionSP &section) const
 bool
 SectionLoadList::SetSectionLoadAddress (const lldb::SectionSP &section, addr_t load_addr, bool warn_multiple)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
 
     if (log)
     {
         const FileSpec &module_file_spec (section->GetModule()->GetFileSpec());
-        log->Printf ("SectionLoadList::%s (section = %p (%s%s%s.%s), load_addr = 0x%16.16llx)",
+        log->Printf ("SectionLoadList::%s (section = %p (%s.%s), load_addr = 0x%16.16" PRIx64 ")",
                      __FUNCTION__,
                      section.get(),
-                     module_file_spec.GetDirectory().AsCString(),
-                     module_file_spec.GetDirectory() ? "/" : "",
-                     module_file_spec.GetFilename().AsCString(),
+                     module_file_spec.GetPath().c_str(),
                      section->GetName().AsCString(),
                      load_addr);
     }
@@ -112,7 +110,7 @@ SectionLoadList::SetSectionLoadAddress (const lldb::SectionSP &section, addr_t l
                 ModuleSP curr_module_sp (ats_pos->second->GetModule());
                 if (curr_module_sp)
                 {
-                    module_sp->ReportWarning ("address 0x%16.16llx maps to more than one section: %s.%s and %s.%s",
+                    module_sp->ReportWarning ("address 0x%16.16" PRIx64 " maps to more than one section: %s.%s and %s.%s",
                                               load_addr, 
                                               module_sp->GetFileSpec().GetFilename().GetCString(), 
                                               section->GetName().GetCString(),
@@ -136,17 +134,15 @@ SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp)
 
     if (section_sp)
     {
-        LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
+        Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
 
         if (log)
         {
             const FileSpec &module_file_spec (section_sp->GetModule()->GetFileSpec());
-            log->Printf ("SectionLoadList::%s (section = %p (%s%s%s.%s))",
+            log->Printf ("SectionLoadList::%s (section = %p (%s.%s))",
                          __FUNCTION__,
                          section_sp.get(),
-                         module_file_spec.GetDirectory().AsCString(),
-                         module_file_spec.GetDirectory() ? "/" : "",
-                         module_file_spec.GetFilename().AsCString(),
+                         module_file_spec.GetPath().c_str(),
                          section_sp->GetName().AsCString());
         }
 
@@ -155,6 +151,7 @@ SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp)
         sect_to_addr_collection::iterator sta_pos = m_sect_to_addr.find(section_sp.get());
         if (sta_pos != m_sect_to_addr.end())
         {
+            ++unload_count;
             addr_t load_addr = sta_pos->second;
             m_sect_to_addr.erase (sta_pos);
 
@@ -169,17 +166,15 @@ SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp)
 bool
 SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp, addr_t load_addr)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
 
     if (log)
     {
         const FileSpec &module_file_spec (section_sp->GetModule()->GetFileSpec());
-        log->Printf ("SectionLoadList::%s (section = %p (%s%s%s.%s), load_addr = 0x%16.16llx)",
+        log->Printf ("SectionLoadList::%s (section = %p (%s.%s), load_addr = 0x%16.16" PRIx64 ")",
                      __FUNCTION__,
                      section_sp.get(),
-                     module_file_spec.GetDirectory().AsCString(),
-                     module_file_spec.GetDirectory() ? "/" : "",
-                     module_file_spec.GetFilename().AsCString(),
+                     module_file_spec.GetPath().c_str(),
                      section_sp->GetName().AsCString(),
                      load_addr);
     }
@@ -215,9 +210,10 @@ SectionLoadList::ResolveLoadAddress (addr_t load_addr, Address &so_addr) const
         {
             if (load_addr != pos->first && pos != m_addr_to_sect.begin())
                 --pos;
-            if (load_addr >= pos->first)
+            const addr_t pos_load_addr = pos->first;
+            if (load_addr >= pos_load_addr)
             {
-                addr_t offset = load_addr - pos->first;
+                addr_t offset = load_addr - pos_load_addr;
                 if (offset < pos->second->GetByteSize())
                 {
                     // We have found the top level section, now we need to find the
@@ -254,7 +250,7 @@ SectionLoadList::Dump (Stream &s, Target *target)
     addr_to_sect_collection::const_iterator pos, end;
     for (pos = m_addr_to_sect.begin(), end = m_addr_to_sect.end(); pos != end; ++pos)
     {
-        s.Printf("addr = 0x%16.16llx, section = %p: ", pos->first, pos->second.get());
+        s.Printf("addr = 0x%16.16" PRIx64 ", section = %p: ", pos->first, pos->second.get());
         pos->second->Dump (&s, target, 0);
     }
 }

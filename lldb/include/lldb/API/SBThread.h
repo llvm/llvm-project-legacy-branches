@@ -21,6 +21,18 @@ class SBFrame;
 class SBThread
 {
 public:
+    enum
+    {
+        eBroadcastBitStackChanged           = (1 << 0),
+        eBroadcastBitThreadSuspended        = (1 << 1),
+        eBroadcastBitThreadResumed          = (1 << 2),
+        eBroadcastBitSelectedFrameChanged   = (1 << 3),
+        eBroadcastBitThreadSelected         = (1 << 4)
+    };
+
+    static const char *
+    GetBroadcasterClassName ();
+    
     SBThread ();
 
     SBThread (const lldb::SBThread &thread);
@@ -56,6 +68,7 @@ public:
     /// eStopReasonWatchpoint    1     watchpoint id
     /// eStopReasonSignal        1     unix signal number
     /// eStopReasonException     N     exception data
+    /// eStopReasonExec          0
     /// eStopReasonPlanComplete  0
     //--------------------------------------------------------------------------
     uint64_t
@@ -86,6 +99,9 @@ public:
     StepInto (lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
 
     void
+    StepInto (const char *target_name, lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
+    
+    void
     StepOut ();
 
     void
@@ -101,6 +117,9 @@ public:
 
     void
     RunToAddress (lldb::addr_t addr);
+    
+    SBError
+    ReturnFromFrame (SBFrame &frame, SBValue &return_value);
 
     //--------------------------------------------------------------------------
     /// LLDB currently supports process centric debugging which means when any
@@ -110,7 +129,7 @@ public:
     /// SBProcess::Continue() is called, any threads that aren't suspended will
     /// be allowed to run. If any of the SBThread functions for stepping are 
     /// called (StepOver, StepInto, StepOut, StepInstruction, RunToAddres), the
-    /// thread will now be allowed to run and these funtions will simply return.
+    /// thread will not be allowed to run and these funtions will simply return.
     ///
     /// Eventually we plan to add support for thread centric debugging where
     /// each thread is controlled individually and each thread would broadcast
@@ -132,6 +151,9 @@ public:
     bool
     IsSuspended();
 
+    bool
+    IsStopped();
+
     uint32_t
     GetNumFrames ();
 
@@ -143,6 +165,15 @@ public:
 
     lldb::SBFrame
     SetSelectedFrame (uint32_t frame_idx);
+    
+    static bool
+    EventIsThreadEvent (const SBEvent &event);
+    
+    static SBFrame
+    GetStackFrameFromEvent (const SBEvent &event);
+    
+    static SBThread
+    GetThreadFromEvent (const SBEvent &event);
 
     lldb::SBProcess
     GetProcess ();
@@ -158,6 +189,9 @@ public:
 
     bool
     GetDescription (lldb::SBStream &description) const;
+    
+    bool
+    GetStatus (lldb::SBStream &status) const;
 
 protected:
     friend class SBBreakpoint;

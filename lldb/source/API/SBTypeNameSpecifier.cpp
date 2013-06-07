@@ -7,12 +7,14 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/API/SBTypeNameSpecifier.h"
 
 #include "lldb/API/SBStream.h"
 #include "lldb/API/SBType.h"
 
-#include "lldb/Core/DataVisualization.h"
+#include "lldb/DataFormatters/DataVisualization.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -115,6 +117,8 @@ SBTypeNameSpecifier::IsEqualTo (lldb::SBTypeNameSpecifier &rhs)
         return !rhs.IsValid();
     
     if (IsRegex() != rhs.IsRegex())
+        return false;
+    if (GetName() == NULL || rhs.GetName() == NULL)
         return false;
     
     return (strcmp(GetName(), rhs.GetName()) == 0);

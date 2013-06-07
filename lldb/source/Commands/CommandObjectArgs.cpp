@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectArgs.h"
 
 // C Includes
@@ -14,13 +16,14 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Interpreter/Args.h"
+#include "lldb/Core/Debugger.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Expression/ClangExpression.h"
 #include "lldb/Expression/ClangExpressionVariable.h"
 #include "lldb/Expression/ClangFunction.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
-#include "lldb/Core/Debugger.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/Variable.h"
@@ -53,7 +56,7 @@ CommandObjectArgs::CommandOptions::SetOptionValue (uint32_t option_idx, const ch
 {
     Error error;
     
-    char short_option = (char) m_getopt_table[option_idx].val;
+    const int short_option = m_getopt_table[option_idx].val;
     
     switch (short_option)
     {
@@ -101,7 +104,7 @@ CommandObjectArgs::DoExecute (Args& args, CommandReturnObject &result)
     ConstString target_triple;
     
     
-    Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+    Process *process = m_exe_ctx.GetProcessPtr();
     if (!process)
     {
         result.AppendError ("Args found no process.");
@@ -117,7 +120,7 @@ CommandObjectArgs::DoExecute (Args& args, CommandReturnObject &result)
         return false;
     }
     
-    int num_args = args.GetArgumentCount ();
+    const size_t num_args = args.GetArgumentCount ();
     int arg_index;
     
     if (!num_args)
@@ -127,7 +130,7 @@ CommandObjectArgs::DoExecute (Args& args, CommandReturnObject &result)
         return false;
     }
     
-    Thread *thread = m_interpreter.GetExecutionContext ().GetThreadPtr();
+    Thread *thread = m_exe_ctx.GetThreadPtr();
     
     if (!thread)
     {
@@ -265,6 +268,6 @@ OptionDefinition
 CommandObjectArgs::CommandOptions::g_option_table[] =
 {
     { LLDB_OPT_SET_1, false, "debug", 'g', no_argument, NULL, 0, eArgTypeNone, "Enable verbose debug logging of the expression parsing and evaluation."},
-    { 0, false, NULL, 0, 0, NULL, NULL, eArgTypeNone, NULL }
+    { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 

@@ -41,17 +41,20 @@ public:
         eOpenOptionCanCreateNewOnly     = (1u << 6)     // Can create file only if it doesn't already exist
     };
     
+    static mode_t
+    ConvertOpenOptionsForPOSIXOpen (uint32_t open_options);
+    
     enum Permissions
     {
-        ePermissionsUserRead        = (1u << 0),
-        ePermissionsUserWrite       = (1u << 1),
-        ePermissionsUserExecute     = (1u << 2),
-        ePermissionsGroupRead       = (1u << 3),
+        ePermissionsUserRead        = (1u << 8),
+        ePermissionsUserWrite       = (1u << 7),
+        ePermissionsUserExecute     = (1u << 6),
+        ePermissionsGroupRead       = (1u << 5),
         ePermissionsGroupWrite      = (1u << 4),
-        ePermissionsGroupExecute    = (1u << 5),
-        ePermissionsWorldRead       = (1u << 6),
-        ePermissionsWorldWrite      = (1u << 7),
-        ePermissionsWorldExecute    = (1u << 8),
+        ePermissionsGroupExecute    = (1u << 3),
+        ePermissionsWorldRead       = (1u << 2),
+        ePermissionsWorldWrite      = (1u << 1),
+        ePermissionsWorldExecute    = (1u << 0),
 
         ePermissionsUserRW      = (ePermissionsUserRead    | ePermissionsUserWrite    | 0                        ),
         ePermissionsUserRX      = (ePermissionsUserRead    | 0                        | ePermissionsUserExecute  ),
@@ -303,17 +306,19 @@ public:
     /// @see File::Read (void *, size_t, off_t &)
     /// @see File::Write (const void *, size_t, off_t &)
     ///
-    /// @param[in/out] offset
+    /// @param[in] offset
     ///     The offset to seek to within the file relative to the 
-    ///     beginning of the file which gets filled in the the resulting
-    ///     absolute file offset.
+    ///     beginning of the file.
+    ///
+    /// @param[in] error_ptr
+    ///     A pointer to a lldb_private::Error object that will be
+    ///     filled in if non-NULL.
     ///
     /// @return
-    ///     An error object that indicates success or the reason for 
-    ///     failure.
+    ///     The resulting seek offset, or -1 on error.
     //------------------------------------------------------------------
-    Error
-    SeekFromStart (off_t& offset);
+    off_t
+    SeekFromStart (off_t offset, Error *error_ptr = NULL);
     
     //------------------------------------------------------------------
     /// Seek to an offset relative to the current file position.
@@ -324,17 +329,19 @@ public:
     /// @see File::Read (void *, size_t, off_t &)
     /// @see File::Write (const void *, size_t, off_t &)
     ///
-    /// @param[in/out] offset
+    /// @param[in] offset
     ///     The offset to seek to within the file relative to the 
-    ///     current file position. On return this parameter gets filled 
-    ///     in the the resulting absolute file offset.
+    ///     current file position.
+    ///
+    /// @param[in] error_ptr
+    ///     A pointer to a lldb_private::Error object that will be
+    ///     filled in if non-NULL.
     ///
     /// @return
-    ///     An error object that indicates success or the reason for 
-    ///     failure.
+    ///     The resulting seek offset, or -1 on error.
     //------------------------------------------------------------------
-    Error
-    SeekFromCurrent (off_t& offset);
+    off_t
+    SeekFromCurrent (off_t offset, Error *error_ptr = NULL);
     
     //------------------------------------------------------------------
     /// Seek to an offset relative to the end of the file.
@@ -350,12 +357,15 @@ public:
     ///     end of the file which gets filled in the the resulting
     ///     absolute file offset.
     ///
+    /// @param[in] error_ptr
+    ///     A pointer to a lldb_private::Error object that will be
+    ///     filled in if non-NULL.
+    ///
     /// @return
-    ///     An error object that indicates success or the reason for 
-    ///     failure.
+    ///     The resulting seek offset, or -1 on error.
     //------------------------------------------------------------------
-    Error
-    SeekFromEnd (off_t& offset);
+    off_t
+    SeekFromEnd (off_t offset, Error *error_ptr = NULL);
 
     //------------------------------------------------------------------
     /// Read bytes from a file from the specified file offset.
@@ -399,6 +409,10 @@ public:
     ///     bytes. This offset gets incremented by the number of bytes
     ///     that were read.
     ///
+    /// @param[in] null_terminate
+    ///     Ensure that the data that is read is terminated with a NULL
+    ///     character so that the data can be used as a C string.
+    ///
     /// @param[out] data_buffer_sp
     ///     A data buffer to create and fill in that will contain any
     ///     data that is read from the file. This buffer will be reset
@@ -409,7 +423,10 @@ public:
     ///     failure.
     //------------------------------------------------------------------
     Error
-    Read (size_t &num_bytes, off_t &offset, lldb::DataBufferSP &data_buffer_sp);
+    Read (size_t &num_bytes,
+          off_t &offset,
+          bool null_terminate,
+          lldb::DataBufferSP &data_buffer_sp);
 
     //------------------------------------------------------------------
     /// Write bytes to a file at the specified file offset.
@@ -458,6 +475,19 @@ public:
     //------------------------------------------------------------------
     Error
     Sync ();
+    
+    //------------------------------------------------------------------
+    /// Get the permissions for a this file.
+    ///
+    /// @return
+    ///     Bits logical OR'ed together from the permission bits defined
+    ///     in lldb_private::File::Permissions.
+    //------------------------------------------------------------------
+    uint32_t
+    GetPermissions(Error &error) const;
+    
+    static uint32_t
+    GetPermissions (const char *path, Error &error);
 
     //------------------------------------------------------------------
     /// Output printf formatted output to the stream.
@@ -471,10 +501,10 @@ public:
     ///     Variable arguments that are needed for the printf style
     ///     format string \a format.
     //------------------------------------------------------------------
-    int
+    size_t
     Printf (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
     
-    int
+    size_t
     PrintfVarArg(const char *format, va_list args);
 
 protected:

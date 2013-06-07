@@ -8,6 +8,7 @@ import unittest2
 import lldb
 from lldbtest import *
 import datetime
+import lldbutil
 
 class ObjCDataFormatterTestCase(TestBase):
 
@@ -27,19 +28,140 @@ class ObjCDataFormatterTestCase(TestBase):
         self.buildDwarf()
         self.plain_data_formatter_commands()
 
+    def appkit_tester_impl(self,builder,commands):
+        builder()
+        self.appkit_common_data_formatters_command()
+        commands()
+
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
-    def test_appkit_with_dsym_and_run_command(self):
-        """Test formatters for AppKit classes."""
-        self.buildDsym()
-        self.appkit_data_formatter_commands()
+    def test_nsnumber_with_dsym_and_run_command(self):
+        """Test formatters for NSNumber."""
+        self.appkit_tester_impl(self.buildDsym,self.nsnumber_data_formatter_commands)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dwarf_test
-    def test_appkit_with_dwarf_and_run_command(self):
-        """Test formatters for AppKit classes."""
-        self.buildDwarf()
-        self.appkit_data_formatter_commands()
+    def test_nsnumber_with_dwarf_and_run_command(self):
+        """Test formatters for NSNumber."""
+        self.appkit_tester_impl(self.buildDwarf,self.nsnumber_data_formatter_commands)
+
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
+    def test_nsstring_with_dsym_and_run_command(self):
+        """Test formatters for NSString."""
+        self.appkit_tester_impl(self.buildDsym,self.nsstring_data_formatter_commands)
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dwarf_test
+    def test_nsstring_with_dwarf_and_run_command(self):
+        """Test formatters for NSString."""
+        self.appkit_tester_impl(self.buildDwarf,self.nsstring_data_formatter_commands)
+
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
+    def test_nscontainers_with_dsym_and_run_command(self):
+        """Test formatters for NS container classes."""
+        self.appkit_tester_impl(self.buildDsym,self.nscontainers_data_formatter_commands)
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dwarf_test
+    def test_nscontainers_with_dwarf_and_run_command(self):
+        """Test formatters for  NS container classes."""
+        self.appkit_tester_impl(self.buildDwarf,self.nscontainers_data_formatter_commands)
+
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
+    def test_nsdata_with_dsym_and_run_command(self):
+        """Test formatters for NSData."""
+        self.appkit_tester_impl(self.buildDsym,self.nsdata_data_formatter_commands)
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dwarf_test
+    def test_nsdata_with_dwarf_and_run_command(self):
+        """Test formatters for  NSData."""
+        self.appkit_tester_impl(self.buildDwarf,self.nsdata_data_formatter_commands)
+
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
+    def test_nsurl_with_dsym_and_run_command(self):
+        """Test formatters for NSURL."""
+        self.appkit_tester_impl(self.buildDsym,self.nsurl_data_formatter_commands)
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dwarf_test
+    def test_nsurl_with_dwarf_and_run_command(self):
+        """Test formatters for NSURL."""
+        self.appkit_tester_impl(self.buildDwarf,self.nsurl_data_formatter_commands)
+
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
+    def test_nserror_with_dsym_and_run_command(self):
+        """Test formatters for NSError."""
+        self.appkit_tester_impl(self.buildDsym,self.nserror_data_formatter_commands)
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dwarf_test
+    def test_nserror_with_dwarf_and_run_command(self):
+        """Test formatters for NSError."""
+        self.appkit_tester_impl(self.buildDwarf,self.nserror_data_formatter_commands)
+
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
+    def test_nsbundle_with_dsym_and_run_command(self):
+        """Test formatters for NSBundle."""
+        self.appkit_tester_impl(self.buildDsym,self.nsbundle_data_formatter_commands)
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dwarf_test
+    def test_nsbundle_with_dwarf_and_run_command(self):
+        """Test formatters for NSBundle."""
+        self.appkit_tester_impl(self.buildDwarf,self.nsbundle_data_formatter_commands)
+
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
+    def test_nsexception_with_dsym_and_run_command(self):
+        """Test formatters for NSException."""
+        self.appkit_tester_impl(self.buildDsym,self.nsexception_data_formatter_commands)
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dwarf_test
+    def test_nsexception_with_dwarf_and_run_command(self):
+        """Test formatters for NSException."""
+        self.appkit_tester_impl(self.buildDwarf,self.nsexception_data_formatter_commands)
+
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
+    def test_nsmisc_with_dsym_and_run_command(self):
+        """Test formatters for misc NS classes."""
+        self.appkit_tester_impl(self.buildDsym,self.nsmisc_data_formatter_commands)
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dwarf_test
+    def test_nsmisc_with_dwarf_and_run_command(self):
+        """Test formatters for misc NS classes."""
+        self.appkit_tester_impl(self.buildDwarf,self.nsmisc_data_formatter_commands)
+
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
+    def test_nsdate_with_dsym_and_run_command(self):
+        """Test formatters for NSDate."""
+        self.appkit_tester_impl(self.buildDsym,self.nsdate_data_formatter_commands)
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dwarf_test
+    def test_nsdate_with_dwarf_and_run_command(self):
+        """Test formatters for NSDate."""
+        self.appkit_tester_impl(self.buildDwarf,self.nsdate_data_formatter_commands)
+
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -84,7 +206,6 @@ class ObjCDataFormatterTestCase(TestBase):
         self.rdar11106605_commands()
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
-    @expectedFailurei386
     @dsym_test
     def test_expr_with_dsym_and_run_command(self):
         """Test common cases of expression parser <--> formatters interaction."""
@@ -92,7 +213,6 @@ class ObjCDataFormatterTestCase(TestBase):
         self.expr_objc_data_formatter_commands()
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
-    @expectedFailurei386
     @dwarf_test
     def test_expr_with_dwarf_and_run_command(self):
         """Test common cases of expression parser <--> formatters interaction."""
@@ -109,10 +229,7 @@ class ObjCDataFormatterTestCase(TestBase):
         """Check that Unicode characters come out of CFString summary correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.m -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.m', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.m", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -143,10 +260,7 @@ class ObjCDataFormatterTestCase(TestBase):
         """Test basic ObjC formatting behavior."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.m -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.m', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.m", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -196,14 +310,22 @@ class ObjCDataFormatterTestCase(TestBase):
         self.expect("frame variable *object",
                     substrs = ['a test']);
 
-    def appkit_data_formatter_commands(self):
+        self.expect('frame variable myclass',
+                    substrs = ['(Class) myclass = NSValue'])
+        self.expect('frame variable myclass2',
+                    substrs = ['(Class) myclass2 = __NSCFConstantString'])
+        self.expect('frame variable myclass3',
+                    substrs = ['(Class) myclass3 = Molecule'])
+        self.expect('frame variable myclass4',
+                    substrs = ['(Class) myclass4 = NSMutableArray'])
+        self.expect('frame variable myclass5',
+                    substrs = ['(Class) myclass5 = nil'])
+
+    def appkit_common_data_formatters_command(self):
         """Test formatters for AppKit classes."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.m -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.m', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.m", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -221,7 +343,8 @@ class ObjCDataFormatterTestCase(TestBase):
 
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
-
+    
+    def nsnumber_data_formatter_commands(self):
         # Now enable AppKit and check we are displaying Cocoa classes correctly
         self.expect('frame variable num1 num2 num3 num4 num5 num6 num7 num8_Y num8_N num9',
                     substrs = ['(NSNumber *) num1 = ',' (int)5',
@@ -235,13 +358,16 @@ class ObjCDataFormatterTestCase(TestBase):
                     '(NSNumber *) num8_N = ',' @"0"',
                     '(NSNumber *) num9 = ',' (short)-31616'])
 
+        self.expect('frame variable decimal_one',
+                    substrs = ['(NSDecimalNumber *) decimal_one = 0x','1'])
+
         self.expect('frame variable num_at1 num_at2 num_at3 num_at4',
                     substrs = ['(NSNumber *) num_at1 = ',' (int)12',
                     '(NSNumber *) num_at2 = ',' (int)-12',
                     '(NSNumber *) num_at3 = ',' (double)12.5',
                     '(NSNumber *) num_at4 = ',' (double)-12.5'])
 
-        
+    def nsstring_data_formatter_commands(self):
         self.expect('frame variable str0 str1 str2 str3 str4 str5 str6 str8 str9 str10 str11 label1 label2 processName str12',
                     substrs = ['(NSString *) str1 = ',' @"A rather short ASCII NSString object is here"',
                     '(NSString *) str0 = ',' @"255"',
@@ -258,7 +384,16 @@ class ObjCDataFormatterTestCase(TestBase):
                     '(NSString *) label1 = ',' @"Process Name: "',
                     '(NSString *) label2 = ',' @"Process Id: "',
                     '(NSString *) str12 = ',' @"Process Name:  a.out Process Id:'])
+        self.expect('frame variable attrString mutableAttrString mutableGetConst',
+                    substrs = ['(NSAttributedString *) attrString = ',' @"hello world from foo"',
+                    '(NSAttributedString *) mutableAttrString = ',' @"hello world from foo"',
+                    '(NSString *) mutableGetConst = ',' @"foo said this string needs to be very long so much longer than whatever other string has been seen ever before by anyone of the mankind that of course this is still not long enough given what foo our friend foo our lovely dearly friend foo desired of us so i am adding more stuff here for the sake of it and for the joy of our friend who is named guess what just foo. hence, dear friend foo, stay safe, your string is now  long enough to accommodate your testing need and I will make sure that if not we extend it with even more fuzzy random meaningless words pasted one after the other from a long tiresome friday evening spent working in my office. my office mate went home but I am still randomly typing just for the fun of seeing what happens of the length of a Mutable String in Cocoa if it goes beyond one byte.. so be it, dear foo"'])
 
+        self.expect('expr -d run-target -- path',substrs = ['usr/blah/stuff'])
+        self.expect('frame variable path',substrs = ['usr/blah/stuff'])
+
+
+    def nscontainers_data_formatter_commands(self):
         self.expect('frame variable newArray newDictionary newMutableDictionary cfdict_ref mutable_dict_ref cfarray_ref mutable_array_ref',
                     substrs = ['(NSArray *) newArray = ','@"50 objects"',
                     '(NSDictionary *) newDictionary = ',' 12 key/value pairs',
@@ -268,14 +403,18 @@ class ObjCDataFormatterTestCase(TestBase):
                     '(CFArrayRef) cfarray_ref = ','@"3 objects"',
                     '(CFMutableArrayRef) mutable_array_ref = ','@"11 objects"'])
 
-        self.expect('frame variable attrString mutableAttrString mutableGetConst',
-                    substrs = ['(NSAttributedString *) attrString = ',' @"hello world from foo"',
-                    '(NSAttributedString *) mutableAttrString = ',' @"hello world from foo"',
-                    '(NSString *) mutableGetConst = ',' @"foo said this string needs to be very long so much longer than whatever other string has been seen ever before by anyone of the mankind that of course this is still not long enough given what foo our friend foo our lovely dearly friend foo desired of us so i am adding more stuff here for the sake of it and for the joy of our friend who is named guess what just foo. hence, dear friend foo, stay safe, your string is now  long enough to accommodate your testing need and I will make sure that if not we extend it with even more fuzzy random meaningless words pasted one after the other from a long tiresome friday evening spent working in my office. my office mate went home but I am still randomly typing just for the fun of seeing what happens of the length of a Mutable String in Cocoa if it goes beyond one byte.. so be it, dear foo"'])
+        self.expect('frame variable nscounted_set',
+                    substrs = ['(NSCountedSet *) nscounted_set = ','5 objects'])
 
-        self.expect('frame variable -d run-target path',substrs = ['usr/blah/stuff'])
-        self.expect('frame variable path',substrs = ['usr/blah/stuff'])
+        self.expect('frame variable iset1 iset2 imset',
+                    substrs = ['4 indexes','512 indexes','10 indexes'])
 
+        self.expect('frame variable mutable_bag_ref cfbag_ref binheap_ref',
+                    substrs = ['(CFMutableBagRef) mutable_bag_ref = ','@"17 values"',
+                    '(CFBagRef) cfbag_ref = ','@"15 values"',
+                    '(CFBinaryHeapRef) binheap_ref = ','@"21 items"'])
+
+    def nsdata_data_formatter_commands(self):
         self.expect('frame variable immutableData mutableData data_ref mutable_data_ref mutable_string_ref',
                     substrs = ['(NSData *) immutableData = ',' 4 bytes',
                     '(NSData *) mutableData = ',' 14 bytes',
@@ -283,11 +422,7 @@ class ObjCDataFormatterTestCase(TestBase):
                     '(CFMutableDataRef) mutable_data_ref = ','@"5 bytes"',
                     '(CFMutableStringRef) mutable_string_ref = ',' @"Wish ya knew"'])
 
-        self.expect('frame variable mutable_bag_ref cfbag_ref binheap_ref',
-                    substrs = ['(CFMutableBagRef) mutable_bag_ref = ','@"17 values"',
-                    '(CFBagRef) cfbag_ref = ','@"15 values"',
-                    '(CFBinaryHeapRef) binheap_ref = ','@"21 items"'])
-
+    def nsurl_data_formatter_commands(self):
         self.expect('frame variable cfurl_ref cfchildurl_ref cfgchildurl_ref',
                     substrs = ['(CFURLRef) cfurl_ref = ','@"http://www.foo.bar',
                     'cfchildurl_ref = ','@"page.html -- http://www.foo.bar',
@@ -298,20 +433,43 @@ class ObjCDataFormatterTestCase(TestBase):
                     '(NSURL *) nsurl2 =','@"page.html -- http://www.foo.bar',
                     '(NSURL *) nsurl3 = ','@"?whatever -- http://www.foo.bar/page.html"'])
 
+    def nserror_data_formatter_commands(self):
+        self.expect('frame variable nserror',
+                    substrs = ['domain: @"Foobar" - code: 12'])
+
+        self.expect('frame variable nserror->_userInfo',
+                    substrs = ['2 key/value pairs'])
+
+        self.expect('frame variable nserror->_userInfo --ptr-depth 1 -d run-target',
+                    substrs = ['@"a"','@"b"',"1","2"])
+
+    def nsbundle_data_formatter_commands(self):
         self.expect('frame variable bundle_string bundle_url main_bundle',
                     substrs = ['(NSBundle *) bundle_string = ',' @"/System/Library/Frameworks/Accelerate.framework"',
                     '(NSBundle *) bundle_url = ',' @"/System/Library/Frameworks/Cocoa.framework"',
                     '(NSBundle *) main_bundle = ','data-formatter-objc'])
 
+    def nsexception_data_formatter_commands(self):
         self.expect('frame variable except0 except1 except2 except3',
                     substrs = ['(NSException *) except0 = ','name:@"TheGuyWhoHasNoName" reason:@"cuz it\'s funny"',
                     '(NSException *) except1 = ','name:@"TheGuyWhoHasNoName~1" reason:@"cuz it\'s funny"',
                     '(NSException *) except2 = ','name:@"TheGuyWhoHasNoName`2" reason:@"cuz it\'s funny"',
                     '(NSException *) except3 = ','name:@"TheGuyWhoHasNoName/3" reason:@"cuz it\'s funny"'])
 
+    def nsmisc_data_formatter_commands(self):
+        self.expect('frame variable localhost',
+                    substrs = ['<NSHost ','> localhost ((','"127.0.0.1"'])
+
+        self.expect('frame variable my_task',
+                    substrs = ['<NS','Task: 0x'])
+
+        self.expect('frame variable range_value',
+                    substrs = ['NSRange: {4, 4}'])
+
         self.expect('frame variable port',
                     substrs = ['(NSMachPort *) port = ',' mach port: '])
 
+    def nsdate_data_formatter_commands(self):
         self.expect('frame variable date1 date2',
                     substrs = ['1985-04','2011-01'])
 
@@ -329,20 +487,12 @@ class ObjCDataFormatterTestCase(TestBase):
         self.expect('frame variable date3_abs date4_abs',
                     substrs = [now_year,'1970'])
 
-        #self.runCmd('mem read `&date4_abs`')
-
-        #self.runCmd('mem read `nscounted_set`')
-
-        self.expect('frame variable nscounted_set',
-                    substrs = ['(NSCountedSet *) nscounted_set = ','5 objects'])
-
-        #self.runCmd('mem read `imset`')
-        #self.runCmd("p (int)[imset count]")
-
-        self.expect('frame variable iset1 iset2 imset',
-                    substrs = ['4 objects','512 objects','10 objects'])
-
         self.expect('frame variable cupertino home europe',
+                    substrs = ['@"America/Los_Angeles"',
+                    '@"Europe/Rome"',
+                    '@"Europe/Paris"'])
+
+        self.expect('frame variable cupertino_ns home_ns europe_ns',
                     substrs = ['@"America/Los_Angeles"',
                     '@"Europe/Rome"',
                     '@"Europe/Paris"'])
@@ -350,32 +500,12 @@ class ObjCDataFormatterTestCase(TestBase):
         self.expect('frame variable mut_bv',
                     substrs = ['(CFMutableBitVectorRef) mut_bv = ', '1110 0110 1011 0000 1101 1010 1000 1111 0011 0101 1101 0001 00'])
 
-        self.expect('frame variable cupertino_ns home_ns europe_ns',
-                    substrs = ['@"America/Los_Angeles"',
-                    '@"Europe/Rome"',
-                    '@"Europe/Paris"'])
-
-        self.runCmd('type summary list')
-        self.expect('frame variable myclass',
-                    substrs = ['(Class) myclass = NSValue'])
-        self.expect('frame variable myclass2',
-                    substrs = ['(Class) myclass2 = __NSCFConstantString'])
-        self.expect('frame variable myclass3',
-                    substrs = ['(Class) myclass3 = Molecule'])
-        self.expect('frame variable myclass4',
-                    substrs = ['(Class) myclass4 = NSMutableArray'])
-        self.expect('frame variable myclass5',
-                    substrs = ['(Class) myclass5 = <error: unknown Class>'])
-
 
     def expr_objc_data_formatter_commands(self):
         """Test common cases of expression parser <--> formatters interaction."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.m -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.m', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.m", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -399,18 +529,18 @@ class ObjCDataFormatterTestCase(TestBase):
         self.expect('expression ((id)@"Hello")', matching=False,
                     substrs = ['Hello'])
 
-        self.expect('expression -d true -- ((id)@"Hello")',
+        self.expect('expression -d run -- ((id)@"Hello")',
         substrs = ['Hello'])
 
-        self.expect('expr -d true -- label1',
+        self.expect('expr -d run -- label1',
             substrs = ['Process Name'])
 
-        self.expect('expr -d true -- @"Hello"',
+        self.expect('expr -d run -- @"Hello"',
             substrs = ['Hello'])
 
-        self.expect('expr -d true -o -- @"Hello"',
+        self.expect('expr -d run --object-description -- @"Hello"',
             substrs = ['Hello'])
-        self.expect('expr -d true -o -- @"Hello"', matching=False,
+        self.expect('expr -d run --object-description -- @"Hello"', matching=False,
             substrs = ['@"Hello" Hello'])
 
 
@@ -418,10 +548,7 @@ class ObjCDataFormatterTestCase(TestBase):
         """Test formatters for Core OSX frameworks."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.m -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.m', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.m", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -475,10 +602,7 @@ class ObjCDataFormatterTestCase(TestBase):
         """Test the behavior of formatters when KVO is in use."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.m -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.m', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.m", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -512,7 +636,8 @@ class ObjCDataFormatterTestCase(TestBase):
         # check that NSMutableDictionary's formatter is not confused when dealing with a KVO'd dictionary
         self.expect('frame variable newMutableDictionary', substrs = ['(NSDictionary *) newMutableDictionary = ',' 21 key/value pairs'])
 
-        self.runCmd("breakpoint set -r setAtoms")
+        lldbutil.run_break_set_by_regexp (self, 'setAtoms')
+
         self.runCmd("continue")
         self.expect("frame variable _cmd",substrs = ['setAtoms:'])
 

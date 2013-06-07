@@ -23,8 +23,10 @@
 #include <sys/socket.h>
 // C++ Includes
 #include <map>
+#include <string>
 // Other libraries and framework includes
 // Project includes
+#include "DNBDefs.h"
 #include "MachException.h"
 #include "MachVMMemory.h"
 #include "PThreadMutex.h"
@@ -65,6 +67,7 @@ public:
             nub_size_t      ReadMemory (nub_addr_t addr, nub_size_t size, void *buf);
             nub_size_t      WriteMemory (nub_addr_t addr, nub_size_t size, const void *buf);
             int             GetMemoryRegionInfo (nub_addr_t addr, DNBRegionInfo *region_info);
+            std::string     GetProfileData (DNBProfileDataScanType scanType);
 
             nub_addr_t      AllocateMemory (nub_size_t size, uint32_t permissions);
             nub_bool_t      DeallocateMemory (nub_addr_t addr);
@@ -89,6 +92,7 @@ public:
             MachProcess *   Process () { return m_process; }
     const   MachProcess *   Process () const { return m_process; }
     
+            nub_size_t      PageSize ();
     
             bool            HasMallocLoggingEnabled ();
 

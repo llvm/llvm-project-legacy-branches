@@ -22,6 +22,7 @@
 #include "lldb/Core/Log.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/SearchFilter.h"
+#include "lldb/Core/Section.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Symbol/SymbolContext.h"
@@ -107,7 +108,7 @@ Breakpoint::FindLocationByID (break_id_t bp_loc_id)
 }
 
 BreakpointLocationSP
-Breakpoint::GetLocationAtIndex (uint32_t index)
+Breakpoint::GetLocationAtIndex (size_t index)
 {
     return m_locations.GetByIndex(index);
 }
@@ -188,6 +189,18 @@ Breakpoint::GetHitCount () const
     return m_locations.GetHitCount();
 }
 
+bool
+Breakpoint::IsOneShot () const
+{
+    return m_options.IsOneShot();
+}
+
+void
+Breakpoint::SetOneShot (bool one_shot)
+{
+    m_options.SetOneShot (one_shot);
+}
+
 void
 Breakpoint::SetThreadID (lldb::tid_t thread_id)
 {
@@ -229,7 +242,8 @@ Breakpoint::GetThreadIndex() const
 void
 Breakpoint::SetThreadName (const char *thread_name)
 {
-    if (::strcmp (m_options.GetThreadSpec()->GetName(), thread_name) == 0)
+    if (m_options.GetThreadSpec()->GetName() != NULL
+        && ::strcmp (m_options.GetThreadSpec()->GetName(), thread_name) == 0)
         return;
         
     m_options.GetThreadSpec()->SetName (thread_name);
@@ -248,7 +262,8 @@ Breakpoint::GetThreadName () const
 void 
 Breakpoint::SetQueueName (const char *queue_name)
 {
-    if (::strcmp (m_options.GetThreadSpec()->GetQueueName(), queue_name) == 0)
+    if (m_options.GetThreadSpec()->GetQueueName() != NULL
+        && ::strcmp (m_options.GetThreadSpec()->GetQueueName(), queue_name) == 0)
         return;
         
     m_options.GetThreadSpec()->SetQueueName (queue_name);
@@ -378,7 +393,7 @@ Breakpoint::ModulesChanged (ModuleList &module_list, bool load, bool delete_loca
 
                     if (!break_loc->ResolveBreakpointSite())
                     {
-                        LogSP log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
+                        Log *log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
                         if (log)
                             log->Printf ("Warning: could not set breakpoint site for breakpoint location %d of breakpoint %d.\n",
                                          break_loc->GetID(), GetID());
@@ -511,22 +526,39 @@ void
 Breakpoint::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_locations)
 {
     assert (s != NULL);
-    s->Printf("%i: ", GetID());
-    GetResolverDescription (s);
-    GetFilterDescription (s);
-
+    
+    if (!m_kind_description.empty())
+    {
+        if (eDescriptionLevelBrief)
+        {
+            s->PutCString (GetBreakpointKind());
+            return;
+        }
+        else
+            s->Printf("Kind: %s\n", GetBreakpointKind ());
+    }
+    
     const size_t num_locations = GetNumLocations ();
     const size_t num_resolved_locations = GetNumResolvedLocations ();
-
+    
+    // They just made the breakpoint, they don't need to be told HOW they made it...
+    // Also, we'll print the breakpoint number differently depending on whether there is 1 or more locations.
+    if (level != eDescriptionLevelInitial)
+    {
+        s->Printf("%i: ", GetID());
+        GetResolverDescription (s);
+        GetFilterDescription (s);
+    }
+    
     switch (level)
     {
     case lldb::eDescriptionLevelBrief:
     case lldb::eDescriptionLevelFull:
         if (num_locations > 0)
         {
-            s->Printf(", locations = %zu", num_locations);
+            s->Printf(", locations = %" PRIu64, (uint64_t)num_locations);
             if (num_resolved_locations > 0)
-                s->Printf(", resolved = %zu", num_resolved_locations);
+                s->Printf(", resolved = %" PRIu64, (uint64_t)num_resolved_locations);
         }
         else
         {
@@ -544,7 +576,32 @@ Breakpoint::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_l
             s->EOL();
         }
         break;
-
+        
+    case lldb::eDescriptionLevelInitial:
+        s->Printf ("Breakpoint %i: ", GetID());
+        if (num_locations == 0)
+        {
+            s->Printf ("no locations (pending).");
+        }
+        else if (num_locations == 1)
+        {
+            // If there is one location only, we'll just print that location information.  But don't do this if
+            // show locations is true, then that will be handled below.
+            if (show_locations == false)
+            {
+                GetLocationAtIndex(0)->GetDescription(s, level);
+            }
+            else
+            {
+                s->Printf ("%zd locations.", num_locations);
+            }
+        }
+        else
+        {
+            s->Printf ("%zd locations.", num_locations);
+        }
+        s->EOL();
+        break;
     case lldb::eDescriptionLevelVerbose:
         // Verbose mode does a debug dump of the breakpoint
         Dump (s);
@@ -712,7 +769,7 @@ Breakpoint::BreakpointEventData::GetBreakpointFromEvent (const EventSP &event_sp
     return bp_sp;
 }
 
-uint32_t
+size_t
 Breakpoint::BreakpointEventData::GetNumBreakpointLocationsFromEvent (const EventSP &event_sp)
 {
     const BreakpointEventData *data = GetEventDataFromEvent (event_sp.get());

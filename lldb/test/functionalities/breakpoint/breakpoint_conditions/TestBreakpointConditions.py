@@ -67,12 +67,10 @@ class BreakpointConditionsTestCase(TestBase):
 
         if inline:
             # Create a breakpoint by function name 'c' and set the condition.
-            self.expect("breakpoint set -n c -c 'val == 3'", BREAKPOINT_CREATED,
-                startstr = "Breakpoint created: 1: name = 'c', locations = 1")
+            lldbutil.run_break_set_by_symbol (self, "c", extra_options="-c 'val == 3'", num_expected_locations=1, sym_exact=True)
         else:
             # Create a breakpoint by function name 'c'.
-            self.expect("breakpoint set -n c", BREAKPOINT_CREATED,
-                startstr = "Breakpoint created: 1: name = 'c', locations = 1")
+            lldbutil.run_break_set_by_symbol (self, "c", num_expected_locations=1, sym_exact=True)
 
             # And set a condition on the breakpoint to stop on when 'val == 3'.
             self.runCmd("breakpoint modify -c 'val == 3' 1")
@@ -84,8 +82,8 @@ class BreakpointConditionsTestCase(TestBase):
         self.expect("process status", PROCESS_STOPPED,
             patterns = ['Process .* stopped'])
 
-        # 'frame variable -T val' should return 3 due to breakpoint condition.
-        self.expect("frame variable -T val", VARIABLES_DISPLAYED_CORRECTLY,
+        # 'frame variable --show-types val' should return 3 due to breakpoint condition.
+        self.expect("frame variable --show-types val", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = '(int) val = 3')
 
         # Also check the hit count, which should be 3, by design.
@@ -115,8 +113,8 @@ class BreakpointConditionsTestCase(TestBase):
         self.expect("process status", PROCESS_STOPPED,
             patterns = ['Process .* stopped'])
 
-        # 'frame variable -T val' should return 1 since it is the first breakpoint hit.
-        self.expect("frame variable -T val", VARIABLES_DISPLAYED_CORRECTLY,
+        # 'frame variable --show-types val' should return 1 since it is the first breakpoint hit.
+        self.expect("frame variable --show-types val", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = '(int) val = 1')
 
 
@@ -167,7 +165,7 @@ class BreakpointConditionsTestCase(TestBase):
         # Frame #0 should be on self.line1 and the break condition should hold.
         from lldbutil import get_stopped_thread
         thread = get_stopped_thread(process, lldb.eStopReasonBreakpoint)
-        self.assertTrue(thread != None, "There should be a thread stopped due to breakpoint condition")
+        self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint condition")
         frame0 = thread.GetFrameAtIndex(0)
         var = frame0.FindValue('val', lldb.eValueTypeVariableArgument)
         self.assertTrue(frame0.GetLineEntry().GetLine() == self.line1 and

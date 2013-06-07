@@ -37,7 +37,7 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -62,6 +62,9 @@ public:
     virtual void
     DidLaunch ();
 
+    virtual bool
+    ProcessDidExec ();
+
     virtual lldb::ThreadPlanSP
     GetStepThroughTrampolinePlan (lldb_private::Thread &thread,
                                   bool stop_others);
@@ -77,11 +80,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -118,45 +118,10 @@ protected:
                          lldb::user_id_t break_loc_id);
 
     uint32_t
-    AddrByteSize()
-    {
-        switch (m_dyld.header.magic)
-        {
-            case llvm::MachO::HeaderMagic32:
-            case llvm::MachO::HeaderMagic32Swapped:
-                return 4;
-
-            case llvm::MachO::HeaderMagic64:
-            case llvm::MachO::HeaderMagic64Swapped:
-                return 8;
-
-            default:
-                break;
-        }
-        return 0;
-    }
+    AddrByteSize();
 
     static lldb::ByteOrder
-    GetByteOrderFromMagic (uint32_t magic)
-    {
-        switch (magic)
-        {
-            case llvm::MachO::HeaderMagic32:
-            case llvm::MachO::HeaderMagic64:
-                return lldb::endian::InlHostByteOrder();
-
-            case llvm::MachO::HeaderMagic32Swapped:
-            case llvm::MachO::HeaderMagic64Swapped:
-                if (lldb::endian::InlHostByteOrder() == lldb::eByteOrderBig)
-                    return lldb::eByteOrderLittle;
-                else
-                    return lldb::eByteOrderBig;
-
-            default:
-                break;
-        }
-        return lldb::eByteOrderInvalid;
-    }
+    GetByteOrderFromMagic (uint32_t magic);
 
     bool
     ReadMachHeader (lldb::addr_t addr,
@@ -210,6 +175,7 @@ protected:
         lldb_private::UUID uuid;            // UUID for this dylib if it has one, else all zeros
         llvm::MachO::mach_header header;    // The mach header for this image
         std::vector<Segment> segments;      // All segment vmaddr and vmsize pairs for this executable (from memory of inferior)
+        uint32_t load_stop_id;              // The process stop ID that the sections for this image were loadeded
 
         DYLDImageInfo() :
             address(LLDB_INVALID_ADDRESS),
@@ -218,7 +184,8 @@ protected:
             file_spec(),
             uuid(),
             header(),
-            segments()
+            segments(),
+            load_stop_id(0)
         {
         }
 
@@ -235,6 +202,7 @@ protected:
             }
             uuid.Clear();
             segments.clear();
+            load_stop_id = 0;
         }
 
         bool
@@ -269,26 +237,7 @@ protected:
         }
 
         lldb::ByteOrder
-        GetByteOrder()
-        {
-            switch (header.magic)
-            {
-            case llvm::MachO::HeaderMagic32:        // MH_MAGIC
-            case llvm::MachO::HeaderMagic64:        // MH_MAGIC_64
-                return lldb::endian::InlHostByteOrder();
-
-            case llvm::MachO::HeaderMagic32Swapped: // MH_CIGAM
-            case llvm::MachO::HeaderMagic64Swapped: // MH_CIGAM_64
-                if (lldb::endian::InlHostByteOrder() == lldb::eByteOrderLittle)
-                    return lldb::eByteOrderBig;
-                else
-                    return lldb::eByteOrderLittle;
-            default:
-                assert (!"invalid header.magic value");
-                break;
-            }
-            return lldb::endian::InlHostByteOrder();
-        }
+        GetByteOrder();
 
         lldb_private::ArchSpec
         GetArchitecture () const
@@ -367,7 +316,7 @@ protected:
                             DYLDImageInfo& info);
 
     lldb::ModuleSP
-    FindTargetModuleForDYLDImageInfo (const DYLDImageInfo &image_info,
+    FindTargetModuleForDYLDImageInfo (DYLDImageInfo &image_info,
                                       bool can_create,
                                       bool *did_create_ptr);
 
@@ -409,9 +358,6 @@ protected:
                                           bool update_executable);
 
     bool
-    UpdateCommPageLoadAddress (lldb_private::Module *module);
-
-    bool
     ReadImageInfos (lldb::addr_t image_infos_addr, 
                     uint32_t image_infos_count, 
                     DYLDImageInfo::collection &image_infos);
@@ -426,6 +372,7 @@ protected:
     uint32_t m_dyld_image_infos_stop_id;    // The process stop ID that "m_dyld_image_infos" is valid for
     mutable lldb_private::Mutex m_mutex;
     lldb_private::Process::Notifications m_notification_callbacks;
+    bool m_process_image_addr_is_all_images_infos;
 
 private:
     DISALLOW_COPY_AND_ASSIGN (DynamicLoaderMacOSXDYLD);

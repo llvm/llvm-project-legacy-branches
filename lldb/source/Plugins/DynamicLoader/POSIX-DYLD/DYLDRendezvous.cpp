@@ -13,6 +13,7 @@
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
 
@@ -58,7 +59,12 @@ DYLDRendezvous::DYLDRendezvous(Process *process)
       m_removed_soentries()
 {
     // Cache a copy of the executable path
-    m_process->GetTarget().GetExecutableModule().get()->GetFileSpec().GetPath(m_exe_path, PATH_MAX);
+    if (m_process)
+    {
+        Module *exe_mod = m_process->GetTarget().GetExecutableModulePointer();
+        if (exe_mod)
+            exe_mod->GetFileSpec().GetPath(m_exe_path, PATH_MAX);
+    }
 }
 
 bool
@@ -294,7 +300,7 @@ DYLDRendezvous::ReadSOEntryFromMemory(lldb::addr_t addr, SOEntry &entry)
 }
 
 void
-DYLDRendezvous::DumpToLog(LogSP log) const
+DYLDRendezvous::DumpToLog(Log *log) const
 {
     int state = GetState();
 
@@ -302,11 +308,11 @@ DYLDRendezvous::DumpToLog(LogSP log) const
         return;
 
     log->PutCString("DYLDRendezvous:");
-    log->Printf("   Address: %llx", GetRendezvousAddress());
-    log->Printf("   Version: %d",  GetVersion());
-    log->Printf("   Link   : %llx", GetLinkMapAddress());
-    log->Printf("   Break  : %llx", GetBreakAddress());
-    log->Printf("   LDBase : %llx", GetLDBase());
+    log->Printf("   Address: %" PRIx64, GetRendezvousAddress());
+    log->Printf("   Version: %" PRIu64, GetVersion());
+    log->Printf("   Link   : %" PRIx64, GetLinkMapAddress());
+    log->Printf("   Break  : %" PRIx64, GetBreakAddress());
+    log->Printf("   LDBase : %" PRIx64, GetLDBase());
     log->Printf("   State  : %s", 
                 (state == eConsistent) ? "consistent" :
                 (state == eAdd)        ? "add"        :
@@ -321,10 +327,10 @@ DYLDRendezvous::DumpToLog(LogSP log) const
     for (int i = 1; I != E; ++I, ++i) 
     {
         log->Printf("\n   SOEntry [%d] %s", i, I->path.c_str());
-        log->Printf("      Base : %llx", I->base_addr);
-        log->Printf("      Path : %llx", I->path_addr);
-        log->Printf("      Dyn  : %llx", I->dyn_addr);
-        log->Printf("      Next : %llx", I->next);
-        log->Printf("      Prev : %llx", I->prev);
+        log->Printf("      Base : %" PRIx64, I->base_addr);
+        log->Printf("      Path : %" PRIx64, I->path_addr);
+        log->Printf("      Dyn  : %" PRIx64, I->dyn_addr);
+        log->Printf("      Next : %" PRIx64, I->next);
+        log->Printf("      Prev : %" PRIx64, I->prev);
     }
 }

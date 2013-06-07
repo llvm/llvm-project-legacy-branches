@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectPlatform.h"
 
 // C Includes
@@ -15,6 +17,7 @@
 // Project includes
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Core/Debugger.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
@@ -300,7 +303,7 @@ protected:
         
         PlatformSP host_platform_sp (Platform::GetDefaultPlatform());
         ostrm.Printf ("%s: %s\n", 
-                      host_platform_sp->GetShortPluginName(), 
+                      host_platform_sp->GetPluginName().GetCString(),
                       host_platform_sp->GetDescription());
 
         uint32_t idx;
@@ -352,7 +355,16 @@ protected:
     {
         Stream &ostrm = result.GetOutputStream();      
         
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {
+            platform_sp = target->GetPlatform();
+        }
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }
         if (platform_sp)
         {
             platform_sp->GetStatus (ostrm);
@@ -477,7 +489,7 @@ protected:
                     {
                         Stream &ostrm = result.GetOutputStream();      
                         if (hostname.empty())
-                            ostrm.Printf ("Disconnected from \"%s\"\n", platform_sp->GetShortPluginName());
+                            ostrm.Printf ("Disconnected from \"%s\"\n", platform_sp->GetPluginName().GetCString());
                         else
                             ostrm.Printf ("Disconnected from \"%s\"\n", hostname.c_str());
                         result.SetStatus (eReturnStatusSuccessFinishResult);            
@@ -491,7 +503,7 @@ protected:
                 else
                 {
                     // Not connected...
-                    result.AppendErrorWithFormat ("not connected to '%s'", platform_sp->GetShortPluginName());
+                    result.AppendErrorWithFormat ("not connected to '%s'", platform_sp->GetPluginName().GetCString());
                     result.SetStatus (eReturnStatusFailed);            
                 }
             }
@@ -599,6 +611,7 @@ public:
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
         {
+            Error error;
             std::string cmd_line;
             args.GetCommandString(cmd_line);
             mode_t perms;
@@ -607,12 +620,21 @@ public:
                 perms = options_permissions->m_permissions;
             else
                 perms = 0000700 | 0000070 | 0000007;
-            uint32_t retcode = platform_sp->OpenFile(FileSpec(cmd_line.c_str(),false),
-                                                     File::eOpenOptionRead | File::eOpenOptionWrite |
-                                                     File::eOpenOptionAppend | File::eOpenOptionCanCreate,
-                                                     perms);
-            result.AppendMessageWithFormat("Status = %d\n",retcode);
-            result.SetStatus (eReturnStatusSuccessFinishResult);
+            lldb::user_id_t fd = platform_sp->OpenFile(FileSpec(cmd_line.c_str(),false),
+                                                       File::eOpenOptionRead | File::eOpenOptionWrite |
+                                                       File::eOpenOptionAppend | File::eOpenOptionCanCreate,
+                                                       perms,
+                                                       error);
+            if (error.Success())
+            {
+                result.AppendMessageWithFormat("File Descriptor = %lld\n",fd);
+                result.SetStatus (eReturnStatusSuccessFinishResult);
+            }
+            else
+            {
+                result.AppendError(error.AsCString());
+                result.SetStatus (eReturnStatusFailed);
+            }
         }
         else
         {
@@ -662,10 +684,19 @@ public:
         {
             std::string cmd_line;
             args.GetCommandString(cmd_line);
-            uint32_t fd = ::atoi(cmd_line.c_str());
-            uint32_t retcode = platform_sp->CloseFile(fd);
-            result.AppendMessageWithFormat("Status = %d\n",retcode);
-            result.SetStatus (eReturnStatusSuccessFinishResult);
+            const lldb::user_id_t fd = Args::StringToUInt64(cmd_line.c_str(), UINT64_MAX);
+            Error error;
+            bool success = platform_sp->CloseFile(fd, error);
+            if (success)
+            {
+                result.AppendMessageWithFormat("file %lld closed.\n", fd);
+                result.SetStatus (eReturnStatusSuccessFinishResult);
+            }
+            else
+            {
+                result.AppendError(error.AsCString());
+                result.SetStatus (eReturnStatusFailed);
+            }
         }
         else
         {
@@ -705,9 +736,10 @@ public:
         {
             std::string cmd_line;
             args.GetCommandString(cmd_line);
-            uint32_t fd = ::atoi(cmd_line.c_str());
+            const lldb::user_id_t fd = Args::StringToUInt64(cmd_line.c_str(), UINT64_MAX);
             std::string buffer(m_options.m_count,0);
-            uint32_t retcode = platform_sp->ReadFile(fd, m_options.m_offset, &buffer[0], m_options.m_count);
+            Error error;
+            uint32_t retcode = platform_sp->ReadFile(fd, m_options.m_offset, &buffer[0], m_options.m_count, error);
             result.AppendMessageWithFormat("Return = %d\n",retcode);
             result.AppendMessageWithFormat("Data = \"%s\"\n",buffer.c_str());
             result.SetStatus (eReturnStatusSuccessFinishResult);
@@ -830,8 +862,13 @@ public:
         {
             std::string cmd_line;
             args.GetCommandString(cmd_line);
-            uint32_t fd = ::atoi(cmd_line.c_str());
-            uint32_t retcode = platform_sp->WriteFile(fd, m_options.m_offset, &m_options.m_data[0], m_options.m_data.size());
+            Error error;
+            const lldb::user_id_t fd = Args::StringToUInt64(cmd_line.c_str(), UINT64_MAX);
+            uint32_t retcode = platform_sp->WriteFile (fd,
+                                                       m_options.m_offset,
+                                                       &m_options.m_data[0],
+                                                       m_options.m_data.size(),
+                                                       error);
             result.AppendMessageWithFormat("Return = %d\n",retcode);
             result.SetStatus (eReturnStatusSuccessFinishResult);
         }
@@ -1009,14 +1046,14 @@ public:
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
         {
-            std::string remote_file_path(args.GetArgumentAtIndex(0));
-            std::string host_file_path(args.GetArgumentAtIndex(1));
-            Error error = platform_sp->GetFile(FileSpec(remote_file_path.c_str(), false),
-                                               FileSpec(host_file_path.c_str(), false));
+            const char *remote_file_path = args.GetArgumentAtIndex(0);
+            const char *local_file_path = args.GetArgumentAtIndex(1);
+            Error error = platform_sp->GetFile(FileSpec(remote_file_path, false),
+                                               FileSpec(local_file_path, false));
             if (error.Success())
             {
                 result.AppendMessageWithFormat("successfully get-file from %s (remote) to %s (host)\n",
-                                               remote_file_path.c_str(), host_file_path.c_str());
+                                               remote_file_path, local_file_path);
                 result.SetStatus (eReturnStatusSuccessFinishResult);
             }
             else
@@ -1139,7 +1176,16 @@ public:
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
         {
-            platform_sp->PutFile(src_fs, dst_fs);
+            Error error (platform_sp->PutFile(src_fs, dst_fs));
+            if (error.Success())
+            {
+                result.SetStatus (eReturnStatusSuccessFinishNoResult);
+            }
+            else
+            {
+                result.AppendError (error.AsCString());
+                result.SetStatus (eReturnStatusFailed);
+            }
         }
         else
         {
@@ -1157,11 +1203,11 @@ class CommandObjectPlatformProcessLaunch : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformProcessLaunch (CommandInterpreter &interpreter) :
-        CommandObjectParsed (interpreter, 
+        CommandObjectParsed (interpreter,
                              "platform process launch",
                              "Launch a new process on a remote platform.",
                              "platform process launch program",
-                             0),
+                             eFlagRequiresTarget | eFlagTryTargetAPILock),
         m_options (interpreter)
     {
     }
@@ -1181,20 +1227,22 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
-        
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {   
+            platform_sp = target->GetPlatform();
+        }   
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }   
+
         if (platform_sp)
         {
             Error error;
-            const uint32_t argc = args.GetArgumentCount();
-            Target *target = m_interpreter.GetExecutionContext().GetTargetPtr();
-            if (target == NULL)
-            {
-                result.AppendError ("invalid target, create a debug target using the 'target create' command");
-                result.SetStatus (eReturnStatusFailed);
-                return false;
-            }
-
+            const size_t argc = args.GetArgumentCount();
+            Target *target = m_exe_ctx.GetTargetPtr();
             Module *exe_module = target->GetExecutableModulePointer();
             if (exe_module)
             {
@@ -1218,9 +1266,7 @@ protected:
                     // We don't have any file yet, so the first argument is our
                     // executable, and the rest are program arguments
                     const bool first_arg_is_executable = true;
-                    m_options.launch_info.SetArguments (args, 
-                                                        first_arg_is_executable, 
-                                                        first_arg_is_executable);
+                    m_options.launch_info.SetArguments (args, first_arg_is_executable);
                 }
             }
             
@@ -1229,11 +1275,7 @@ protected:
                 Debugger &debugger = m_interpreter.GetDebugger();
 
                 if (argc == 0)
-                {
-                    const Args &target_settings_args = target->GetRunArguments();
-                    if (target_settings_args.GetArgumentCount())
-                        m_options.launch_info.GetArguments() = target_settings_args;
-                }
+                    target->GetRunArguments(m_options.launch_info.GetArguments());
 
                 ProcessSP process_sp (platform_sp->DebugProcess (m_options.launch_info, 
                                                                  debugger,
@@ -1303,7 +1345,16 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {   
+            platform_sp = target->GetPlatform();
+        }   
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }   
         
         if (platform_sp)
         {
@@ -1327,7 +1378,7 @@ protected:
                         }
                         else
                         {
-                            result.AppendErrorWithFormat ("no process found with pid = %llu\n", pid);
+                            result.AppendErrorWithFormat ("no process found with pid = %" PRIu64 "\n", pid);
                             result.SetStatus (eReturnStatusFailed);
                         }
                     }
@@ -1356,9 +1407,9 @@ protected:
                                 result.AppendErrorWithFormat ("no processes were found that %s \"%s\" on the \"%s\" platform\n", 
                                                               match_desc,
                                                               match_name,
-                                                              platform_sp->GetShortPluginName());
+                                                              platform_sp->GetPluginName().GetCString());
                             else
-                                result.AppendErrorWithFormat ("no processes were found on the \"%s\" platform\n", platform_sp->GetShortPluginName());
+                                result.AppendErrorWithFormat ("no processes were found on the \"%s\" platform\n", platform_sp->GetPluginName().GetCString());
                             result.SetStatus (eReturnStatusFailed);
                         }
                         else
@@ -1366,7 +1417,7 @@ protected:
                             result.AppendMessageWithFormat ("%u matching process%s found on \"%s\"", 
                                                             matches,
                                                             matches > 1 ? "es were" : " was",
-                                                            platform_sp->GetName());
+                                                            platform_sp->GetName().GetCString());
                             if (match_desc)
                                 result.AppendMessageWithFormat (" whose name %s \"%s\"", 
                                                                 match_desc,
@@ -1414,7 +1465,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success = false;
 
             switch (short_option)
@@ -1530,21 +1581,21 @@ protected:
 OptionDefinition
 CommandObjectPlatformProcessList::CommandOptions::g_option_table[] =
 {
-{   LLDB_OPT_SET_1, false, "pid"              , 'p', required_argument, NULL, 0, eArgTypePid          , "List the process info for a specific process ID." },
-{   LLDB_OPT_SET_2, true , "name"             , 'n', required_argument, NULL, 0, eArgTypeProcessName  , "Find processes with executable basenames that match a string." },
-{   LLDB_OPT_SET_3, true , "ends-with"        , 'e', required_argument, NULL, 0, eArgTypeNone         , "Find processes with executable basenames that end with a string." },
-{   LLDB_OPT_SET_4, true , "starts-with"      , 's', required_argument, NULL, 0, eArgTypeNone         , "Find processes with executable basenames that start with a string." },
-{   LLDB_OPT_SET_5, true , "contains"         , 'c', required_argument, NULL, 0, eArgTypeNone         , "Find processes with executable basenames that contain a string." },
-{   LLDB_OPT_SET_6, true , "regex"            , 'r', required_argument, NULL, 0, eArgTypeNone         , "Find processes with executable basenames that match a regular expression." },
-{  ~LLDB_OPT_SET_1, false, "parent"           , 'P', required_argument, NULL, 0, eArgTypePid          , "Find processes that have a matching parent process ID." },
-{  ~LLDB_OPT_SET_1, false, "uid"              , 'u', required_argument, NULL, 0, eArgTypeNone         , "Find processes that have a matching user ID." },
-{  ~LLDB_OPT_SET_1, false, "euid"             , 'U', required_argument, NULL, 0, eArgTypeNone         , "Find processes that have a matching effective user ID." },
-{  ~LLDB_OPT_SET_1, false, "gid"              , 'g', required_argument, NULL, 0, eArgTypeNone         , "Find processes that have a matching group ID." },
-{  ~LLDB_OPT_SET_1, false, "egid"             , 'G', required_argument, NULL, 0, eArgTypeNone         , "Find processes that have a matching effective group ID." },
-{  ~LLDB_OPT_SET_1, false, "arch"             , 'a', required_argument, NULL, 0, eArgTypeArchitecture , "Find processes that have a matching architecture." },
-{ LLDB_OPT_SET_ALL, false, "show-args"        , 'A', no_argument      , NULL, 0, eArgTypeNone         , "Show process arguments instead of the process executable basename." },
-{ LLDB_OPT_SET_ALL, false, "verbose"          , 'v', no_argument      , NULL, 0, eArgTypeNone         , "Enable verbose output." },
-{  0              , false, NULL               ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
+{ LLDB_OPT_SET_1            , false, "pid"        , 'p', required_argument, NULL, 0, eArgTypePid              , "List the process info for a specific process ID." },
+{ LLDB_OPT_SET_2            , true , "name"       , 'n', required_argument, NULL, 0, eArgTypeProcessName      , "Find processes with executable basenames that match a string." },
+{ LLDB_OPT_SET_3            , true , "ends-with"  , 'e', required_argument, NULL, 0, eArgTypeProcessName      , "Find processes with executable basenames that end with a string." },
+{ LLDB_OPT_SET_4            , true , "starts-with", 's', required_argument, NULL, 0, eArgTypeProcessName      , "Find processes with executable basenames that start with a string." },
+{ LLDB_OPT_SET_5            , true , "contains"   , 'c', required_argument, NULL, 0, eArgTypeProcessName      , "Find processes with executable basenames that contain a string." },
+{ LLDB_OPT_SET_6            , true , "regex"      , 'r', required_argument, NULL, 0, eArgTypeRegularExpression, "Find processes with executable basenames that match a regular expression." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "parent"     , 'P', required_argument, NULL, 0, eArgTypePid              , "Find processes that have a matching parent process ID." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "uid"        , 'u', required_argument, NULL, 0, eArgTypeUnsignedInteger  , "Find processes that have a matching user ID." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "euid"       , 'U', required_argument, NULL, 0, eArgTypeUnsignedInteger  , "Find processes that have a matching effective user ID." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "gid"        , 'g', required_argument, NULL, 0, eArgTypeUnsignedInteger  , "Find processes that have a matching group ID." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "egid"       , 'G', required_argument, NULL, 0, eArgTypeUnsignedInteger  , "Find processes that have a matching effective group ID." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "arch"       , 'a', required_argument, NULL, 0, eArgTypeArchitecture     , "Find processes that have a matching architecture." },
+{ LLDB_OPT_SET_FROM_TO(1, 6), false, "show-args"  , 'A', no_argument      , NULL, 0, eArgTypeNone             , "Show process arguments instead of the process executable basename." },
+{ LLDB_OPT_SET_FROM_TO(1, 6), false, "verbose"    , 'v', no_argument      , NULL, 0, eArgTypeNone             , "Enable verbose output." },
+{ 0                         , false, NULL         ,  0 , 0                , NULL, 0, eArgTypeNone             , NULL }
 };
 
 //----------------------------------------------------------------------
@@ -1583,7 +1634,17 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {   
+            platform_sp = target->GetPlatform();
+        }   
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }   
+
         if (platform_sp)
         {
             const size_t argc = args.GetArgumentCount();
@@ -1604,12 +1665,12 @@ protected:
                             ProcessInstanceInfo proc_info;
                             if (platform_sp->GetProcessInfo (pid, proc_info))
                             {
-                                ostrm.Printf ("Process information for process %llu:\n", pid);
+                                ostrm.Printf ("Process information for process %" PRIu64 ":\n", pid);
                                 proc_info.Dump (ostrm, platform_sp.get());
                             }
                             else
                             {
-                                ostrm.Printf ("error: no process information is available for process %llu\n", pid);
+                                ostrm.Printf ("error: no process information is available for process %" PRIu64 "\n", pid);
                             }
                             ostrm.EOL();
                         }
@@ -1624,7 +1685,7 @@ protected:
                 else
                 {
                     // Not connected...
-                    result.AppendErrorWithFormat ("not connected to '%s'", platform_sp->GetShortPluginName());
+                    result.AppendErrorWithFormat ("not connected to '%s'", platform_sp->GetPluginName().GetCString());
                     result.SetStatus (eReturnStatusFailed);            
                 }
             }
@@ -2091,8 +2152,7 @@ RecurseCopy_Callback (void *baton,
             FileSpec new_directory(rc_baton->destination.c_str(),false);
             new_directory.AppendPathComponent(spec.GetLastPathComponent());
             uint32_t errcode = rc_baton->platform_sp->MakeDirectory(new_directory, 0777);
-            std::string new_directory_path;
-            new_directory.GetPath(new_directory_path);
+            std::string new_directory_path (new_directory.GetPath());
             if (errcode != 0)
             {
                 rc_baton->error.SetErrorStringWithFormat("unable to setup directory %s on remote end",new_directory_path.c_str());
@@ -2100,8 +2160,7 @@ RecurseCopy_Callback (void *baton,
             }
             
             // now recurse
-            std::string local_path;
-            spec.GetPath(local_path);
+            std::string local_path (spec.GetPath());
             RecurseCopyBaton rc_baton2 = { new_directory_path, rc_baton->platform_sp, Error() };
             FileSpec::EnumerateDirectory(local_path.c_str(), true, true, true, RecurseCopy_Callback, &rc_baton2);
             if (rc_baton2.error.Fail())
@@ -2208,8 +2267,7 @@ public:
                 return result.Succeeded();
             }
             // now recurse
-            std::string remote_folder_path;
-            remote_folder.GetPath(remote_folder_path);
+            std::string remote_folder_path (remote_folder.GetPath());
             Error err = RecurseCopy(source,remote_folder_path,platform_sp);
             if (err.Fail())
             {
@@ -2249,8 +2307,7 @@ private:
                  const std::string& destination,
                  const PlatformSP& platform_sp)
     {
-        std::string source_path;
-        source.GetPath(source_path);
+        std::string source_path (source.GetPath());
         RecurseCopyBaton baton = { destination, platform_sp, Error() };
         FileSpec::EnumerateDirectory(source_path.c_str(), true, true, true, RecurseCopy_Callback, &baton);
         return baton.error;

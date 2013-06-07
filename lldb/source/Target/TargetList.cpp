@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
@@ -14,11 +16,14 @@
 #include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Event.h"
+#include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/OptionGroupPlatform.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/Platform.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/TargetList.h"
@@ -37,7 +42,7 @@ TargetList::GetStaticBroadcasterClass ()
 // TargetList constructor
 //----------------------------------------------------------------------
 TargetList::TargetList(Debugger &debugger) :
-    Broadcaster(&debugger, "TargetList"),
+    Broadcaster(&debugger, TargetList::GetStaticBroadcasterClass().AsCString()),
     m_target_list(),
     m_target_list_mutex (Mutex::eMutexTypeRecursive),
     m_selected_target_idx (0)
@@ -56,7 +61,7 @@ TargetList::~TargetList()
 
 Error
 TargetList::CreateTarget (Debugger &debugger,
-                          const FileSpec& file,
+                          const char *user_exe_path,
                           const char *triple_cstr,
                           bool get_dependent_files,
                           const OptionGroupPlatform *platform_options,
@@ -77,8 +82,67 @@ TargetList::CreateTarget (Debugger &debugger,
             return error;
         }
     }
-
+    
     ArchSpec platform_arch(arch);
+
+    
+    if (user_exe_path && user_exe_path[0])
+    {
+        ModuleSpecList module_specs;
+        ModuleSpec module_spec;
+        module_spec.GetFileSpec().SetFile(user_exe_path, true);
+        lldb::offset_t file_offset = 0;
+        const size_t num_specs = ObjectFile::GetModuleSpecifications (module_spec.GetFileSpec(), file_offset, module_specs);
+        if (num_specs > 0)
+        {
+            ModuleSpec matching_module_spec;
+
+            if (num_specs == 1)
+            {
+                if (module_specs.GetModuleSpecAtIndex(0, matching_module_spec))
+                {
+                    if (platform_arch.IsValid())
+                    {
+                        if (!platform_arch.IsCompatibleMatch(matching_module_spec.GetArchitecture()))
+                        {
+                            error.SetErrorStringWithFormat("the specified architecture '%s' is not compatible with '%s' in '%s'",
+                                                           platform_arch.GetTriple().str().c_str(),
+                                                           matching_module_spec.GetArchitecture().GetTriple().str().c_str(),
+                                                           module_spec.GetFileSpec().GetPath().c_str());
+                            return error;
+                        }
+                    }
+                    else
+                    {
+                        // Only one arch and none was specified
+                        platform_arch = matching_module_spec.GetArchitecture();
+                    }
+                }
+            }
+            else
+            {
+                if (arch.IsValid())
+                {
+                    module_spec.GetArchitecture() = arch;
+                    if (module_specs.FindMatchingModuleSpec(module_spec, matching_module_spec))
+                    {
+                        platform_arch = matching_module_spec.GetArchitecture();
+                    }
+                }
+                // Don't just select the first architecture, we want to let the platform select
+                // the best architecture first when there are multiple archs.
+//                else
+//                {
+//                    // No arch specified, select the first arch
+//                    if (module_specs.GetModuleSpecAtIndex(0, matching_module_spec))
+//                    {
+//                        platform_arch = matching_module_spec.GetArchitecture();
+//                    }
+//                }
+            }
+        }
+    }
+
     CommandInterpreter &interpreter = debugger.GetCommandInterpreter();
     if (platform_options)
     {
@@ -101,7 +165,7 @@ TargetList::CreateTarget (Debugger &debugger,
         // current architecture if we have a valid architecture.
         platform_sp = debugger.GetPlatformList().GetSelectedPlatform ();
         
-        if (arch.IsValid() && !platform_sp->IsCompatibleArchitecture(arch, &platform_arch))
+        if (arch.IsValid() && !platform_sp->IsCompatibleArchitecture(arch, false, &platform_arch))
         {
             platform_sp = Platform::GetPlatformForArchitecture(arch, &platform_arch);
         }
@@ -111,39 +175,25 @@ TargetList::CreateTarget (Debugger &debugger,
         platform_arch = arch;
 
     error = TargetList::CreateTarget (debugger,
-                                      file,
+                                      user_exe_path,
                                       platform_arch,
                                       get_dependent_files,
                                       platform_sp,
                                       target_sp);
-
-    if (target_sp)
-    {
-        if (file.GetDirectory())
-        {
-            FileSpec file_dir;
-            file_dir.GetDirectory() = file.GetDirectory();
-            target_sp->GetExecutableSearchPaths ().Append (file_dir);
-        }
-    }
     return error;
 }
 
 Error
-TargetList::CreateTarget
-(
-    Debugger &debugger,
-    const FileSpec& file,
-    const ArchSpec& specified_arch,
-    bool get_dependent_files,
-    PlatformSP &platform_sp,
-    TargetSP &target_sp
-)
+TargetList::CreateTarget (Debugger &debugger,
+                          const char *user_exe_path,
+                          const ArchSpec& specified_arch,
+                          bool get_dependent_files,
+                          PlatformSP &platform_sp,
+                          TargetSP &target_sp)
 {
     Timer scoped_timer (__PRETTY_FUNCTION__,
-                        "TargetList::CreateTarget (file = '%s/%s', arch = '%s')",
-                        file.GetDirectory().AsCString(),
-                        file.GetFilename().AsCString(),
+                        "TargetList::CreateTarget (file = '%s', arch = '%s')",
+                        user_exe_path,
                         specified_arch.GetArchitectureName());
     Error error;
 
@@ -153,7 +203,7 @@ TargetList::CreateTarget
     {
         if (arch.IsValid())
         {
-            if (!platform_sp->IsCompatibleArchitecture(arch))
+            if (!platform_sp->IsCompatibleArchitecture(arch, false, NULL))
                 platform_sp = Platform::GetPlatformForArchitecture(specified_arch, &arch);
         }
     }
@@ -167,12 +217,40 @@ TargetList::CreateTarget
 
     if (!arch.IsValid())
         arch = specified_arch;
-    
 
+    FileSpec file (user_exe_path, false);
+    if (!file.Exists() && user_exe_path && user_exe_path[0] == '~')
+    {
+        file = FileSpec(user_exe_path, true);
+    }
+    bool user_exe_path_is_bundle = false;
+    char resolved_bundle_exe_path[PATH_MAX];
+    resolved_bundle_exe_path[0] = '\0';
     if (file)
     {
+        if (file.GetFileType() == FileSpec::eFileTypeDirectory)
+            user_exe_path_is_bundle = true;
+
+        if (file.IsRelativeToCurrentWorkingDirectory())
+        {
+            // Ignore paths that start with "./" and "../"
+            if (!((user_exe_path[0] == '.' && user_exe_path[1] == '/') ||
+                  (user_exe_path[0] == '.' && user_exe_path[1] == '.' && user_exe_path[2] == '/')))
+            {
+                char cwd[PATH_MAX];
+                if (getcwd (cwd, sizeof(cwd)))
+                {
+                    std::string cwd_user_exe_path (cwd);
+                    cwd_user_exe_path += '/';
+                    cwd_user_exe_path += user_exe_path;
+                    FileSpec cwd_file (cwd_user_exe_path.c_str(), false);
+                    if (cwd_file.Exists())
+                        file = cwd_file;
+                }
+            }
+        }
+
         ModuleSP exe_module_sp;
-        FileSpec resolved_file(file);
         if (platform_sp)
         {
             FileSpecList executable_search_paths (Target::GetDefaultExecutableSearchPaths());
@@ -188,23 +266,21 @@ TargetList::CreateTarget
             {
                 if (arch.IsValid())
                 {
-                    error.SetErrorStringWithFormat("\"%s%s%s\" doesn't contain architecture %s",
-                                                   file.GetDirectory().AsCString(),
-                                                   file.GetDirectory() ? "/" : "",
-                                                   file.GetFilename().AsCString(),
+                    error.SetErrorStringWithFormat("\"%s\" doesn't contain architecture %s",
+                                                   file.GetPath().c_str(),
                                                    arch.GetArchitectureName());
                 }
                 else
                 {
-                    error.SetErrorStringWithFormat("unsupported file type \"%s%s%s\"",
-                                                   file.GetDirectory().AsCString(),
-                                                   file.GetDirectory() ? "/" : "",
-                                                   file.GetFilename().AsCString());
+                    error.SetErrorStringWithFormat("unsupported file type \"%s\"",
+                                                   file.GetPath().c_str());
                 }
                 return error;
             }
             target_sp.reset(new Target(debugger, arch, platform_sp));
             target_sp->SetExecutableModule (exe_module_sp, get_dependent_files);
+            if (user_exe_path_is_bundle)
+                exe_module_sp->GetFileSpec().GetPath(resolved_bundle_exe_path, sizeof(resolved_bundle_exe_path));
         }
     }
     else
@@ -216,11 +292,33 @@ TargetList::CreateTarget
 
     if (target_sp)
     {
-        target_sp->UpdateInstanceName();        
-
+        // Set argv0 with what the user typed, unless the user specified a
+        // directory. If the user specified a directory, then it is probably a
+        // bundle that was resolved and we need to use the resolved bundle path
+        if (user_exe_path)
+        {
+            // Use exactly what the user typed as the first argument when we exec or posix_spawn
+            if (user_exe_path_is_bundle && resolved_bundle_exe_path[0])
+            {
+                target_sp->SetArg0 (resolved_bundle_exe_path);
+            }
+            else
+            {
+                // Just use what the user typed
+                target_sp->SetArg0 (user_exe_path);
+            }
+        }
+        if (file.GetDirectory())
+        {
+            FileSpec file_dir;
+            file_dir.GetDirectory() = file.GetDirectory();
+            target_sp->GetExecutableSearchPaths ().Append (file_dir);
+        }
         Mutex::Locker locker(m_target_list_mutex);
         m_selected_target_idx = m_target_list.size();
         m_target_list.push_back(target_sp);
+        
+        
     }
 
     return error;
@@ -266,7 +364,7 @@ TargetList::FindTargetWithExecutableAndArchitecture
             {
                 if (exe_arch_ptr)
                 {
-                    if (*exe_arch_ptr != exe_module->GetArchitecture())
+                    if (!exe_arch_ptr->IsCompatibleMatch(exe_module->GetArchitecture()))
                         continue;
                 }
                 target_sp = *pos;

@@ -104,46 +104,37 @@ CommandReturnObject::AppendWarningWithFormat (const char *format, ...)
 }
 
 void
-CommandReturnObject::AppendMessage (const char *in_string, int len)
+CommandReturnObject::AppendMessage (const char *in_string)
 {
     if (!in_string)
         return;
-    if (len < 0)
-        len = ::strlen (in_string);
-    GetOutputStream().Printf("%*.*s\n", len, len, in_string);
+    GetOutputStream().Printf("%s\n", in_string);
 }
 
 void
-CommandReturnObject::AppendWarning (const char *in_string, int len)
+CommandReturnObject::AppendWarning (const char *in_string)
 {
-    if (!in_string)
+    if (!in_string || *in_string == '\0')
         return;
-    if (len < 0)
-        len = ::strlen (in_string);
-    GetErrorStream().Printf("warning: %*.*s\n", len, len, in_string);
+    GetErrorStream().Printf("warning: %s\n", in_string);
 }
 
 // Similar to AppendWarning, but do not prepend 'warning: ' to message, and
 // don't append "\n" to the end of it.
 
 void
-CommandReturnObject::AppendRawWarning (const char *in_string, int len)
+CommandReturnObject::AppendRawWarning (const char *in_string)
 {
-    if (!in_string)
-        return;
-    if (len < 0)
-        len = ::strlen (in_string);
-    GetErrorStream().Printf("%*.*s", len, len, in_string);
+    if (in_string && in_string[0])
+        GetErrorStream().PutCString(in_string);
 }
 
 void
-CommandReturnObject::AppendError (const char *in_string, int len)
+CommandReturnObject::AppendError (const char *in_string)
 {
-    if (!in_string)
+    if (!in_string || *in_string == '\0')
         return;
-    if (len < 0)
-        len = ::strlen (in_string);
-    GetErrorStream().Printf ("error: %*.*s\n", len, len, in_string);
+    GetErrorStream().Printf ("error: %s\n", in_string);
 }
 
 void
@@ -159,13 +150,10 @@ CommandReturnObject::SetError (const Error &error, const char *fallback_error_cs
 // don't append "\n" to the end of it.
 
 void
-CommandReturnObject::AppendRawError (const char *in_string, int len)
+CommandReturnObject::AppendRawError (const char *in_string)
 {
-    if (!in_string)
-        return;
-    if (len < 0)
-        len = ::strlen (in_string);
-    GetErrorStream().Printf ("%*.*s", len, len, in_string);
+    if (in_string && in_string[0])
+        GetErrorStream().PutCString(in_string);
 }
 
 void

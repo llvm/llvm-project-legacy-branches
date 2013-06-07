@@ -29,15 +29,19 @@ class POSIXThread
     : public lldb_private::Thread
 {
 public:
-    POSIXThread(lldb::ProcessSP &process, lldb::tid_t tid);
+    POSIXThread(lldb_private::Process &process, lldb::tid_t tid);
 
     virtual ~POSIXThread();
 
     void
     RefreshStateAfterStop();
 
-    bool
+    virtual void
     WillResume(lldb::StateType resume_state);
+
+    // This notifies the thread when a private stop occurs.
+    virtual void
+    DidStop ();
 
     const char *
     GetInfo();
@@ -49,17 +53,17 @@ public:
     CreateRegisterContextForFrame (lldb_private::StackFrame *frame);
 
     //--------------------------------------------------------------------------
-    // These static functions provide a mapping from the register offset
+    // These functions provide a mapping from the register offset
     // back to the register index or name for use in debugging or log
     // output.
 
-    static unsigned
+    unsigned
     GetRegisterIndexFromOffset(unsigned offset);
 
-    static const char *
+    const char *
     GetRegisterName(unsigned reg);
 
-    static const char *
+    const char *
     GetRegisterNameFromOffset(unsigned offset);
 
     //--------------------------------------------------------------------------
@@ -68,6 +72,17 @@ public:
     bool Resume();
 
     void Notify(const ProcessMessage &message);
+
+    //--------------------------------------------------------------------------
+    // These methods provide an interface to watchpoints
+    //
+    bool EnableHardwareWatchpoint(lldb_private::Watchpoint *wp);
+
+    bool DisableHardwareWatchpoint(lldb_private::Watchpoint *wp);
+
+    uint32_t NumSupportedHardwareWatchpoints();
+
+    uint32_t FindVacantWatchpointIndex();
 
 private:
     RegisterContextPOSIX *
@@ -81,23 +96,25 @@ private:
         return (RegisterContextPOSIX *)m_reg_context_sp.get();
     }
     
-    std::auto_ptr<lldb_private::StackFrame> m_frame_ap;
+    std::unique_ptr<lldb_private::StackFrame> m_frame_ap;
 
     lldb::BreakpointSiteSP m_breakpoint;
-    lldb::StopInfoSP m_stop_info;
 
     ProcessMonitor &
     GetMonitor();
 
-    lldb::StopInfoSP
-    GetPrivateStopReason();
+    virtual bool
+    CalculateStopInfo();
 
     void BreakNotify(const ProcessMessage &message);
+    void WatchNotify(const ProcessMessage &message);
     void TraceNotify(const ProcessMessage &message);
     void LimboNotify(const ProcessMessage &message);
     void SignalNotify(const ProcessMessage &message);
     void SignalDeliveredNotify(const ProcessMessage &message);
     void CrashNotify(const ProcessMessage &message);
+    void ThreadNotify(const ProcessMessage &message);
+    void ExitNotify(const ProcessMessage &message);
 
     lldb_private::Unwind *
     GetUnwinder();

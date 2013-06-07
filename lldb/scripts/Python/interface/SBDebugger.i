@@ -87,7 +87,7 @@ if target:
                         #print value
                         print '%s (number of children = %d):' % (value.GetName(), value.GetNumChildren())
                         for child in value:
-                            print 'Name: ', child.GetName(), ' Value: ', child.GetValue(frame)
+                            print 'Name: ', child.GetName(), ' Value: ', child.GetValue()
 
             print 'Hit the breakpoint at main, enter to continue and wait for program to exit or \'Ctrl-D\'/\'quit\' to terminate the program'
             next = sys.stdin.readline()
@@ -121,6 +121,9 @@ public:
 
     static lldb::SBDebugger
     Create(bool source_init_files);
+
+    static lldb::SBDebugger
+    Create(bool source_init_files, lldb::LogOutputCallback log_callback, void *baton);
 
     static void
     Destroy (lldb::SBDebugger &debugger);
@@ -272,7 +275,10 @@ public:
     EnableLog (const char *channel, const char ** types);
 
     void
-    DispatchInput (void *baton, const void *data, size_t data_len);
+    SetLoggingCallback (lldb::LogOutputCallback log_callback, void *baton);
+
+    void
+    DispatchInput (const void *data, size_t data_len);
 
     void
     DispatchInputInterrupt ();

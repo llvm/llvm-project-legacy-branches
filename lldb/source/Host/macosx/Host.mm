@@ -502,9 +502,8 @@ LaunchInNewTerminalWithAppleScript (const char *exe_path, ProcessLaunchInfo &lau
         
     if (!darwin_debug_file_spec.Exists())
     {
-        error.SetErrorStringWithFormat ("the 'darwin-debug' executable doesn't exists at %s/%s", 
-                                        darwin_debug_file_spec.GetDirectory().GetCString(),
-                                        darwin_debug_file_spec.GetFilename().GetCString());
+        error.SetErrorStringWithFormat ("the 'darwin-debug' executable doesn't exists at '%s'", 
+                                        darwin_debug_file_spec.GetPath().c_str());
         return error;
     }
     
@@ -523,10 +522,42 @@ LaunchInNewTerminalWithAppleScript (const char *exe_path, ProcessLaunchInfo &lau
     const char *working_dir = launch_info.GetWorkingDirectory();
     if (working_dir)
         command.Printf(" --working-dir '%s'", working_dir);
+    else
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, PATH_MAX))
+            command.Printf(" --working-dir '%s'", cwd);
+    }
     
     if (launch_info.GetFlags().Test (eLaunchFlagDisableASLR))
         command.PutCString(" --disable-aslr");
     
+    // We are launching on this host in a terminal. So compare the environemnt on the host
+    // to what is supplied in the launch_info. Any items that aren't in the host environemnt
+    // need to be sent to darwin-debug. If we send all environment entries, we might blow the
+    // max command line length, so we only send user modified entries.
+    const char **envp = launch_info.GetEnvironmentEntries().GetConstArgumentVector ();
+    StringList host_env;
+    const size_t host_env_count = Host::GetEnvironment (host_env);
+    const char *env_entry;
+    for (size_t env_idx = 0; (env_entry = envp[env_idx]) != NULL; ++env_idx)
+    {
+        bool add_entry = true;
+        for (size_t i=0; i<host_env_count; ++i)
+        {
+            const char *host_env_entry = host_env.GetStringAtIndex(i);
+            if (strcmp(env_entry, host_env_entry) == 0)
+            {
+                add_entry = false;
+                break;
+            }
+        }
+        if (add_entry)
+        {
+            command.Printf(" --env='%s'", env_entry);
+        }
+    }
+
     command.PutCString(" -- ");
 
     const char **argv = launch_info.GetArguments().GetConstArgumentVector ();
@@ -681,7 +712,7 @@ Host::OpenFileInExternalEditor (const FileSpec &file_spec, uint32_t line_no)
         uint32_t  reserved2;  // must be zero
     } BabelAESelInfo;
     
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_HOST));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_HOST));
     char file_path[PATH_MAX];
     file_spec.GetPath(file_path, PATH_MAX);
     CFCString file_cfstr (file_path, kCFStringEncodingUTF8);
@@ -1039,14 +1070,24 @@ GetMacOSXProcessCPUType (ProcessInstanceInfo &process_info)
         mib_len++;
     
         cpu_type_t cpu, sub = 0;
-        size_t cpu_len = sizeof(cpu);
-        if (::sysctl (mib, mib_len, &cpu, &cpu_len, 0, 0) == 0)
+        size_t len = sizeof(cpu);
+        if (::sysctl (mib, mib_len, &cpu, &len, 0, 0) == 0)
         {
             switch (cpu)
             {
                 case llvm::MachO::CPUTypeI386:      sub = llvm::MachO::CPUSubType_I386_ALL;     break;
                 case llvm::MachO::CPUTypeX86_64:    sub = llvm::MachO::CPUSubType_X86_64_ALL;   break;
-                default: break;
+                case llvm::MachO::CPUTypeARM:
+                    {
+                        uint32_t cpusubtype = 0;
+                        len = sizeof(cpusubtype);
+                        if (::sysctlbyname("hw.cpusubtype", &cpusubtype, &len, NULL, 0) == 0)
+                            sub = cpusubtype;
+                    }
+                    break;
+
+                default:
+                    break;
             }
             process_info.GetArchitecture ().SetArchitecture (eArchTypeMachO, cpu, sub);
             return true;
@@ -1069,7 +1110,7 @@ GetMacOSXProcessArgs (const ProcessInstanceInfoMatch *match_info_ptr,
         if (::sysctl (proc_args_mib, 3, arg_data, &arg_data_size , NULL, 0) == 0)
         {
             DataExtractor data (arg_data, arg_data_size, lldb::endian::InlHostByteOrder(), sizeof(void *));
-            uint32_t offset = 0;
+            lldb::offset_t offset = 0;
             uint32_t argc = data.GetU32 (&offset);
             const char *cstr;
             
@@ -1291,7 +1332,7 @@ static Error
 getXPCAuthorization (ProcessLaunchInfo &launch_info)
 {
     Error error;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
     
     if ((launch_info.GetUserID() == 0) && !authorizationRef)
     {
@@ -1302,7 +1343,7 @@ getXPCAuthorization (ProcessLaunchInfo &launch_info)
             error.SetErrorString("Can't create authorizationRef.");
             if (log)
             {
-                error.PutToLog(log.get(), "%s", error.AsCString());
+                error.PutToLog(log, "%s", error.AsCString());
             }
             return error;
         }
@@ -1343,7 +1384,7 @@ getXPCAuthorization (ProcessLaunchInfo &launch_info)
             error.SetErrorStringWithFormat("Launching as root needs root authorization.");
             if (log)
             {
-                error.PutToLog(log.get(), "%s", error.AsCString());
+                error.PutToLog(log, "%s", error.AsCString());
             }
             
             if (authorizationRef)
@@ -1366,8 +1407,8 @@ LaunchProcessXPC (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t 
     if (error.Fail())
         return error;
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
-        
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
+    
     uid_t requested_uid = launch_info.GetUserID();
     const char *xpc_service  = nil;
     bool send_auth = false;
@@ -1384,11 +1425,11 @@ LaunchProcessXPC (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t 
         }
         else
         {
-            error.SetError(4, eErrorTypeGeneric);
+            error.SetError(3, eErrorTypeGeneric);
             error.SetErrorStringWithFormat("Launching root via XPC needs to externalize authorization reference.");
             if (log)
             {
-                error.PutToLog(log.get(), "%s", error.AsCString());
+                error.PutToLog(log, "%s", error.AsCString());
             }
             return error;
         }
@@ -1396,11 +1437,11 @@ LaunchProcessXPC (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t 
     }
     else
     {
-        error.SetError(3, eErrorTypeGeneric);
+        error.SetError(4, eErrorTypeGeneric);
         error.SetErrorStringWithFormat("Launching via XPC is only currently available for either the login user or root.");
         if (log)
         {
-            error.PutToLog(log.get(), "%s", error.AsCString());
+            error.PutToLog(log, "%s", error.AsCString());
         }
         return error;
     }
@@ -1412,7 +1453,7 @@ LaunchProcessXPC (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t 
         
         if (type == XPC_TYPE_ERROR) {
             if (event == XPC_ERROR_CONNECTION_INTERRUPTED) {
-                // The service has either canceled itself, crashed, or been terminated. 
+                // The service has either canceled itself, crashed, or been terminated.
                 // The XPC connection is still valid and sending a message to it will re-launch the service.
                 // If the service is state-full, this is the time to initialize the new service.
                 return;
@@ -1425,12 +1466,12 @@ LaunchProcessXPC (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t 
                 // printf("Unexpected error from service: %s", xpc_dictionary_get_string(event, XPC_ERROR_KEY_DESCRIPTION));
             }
             
-        } else {			
+        } else {
             // printf("Received unexpected event in handler");
         }
     });
     
-        xpc_connection_set_finalizer_f (conn, xpc_finalizer_t(xpc_release));
+    xpc_connection_set_finalizer_f (conn, xpc_finalizer_t(xpc_release));
 	xpc_connection_resume (conn);
     xpc_object_t message = xpc_dictionary_create (nil, nil, 0);
     
@@ -1447,24 +1488,36 @@ LaunchProcessXPC (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t 
     xpc_dictionary_set_int64(message, LauncherXPCServicePosixspawnFlagsKey, GetPosixspawnFlags(launch_info));
     
     xpc_object_t reply = xpc_connection_send_message_with_reply_sync(conn, message);
-    
-    pid = xpc_dictionary_get_int64(reply, LauncherXPCServiceChildPIDKey);
-    if (pid == 0)
+    xpc_type_t returnType = xpc_get_type(reply);
+    if (returnType == XPC_TYPE_DICTIONARY)
     {
-        int errorType = xpc_dictionary_get_int64(reply, LauncherXPCServiceErrorTypeKey);
-        int errorCode = xpc_dictionary_get_int64(reply, LauncherXPCServiceCodeTypeKey);
-        
-        error.SetError(errorCode, eErrorTypeGeneric);
-        error.SetErrorStringWithFormat("Problems with launching via XPC. Error type : %i, code : %i", errorType, errorCode);
+        pid = xpc_dictionary_get_int64(reply, LauncherXPCServiceChildPIDKey);
+        if (pid == 0)
+        {
+            int errorType = xpc_dictionary_get_int64(reply, LauncherXPCServiceErrorTypeKey);
+            int errorCode = xpc_dictionary_get_int64(reply, LauncherXPCServiceCodeTypeKey);
+            
+            error.SetError(errorCode, eErrorTypeGeneric);
+            error.SetErrorStringWithFormat("Problems with launching via XPC. Error type : %i, code : %i", errorType, errorCode);
+            if (log)
+            {
+                error.PutToLog(log, "%s", error.AsCString());
+            }
+            
+            if (authorizationRef)
+            {
+                AuthorizationFree(authorizationRef, kAuthorizationFlagDefaults);
+                authorizationRef = NULL;
+            }
+        }
+    }
+    else if (returnType == XPC_TYPE_ERROR)
+    {
+        error.SetError(5, eErrorTypeGeneric);
+        error.SetErrorStringWithFormat("Problems with launching via XPC. XPC error : %s", xpc_dictionary_get_string(reply, XPC_ERROR_KEY_DESCRIPTION));
         if (log)
         {
-            error.PutToLog(log.get(), "%s", error.AsCString());
-        }
-        
-        if (authorizationRef)
-        {
-            AuthorizationFree(authorizationRef, kAuthorizationFlagDefaults);
-            authorizationRef = NULL;
+            error.PutToLog(log, "%s", error.AsCString());
         }
     }
     
@@ -1479,13 +1532,13 @@ static Error
 LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t &pid)
 {
     Error error;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
     
     posix_spawnattr_t attr;
     error.SetError( ::posix_spawnattr_init (&attr), eErrorTypePOSIX);
     
     if (error.Fail() || log)
-        error.PutToLog(log.get(), "::posix_spawnattr_init ( &attr )");
+        error.PutToLog(log, "::posix_spawnattr_init ( &attr )");
     if (error.Fail())
         return error;
 
@@ -1503,7 +1556,7 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
     short flags = GetPosixspawnFlags(launch_info);
     error.SetError( ::posix_spawnattr_setflags (&attr, flags), eErrorTypePOSIX);
     if (error.Fail() || log)
-        error.PutToLog(log.get(), "::posix_spawnattr_setflags ( &attr, flags=0x%8.8x )", flags);
+        error.PutToLog(log, "::posix_spawnattr_setflags ( &attr, flags=0x%8.8x )", flags);
     if (error.Fail())
         return error;
     
@@ -1521,7 +1574,7 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
         size_t ocount = 0;
         error.SetError( ::posix_spawnattr_setbinpref_np (&attr, 1, &cpu, &ocount), eErrorTypePOSIX);
         if (error.Fail() || log)
-            error.PutToLog(log.get(), "::posix_spawnattr_setbinpref_np ( &attr, 1, cpu_type = 0x%8.8x, count => %zu )", cpu, ocount);
+            error.PutToLog(log, "::posix_spawnattr_setbinpref_np ( &attr, 1, cpu_type = 0x%8.8x, count => %llu )", cpu, (uint64_t)ocount);
         
         if (error.Fail() || ocount != 1)
             return error;
@@ -1541,7 +1594,6 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
         tmp_argv[1] = NULL;
         argv = (char * const*)tmp_argv;
     }
-
 
     const char *working_dir = launch_info.GetWorkingDirectory();
     if (working_dir)
@@ -1565,7 +1617,7 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
         posix_spawn_file_actions_t file_actions;
         error.SetError( ::posix_spawn_file_actions_init (&file_actions), eErrorTypePOSIX);
         if (error.Fail() || log)
-            error.PutToLog(log.get(), "::posix_spawn_file_actions_init ( &file_actions )");
+            error.PutToLog(log, "::posix_spawn_file_actions_init ( &file_actions )");
         if (error.Fail())
             return error;
 
@@ -1580,7 +1632,7 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
             {
                 if (!ProcessLaunchInfo::FileAction::AddPosixSpawnFileAction (&file_actions,
                                                                              launch_file_action,
-                                                                             log.get(),
+                                                                             log,
                                                                              error))
                     return error;
             }
@@ -1595,13 +1647,21 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
                         eErrorTypePOSIX);
 
         if (error.Fail() || log)
-            error.PutToLog(log.get(), "::posix_spawnp ( pid => %i, path = '%s', file_actions = %p, attr = %p, argv = %p, envp = %p )", 
+        {
+            error.PutToLog(log, "::posix_spawnp ( pid => %i, path = '%s', file_actions = %p, attr = %p, argv = %p, envp = %p )",
                            pid, 
                            exe_path, 
                            &file_actions, 
                            &attr, 
                            argv, 
                            envp);
+            if (log)
+            {
+                for (int ii=0; argv[ii]; ++ii)
+                    log->Printf("argv[%i] = '%s'", ii, argv[ii]);
+            }
+        }
+
     }
     else
     {
@@ -1614,12 +1674,19 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
                         eErrorTypePOSIX);
 
         if (error.Fail() || log)
-            error.PutToLog(log.get(), "::posix_spawnp ( pid => %i, path = '%s', file_actions = NULL, attr = %p, argv = %p, envp = %p )", 
+        {
+            error.PutToLog(log, "::posix_spawnp ( pid => %i, path = '%s', file_actions = NULL, attr = %p, argv = %p, envp = %p )",
                            pid, 
                            exe_path, 
                            &attr, 
                            argv, 
                            envp);
+            if (log)
+            {
+                for (int ii=0; argv[ii]; ++ii)
+                    log->Printf("argv[%i] = '%s'", ii, argv[ii]);
+            }
+        }
     }
     
     if (working_dir)
@@ -1754,7 +1821,7 @@ Host::StartMonitoringChildProcess (Host::MonitorChildProcessCallback callback,
     if (monitor_signals)
         mask |= DISPATCH_PROC_SIGNAL;
 
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
 
 
     dispatch_source_t source = ::dispatch_source_create (DISPATCH_SOURCE_TYPE_PROC, 

@@ -51,7 +51,7 @@ ThreadPlanShouldStopHere::InvokeShouldStopHereCallback ()
     if (m_callback)
     {
         ThreadPlan *return_plan = m_callback (m_owner, m_flags, m_baton);
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log)
         {
             lldb::addr_t current_addr = m_owner->GetThread().GetRegisterContext()->GetPC(0);
@@ -60,11 +60,11 @@ ThreadPlanShouldStopHere::InvokeShouldStopHereCallback ()
             {
                 StreamString s;
                 return_plan->GetDescription (&s, lldb::eDescriptionLevelFull);
-                log->Printf ("ShouldStopHere callback found a step out plan from 0x%llx: %s.", current_addr, s.GetData()); 
+                log->Printf ("ShouldStopHere callback found a step out plan from 0x%" PRIx64 ": %s.", current_addr, s.GetData());
             }
             else
             {
-                log->Printf ("ShouldStopHere callback didn't find a step out plan from: 0x%llx.", current_addr);
+                log->Printf ("ShouldStopHere callback didn't find a step out plan from: 0x%" PRIx64 ".", current_addr);
             }
         }
         return return_plan;

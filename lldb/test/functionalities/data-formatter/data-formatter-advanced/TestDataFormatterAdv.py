@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class AdvDataFormatterTestCase(TestBase):
 
@@ -34,10 +35,7 @@ class AdvDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -79,7 +77,8 @@ class AdvDataFormatterTestCase(TestBase):
         self.expect("frame variable int_array",
             substrs = ['1,2,3,4,5'])
 
-        self.runCmd("type summary add --summary-string \"${var[].integer}\" -x \"i_am_cool \\[[0-9]\\]")
+        # this will fail if we don't do [] as regex correctly
+        self.runCmd('type summary add --summary-string "${var[].integer}" "i_am_cool[]')
         
         self.expect("frame variable cool_array",
             substrs = ['1,1,1,1,6'])
@@ -124,7 +123,12 @@ class AdvDataFormatterTestCase(TestBase):
 
         self.runCmd("type summary clear")
             
-        self.runCmd("type summary add --summary-string \"${var[0-1]}\" -x \"int \[[0-9]\]\"")
+        self.runCmd('type summary add --summary-string \"${var[0-1]}\" -x \"int \[[0-9]\]\"')
+
+        self.expect("frame variable int_array",
+            substrs = ['1,2'])
+
+        self.runCmd('type summary add --summary-string \"${var[0-1]}\" "int []"')
 
         self.expect("frame variable int_array",
             substrs = ['1,2'])
@@ -286,7 +290,7 @@ class AdvDataFormatterTestCase(TestBase):
                                'i_2',
                                'k_2',
                                'o_2'])
-        self.expect('frame variable a_long_guy -A', matching=False,
+        self.expect('frame variable a_long_guy --show-all-children', matching=False,
                     substrs = ['...'])
 
 

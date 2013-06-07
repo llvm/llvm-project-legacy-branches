@@ -18,6 +18,7 @@
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleList.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Host/FileSpec.h"
@@ -41,7 +42,7 @@ PlatformiOSSimulator::Initialize ()
 {
     if (g_initialize_count++ == 0)
     {
-        PluginManager::RegisterPlugin (PlatformiOSSimulator::GetShortPluginNameStatic(),
+        PluginManager::RegisterPlugin (PlatformiOSSimulator::GetPluginNameStatic(),
                                        PlatformiOSSimulator::GetDescriptionStatic(),
                                        PlatformiOSSimulator::CreateInstance);
     }
@@ -77,10 +78,14 @@ PlatformiOSSimulator::CreateInstance (bool force, const ArchSpec *arch)
                         create = true;
                         break;
                         
+#if defined(__APPLE__)
+                    // Only accept "unknown" for the vendor if the host is Apple and
+                    // it "unknown" wasn't specified (it was just returned becasue it
+                    // was NOT specified)
                     case llvm::Triple::UnknownArch:
                         create = !arch->TripleVendorWasSpecified();
                         break;
-                        
+#endif
                     default:
                         break;
                 }
@@ -94,10 +99,14 @@ PlatformiOSSimulator::CreateInstance (bool force, const ArchSpec *arch)
                         case llvm::Triple::IOS:     // IOS is not used for simulator triples, but accept it just in case
                             break;
                             
+#if defined(__APPLE__)
+                        // Only accept "unknown" for the OS if the host is Apple and
+                        // it "unknown" wasn't specified (it was just returned becasue it
+                        // was NOT specified)
                         case llvm::Triple::UnknownOS:
                             create = !arch->TripleOSWasSpecified();
                             break;
-                            
+#endif
                         default:
                             create = false;
                             break;
@@ -115,16 +124,11 @@ PlatformiOSSimulator::CreateInstance (bool force, const ArchSpec *arch)
 }
 
 
-const char *
+lldb_private::ConstString
 PlatformiOSSimulator::GetPluginNameStatic ()
 {
-    return "PlatformiOSSimulator";
-}
-
-const char *
-PlatformiOSSimulator::GetShortPluginNameStatic()
-{
-    return "ios-simulator";
+    static ConstString g_name("ios-simulator");
+    return g_name;
 }
 
 const char *
@@ -138,7 +142,7 @@ PlatformiOSSimulator::GetDescriptionStatic()
 /// Default Constructor
 //------------------------------------------------------------------
 PlatformiOSSimulator::PlatformiOSSimulator () :
-    PlatformDarwin (false),
+    PlatformDarwin (true),
     m_sdk_directory ()
 {
 }
@@ -198,7 +202,7 @@ PlatformiOSSimulator::ResolveExecutable (const FileSpec &exe_file,
                                                  NULL, 
                                                  NULL);
         
-            if (exe_module_sp->GetObjectFile())
+            if (exe_module_sp && exe_module_sp->GetObjectFile())
                 return error;
             exe_module_sp.reset();
         }
@@ -231,20 +235,16 @@ PlatformiOSSimulator::ResolveExecutable (const FileSpec &exe_file,
         
         if (error.Fail() || !exe_module_sp)
         {
-            error.SetErrorStringWithFormat ("'%s%s%s' doesn't contain any '%s' platform architectures: %s",
-                                            exe_file.GetDirectory().AsCString(""),
-                                            exe_file.GetDirectory() ? "/" : "",
-                                            exe_file.GetFilename().AsCString(""),
-                                            GetShortPluginName(),
+            error.SetErrorStringWithFormat ("'%s' doesn't contain any '%s' platform architectures: %s",
+                                            exe_file.GetPath().c_str(),
+                                            GetPluginName().GetCString(),
                                             arch_names.GetString().c_str());
         }
     }
     else
     {
-        error.SetErrorStringWithFormat ("'%s%s%s' does not exist",
-                                        exe_file.GetDirectory().AsCString(""),
-                                        exe_file.GetDirectory() ? "/" : "",
-                                        exe_file.GetFilename().AsCString(""));
+        error.SetErrorStringWithFormat ("'%s' does not exist",
+                                        exe_file.GetPath().c_str());
     }
 
     return error;
@@ -347,7 +347,7 @@ PlatformiOSSimulator::GetSymbolFile (const FileSpec &platform_file,
         }
         error.SetErrorStringWithFormat ("unable to locate a platform file for '%s' in platform '%s'", 
                                         platform_file_path,
-                                        GetPluginName());
+                                        GetPluginName().GetCString());
     }
     else
     {
@@ -400,14 +400,6 @@ PlatformiOSSimulator::FindProcesses (const ProcessInstanceInfoMatch &match_info,
     // TODO: if connected, send a packet to get the remote process infos by name
     process_infos.Clear();
     return 0;
-}
-
-bool
-PlatformiOSSimulator::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info)
-{
-    // TODO: if connected, send a packet to get the remote process info
-    process_info.Clear();
-    return false;
 }
 
 bool

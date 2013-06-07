@@ -81,9 +81,9 @@ ThreadPlanStepInstruction::ValidatePlan (Stream *error)
 }
 
 bool
-ThreadPlanStepInstruction::PlanExplainsStop ()
+ThreadPlanStepInstruction::DoPlanExplainsStop (Event *event_ptr)
 {
-    StopInfoSP stop_info_sp = GetPrivateStopReason();
+    StopInfoSP stop_info_sp = GetPrivateStopInfo ();
     if (stop_info_sp)
     {
         StopReason reason = stop_info_sp->GetStopReason();
@@ -100,7 +100,7 @@ ThreadPlanStepInstruction::ShouldStop (Event *event_ptr)
 {
     if (m_step_over)
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         
         StackID cur_frame_zero_id = m_thread.GetStackFrameAtIndex(0)->GetStackID();
         
@@ -131,10 +131,14 @@ ThreadPlanStepInstruction::ShouldStop (Event *event_ptr)
                     s.Address (return_addr, m_thread.CalculateTarget()->GetArchitecture().GetAddressByteSize());
                     log->Printf("%s.", s.GetData());
                 }
+                
+                // StepInstruction should probably have the tri-state RunMode, but for now it is safer to
+                // run others.
+                const bool stop_others = false;
                 m_thread.QueueThreadPlanForStepOut(false,
                                                    NULL,
                                                    true,
-                                                   m_stop_other_threads,
+                                                   stop_others,
                                                    eVoteNo,
                                                    eVoteNoOpinion,
                                                    0);
@@ -186,7 +190,7 @@ ThreadPlanStepInstruction::MischiefManaged ()
 {
     if (IsPlanComplete())
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log)
             log->Printf("Completed single instruction step plan.");
         ThreadPlan::MischiefManaged ();

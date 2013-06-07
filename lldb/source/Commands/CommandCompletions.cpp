@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
 
 // C Includes
 #include <sys/stat.h>
@@ -21,9 +22,12 @@
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Core/FileSpecList.h"
 #include "lldb/Core/PluginManager.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandCompletions.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/Variable.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/CleanUp.h"
 
@@ -41,6 +45,7 @@ CommandCompletions::g_common_completions[] =
     {eSettingsNameCompletion,    CommandCompletions::SettingsNames},
     {ePlatformPluginCompletion,  CommandCompletions::PlatformPluginNames},
     {eArchitectureCompletion,    CommandCompletions::ArchitectureNames},
+    {eVariablePathCompletion,    CommandCompletions::VariablePath},
     {eNoCompletion,              NULL}      // This one has to be last in the list.
 };
 
@@ -128,7 +133,7 @@ DiskFilesOrDirectories
     // I'm going to  use the "glob" function with GLOB_TILDE for user directory expansion.  
     // If it is not defined on your host system, you'll need to implement it yourself...
     
-    int partial_name_len = strlen(partial_file_name);
+    size_t partial_name_len = strlen(partial_file_name);
     
     if (partial_name_len >= PATH_MAX)
         return matches.GetSize();
@@ -405,15 +410,25 @@ CommandCompletions::SettingsNames (CommandInterpreter &interpreter,
                                    bool &word_complete,
                                    StringList &matches)
 {
-    lldb::UserSettingsControllerSP root_settings = Debugger::GetSettingsController();
-    Args partial_setting_name_pieces = UserSettingsController::BreakNameIntoPieces (partial_setting_name);
-
-    return UserSettingsController::CompleteSettingsNames (root_settings,
-                                                          partial_setting_name_pieces,
-                                                          word_complete,
-                                                          matches);
-
-    //return matches.GetSize();
+    // Cache the full setting name list
+    static StringList g_property_names;
+    if (g_property_names.GetSize() == 0)
+    {
+        // Generate the full setting name list on demand
+        lldb::OptionValuePropertiesSP properties_sp (interpreter.GetDebugger().GetValueProperties());
+        if (properties_sp)
+        {
+            StreamString strm;
+            properties_sp->DumpValue(NULL, strm, OptionValue::eDumpOptionName);
+            const std::string &str = strm.GetString();
+            g_property_names.SplitIntoLines(str.c_str(), str.size());
+        }
+    }
+    
+    size_t exact_matches_idx = SIZE_MAX;
+    const size_t num_matches = g_property_names.AutoComplete (partial_setting_name, matches, exact_matches_idx);
+    word_complete = exact_matches_idx != SIZE_MAX;
+    return num_matches;
 }
 
 
@@ -443,6 +458,19 @@ CommandCompletions::ArchitectureNames (CommandInterpreter &interpreter,
     const uint32_t num_matches = ArchSpec::AutoComplete (partial_name, matches);
     word_complete = num_matches == 1;
     return num_matches;
+}
+
+
+int
+CommandCompletions::VariablePath (CommandInterpreter &interpreter,
+                                  const char *partial_name,
+                                  int match_start_point,
+                                  int max_return_elements,
+                                  SearchFilter *searcher,
+                                  bool &word_complete,
+                                  lldb_private::StringList &matches)
+{
+    return Variable::AutoComplete (interpreter.GetExecutionContext(), partial_name, matches, word_complete);
 }
 
 

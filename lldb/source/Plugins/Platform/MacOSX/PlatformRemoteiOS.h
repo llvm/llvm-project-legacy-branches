@@ -34,11 +34,8 @@ public:
     static void
     Terminate ();
     
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic ();
-
-    static const char *
-    GetShortPluginNameStatic();
 
     static const char *
     GetDescriptionStatic();
@@ -54,16 +51,10 @@ public:
     //------------------------------------------------------------
     // lldb_private::PluginInterface functions
     //------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName()
     {
         return GetPluginNameStatic();
-    }
-    
-    virtual const char *
-    GetShortPluginName()
-    {
-        return GetShortPluginNameStatic();
     }
     
     virtual uint32_t
@@ -75,6 +66,12 @@ public:
     //------------------------------------------------------------
     // lldb_private::Platform functions
     //------------------------------------------------------------
+    virtual lldb_private::Error
+    ResolveExecutable (const lldb_private::FileSpec &exe_file,
+                       const lldb_private::ArchSpec &arch,
+                       lldb::ModuleSP &module_sp,
+                       const lldb_private::FileSpecList *module_search_paths_ptr);
+
     virtual const char *
     GetDescription ()
     {

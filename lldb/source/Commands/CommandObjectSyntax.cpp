@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectSyntax.h"
 
 // C Includes
@@ -57,7 +59,7 @@ CommandObjectSyntax::DoExecute (Args& command, CommandReturnObject &result)
 {
     CommandObject::CommandMap::iterator pos;
     CommandObject *cmd_obj;
-    const int argc = command.GetArgumentCount();
+    const size_t argc = command.GetArgumentCount();
 
     if (argc > 0)
     {
@@ -66,14 +68,12 @@ CommandObjectSyntax::DoExecute (Args& command, CommandReturnObject &result)
         for (int i = 1; i < argc; ++i)
         {
             std::string sub_command = command.GetArgumentAtIndex (i);
-            if (! cmd_obj->IsMultiwordObject())
+            if (!cmd_obj->IsMultiwordObject())
                 all_okay = false;
             else
             {
-                pos = ((CommandObjectMultiword *) cmd_obj)->m_subcommand_dict.find (sub_command);
-                if (pos != ((CommandObjectMultiword *) cmd_obj)->m_subcommand_dict.end())
-                    cmd_obj = pos->second.get();
-                else
+                cmd_obj = cmd_obj->GetSubcommandObject(sub_command.c_str());
+                if (!cmd_obj)
                     all_okay = false;
             }
         }

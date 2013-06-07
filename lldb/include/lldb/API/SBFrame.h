@@ -12,7 +12,6 @@
 
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBValueList.h"
-#include "lldb/API/SBWatchpoint.h"
 
 namespace lldb {
 
@@ -105,6 +104,9 @@ public:
 
     lldb::SBValue
     EvaluateExpression (const char *expr, lldb::DynamicValueType use_dynamic, bool unwind_on_error);
+    
+    lldb::SBValue
+    EvaluateExpression (const char *expr, const SBExpressionOptions &options);
 
     /// Gets the lexical block that defines the stack frame. Another way to think
     /// of this is it will return the block that contains all of the variables
@@ -181,6 +183,9 @@ public:
 
     /// Find variables, register sets, registers, or persistent variables using
     /// the frame as the scope.
+    ///
+    /// NB. This function does not look up ivars in the function object pointer.
+    /// To do that use GetValueForVariablePath.
     ///
     /// The version that doesn't supply a 'use_dynamic' value will use the
     /// target's default.

@@ -28,18 +28,17 @@ using namespace lldb_private;
 PathMappingList::PathMappingList () :
     m_pairs (),
     m_callback (NULL),
-    m_callback_baton (NULL)
+    m_callback_baton (NULL),
+    m_mod_id (0)
 {
 }
 
-PathMappingList::PathMappingList 
-(
-    ChangedCallback callback,
-    void *callback_baton
-) :
+PathMappingList::PathMappingList (ChangedCallback callback,
+                                  void *callback_baton) :
     m_pairs (),
     m_callback (callback),
-    m_callback_baton (callback_baton)
+    m_callback_baton (callback_baton),
+    m_mod_id (0)
 {
 }
 
@@ -47,7 +46,8 @@ PathMappingList::PathMappingList
 PathMappingList::PathMappingList (const PathMappingList &rhs) :
     m_pairs (rhs.m_pairs),
     m_callback (NULL),
-    m_callback_baton (NULL)
+    m_callback_baton (NULL),
+    m_mod_id (0)
 {
     
 }
@@ -60,6 +60,7 @@ PathMappingList::operator =(const PathMappingList &rhs)
         m_pairs = rhs.m_pairs;
         m_callback = NULL;
         m_callback_baton = NULL;
+        m_mod_id = rhs.m_mod_id;
     }
     return *this;
 }
@@ -77,6 +78,7 @@ PathMappingList::Append (const ConstString &path,
                          const ConstString &replacement,
                          bool notify)
 {
+    ++m_mod_id;
     m_pairs.push_back(pair(path, replacement));
     if (notify && m_callback)
         m_callback (*this, m_callback_baton);
@@ -85,6 +87,7 @@ PathMappingList::Append (const ConstString &path,
 void
 PathMappingList::Append (const PathMappingList &rhs, bool notify)
 {
+    ++m_mod_id;
     if (!rhs.m_pairs.empty())
     {
         const_iterator pos, end = rhs.m_pairs.end();
@@ -101,6 +104,7 @@ PathMappingList::Insert (const ConstString &path,
                          uint32_t index,
                          bool notify)
 {
+    ++m_mod_id;
     iterator insert_iter;
     if (index >= m_pairs.size())
         insert_iter = m_pairs.end();
@@ -112,11 +116,28 @@ PathMappingList::Insert (const ConstString &path,
 }
 
 bool
+PathMappingList::Replace (const ConstString &path,
+                          const ConstString &replacement,
+                          uint32_t index,
+                          bool notify)
+{
+    iterator insert_iter;
+    if (index >= m_pairs.size())
+        return false;
+    ++m_mod_id;
+    m_pairs[index] = pair(path, replacement);
+    if (notify && m_callback)
+        m_callback (*this, m_callback_baton);
+    return true;
+}
+
+bool
 PathMappingList::Remove (off_t index, bool notify)
 {
     if (index >= m_pairs.size())
         return false;
 
+    ++m_mod_id;
     iterator iter = m_pairs.begin() + index;
     m_pairs.erase(iter);
     if (notify && m_callback)
@@ -149,6 +170,8 @@ PathMappingList::Dump (Stream *s, int pair_index)
 void
 PathMappingList::Clear (bool notify)
 {
+    if (!m_pairs.empty())
+        ++m_mod_id;
     m_pairs.clear();
     if (notify && m_callback)
         m_callback (*this, m_callback_baton);
@@ -157,12 +180,17 @@ PathMappingList::Clear (bool notify)
 bool
 PathMappingList::RemapPath (const ConstString &path, ConstString &new_path) const
 {
+    const char *path_cstr = path.GetCString();
+    
+    if (!path_cstr)
+        return false;
+    
     const_iterator pos, end = m_pairs.end();
     for (pos = m_pairs.begin(); pos != end; ++pos)
     {
         const size_t prefixLen = pos->first.GetLength();
 
-        if (::strncmp (pos->first.GetCString(), path.GetCString(), prefixLen) == 0)
+        if (::strncmp (pos->first.GetCString(), path_cstr, prefixLen) == 0)
         {
             std::string new_path_str (pos->second.GetCString());
             new_path_str.append(path.GetCString() + prefixLen);
@@ -235,6 +263,7 @@ PathMappingList::Replace (const ConstString &path, const ConstString &new_path, 
     uint32_t idx = FindIndexForPath (path);
     if (idx < m_pairs.size())
     {
+        ++m_mod_id;
         m_pairs[idx].second = new_path;
         if (notify && m_callback)
             m_callback (*this, m_callback_baton);
@@ -249,6 +278,7 @@ PathMappingList::Remove (const ConstString &path, bool notify)
     iterator pos = FindIteratorForPath (path);
     if (pos != m_pairs.end())
     {
+        ++m_mod_id;
         m_pairs.erase (pos);
         if (notify && m_callback)
             m_callback (*this, m_callback_baton);

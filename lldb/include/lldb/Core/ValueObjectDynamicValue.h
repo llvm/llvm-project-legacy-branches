@@ -15,85 +15,9 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Core/ValueObject.h"
-#include "lldb/Symbol/ClangASTType.h"
+#include "lldb/Symbol/Type.h"
 
 namespace lldb_private {
-
-    class ValueObjectCast : public ValueObject
-    {
-    public:
-        static lldb::ValueObjectSP
-        Create (ValueObject &parent, 
-                const ConstString &name, 
-                const ClangASTType &cast_type);
-
-        virtual
-        ~ValueObjectCast();
-        
-        virtual size_t
-        GetByteSize();
-        
-        virtual uint32_t
-        CalculateNumChildren();
-        
-        virtual lldb::ValueType
-        GetValueType() const;
-        
-        virtual bool
-        IsInScope ();
-        
-        virtual bool
-        IsDynamic ()
-        {
-            return true;
-        }
-        
-        virtual ValueObject *
-        GetParent()
-        {
-            if (m_parent)
-                return m_parent->GetParent();
-            else
-                return NULL;
-        }
-        
-        virtual const ValueObject *
-        GetParent() const
-        {
-            if (m_parent)
-                return m_parent->GetParent();
-            else
-                return NULL;
-        }
-        
-        virtual lldb::ValueObjectSP
-        GetStaticValue ()
-        {
-            return m_parent->GetSP();
-        }
-        
-    protected:
-        virtual bool
-        UpdateValue ();
-        
-        virtual clang::ASTContext *
-        GetClangASTImpl ();
-        
-        virtual lldb::clang_type_t
-        GetClangTypeImpl ();
-        
-        ClangASTType m_cast_type;
-        
-    private:
-        ValueObjectCast (ValueObject &parent, 
-                         const ConstString &name, 
-                         const ClangASTType &cast_type);
-        
-        //------------------------------------------------------------------
-        // For ValueObject only
-        //------------------------------------------------------------------
-        DISALLOW_COPY_AND_ASSIGN (ValueObjectCast);
-    };
 
 //----------------------------------------------------------------------
 // A ValueObject that represents memory at a given address, viewed as some 
@@ -105,13 +29,16 @@ public:
     virtual
     ~ValueObjectDynamicValue();
 
-    virtual size_t
+    virtual uint64_t
     GetByteSize();
 
     virtual ConstString
     GetTypeName();
 
-    virtual uint32_t
+    virtual ConstString
+    GetQualifiedTypeName();
+    
+    virtual size_t
     CalculateNumChildren();
 
     virtual lldb::ValueType
@@ -163,9 +90,24 @@ public:
     virtual bool
     SetValueFromCString (const char *value_str, Error& error);
     
+    virtual bool
+    SetData (DataExtractor &data, Error &error);
+    
 protected:
     virtual bool
     UpdateValue ();
+    
+    virtual lldb::DynamicValueType
+    GetDynamicValueTypeImpl ()
+    {
+        return m_use_dynamic;
+    }
+    
+    virtual bool
+    HasDynamicValueTypeInfo ()
+    {
+        return true;
+    }
     
     virtual clang::ASTContext *
     GetClangASTImpl ();
@@ -174,7 +116,7 @@ protected:
     GetClangTypeImpl ();
 
     Address  m_address;  ///< The variable that this value object is based upon
-    lldb::TypeSP m_type_sp;
+    TypeAndOrName m_dynamic_type_info; // We can have a type_sp or just a name
     lldb::ValueObjectSP m_owning_valobj_sp;
     lldb::DynamicValueType m_use_dynamic;
 

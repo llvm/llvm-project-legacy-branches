@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "AppleObjCTrampolineHandler.h"
 
 // C Includes
@@ -18,15 +20,15 @@
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/Debugger.h"
-#include "lldb/Host/FileSpec.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Expression/ClangExpression.h"
 #include "lldb/Expression/ClangFunction.h"
 #include "lldb/Expression/ClangUtilityFunction.h"
-
+#include "lldb/Host/FileSpec.h"
 #include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/Symbol.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
@@ -41,7 +43,8 @@ using namespace lldb;
 using namespace lldb_private;
 
 const char *AppleObjCTrampolineHandler::g_lookup_implementation_function_name = "__lldb_objc_find_implementation_for_selector";
-const char *AppleObjCTrampolineHandler::g_lookup_implementation_function_code = "                               \n\
+const char *AppleObjCTrampolineHandler::g_lookup_implementation_function_code = NULL;
+const char *AppleObjCTrampolineHandler::g_lookup_implementation_with_stret_function_code = "                               \n\
 extern \"C\"                                                                                                    \n\
 {                                                                                                               \n\
     extern void *class_getMethodImplementation(void *objc_class, void *sel);                                    \n\
@@ -150,6 +153,106 @@ extern \"C\" void * __lldb_objc_find_implementation_for_selector (void *object, 
     return return_struct.impl_addr;                                                                             \n\
 }                                                                                                               \n\
 ";
+const char *AppleObjCTrampolineHandler::g_lookup_implementation_no_stret_function_code = "                      \n\
+extern \"C\"                                                                                                    \n\
+{                                                                                                               \n\
+    extern void *class_getMethodImplementation(void *objc_class, void *sel);                                    \n\
+    extern void * sel_getUid(char *name);                                                                       \n\
+    extern int printf(const char *format, ...);                                                                 \n\
+}                                                                                                               \n\
+extern \"C\" void * __lldb_objc_find_implementation_for_selector (void *object,                                 \n\
+                                                    void *sel,                                                  \n\
+                                                    int is_stret,                                               \n\
+                                                    int is_super,                                               \n\
+                                                    int is_super2,                                              \n\
+                                                    int is_fixup,                                               \n\
+                                                    int is_fixed,                                               \n\
+                                                    int debug)                                                  \n\
+{                                                                                                               \n\
+    struct __lldb_imp_return_struct                                                                             \n\
+    {                                                                                                           \n\
+        void *class_addr;                                                                                       \n\
+        void *sel_addr;                                                                                         \n\
+        void *impl_addr;                                                                                        \n\
+    };                                                                                                          \n\
+                                                                                                                \n\
+    struct __lldb_objc_class {                                                                                  \n\
+        void *isa;                                                                                              \n\
+        void *super_ptr;                                                                                        \n\
+    };                                                                                                          \n\
+    struct __lldb_objc_super {                                                                                  \n\
+        void *reciever;                                                                                         \n\
+        struct __lldb_objc_class *class_ptr;                                                                    \n\
+    };                                                                                                          \n\
+    struct __lldb_msg_ref {                                                                                     \n\
+        void *dont_know;                                                                                        \n\
+        void *sel;                                                                                              \n\
+    };                                                                                                          \n\
+                                                                                                                \n\
+    struct __lldb_imp_return_struct return_struct;                                                              \n\
+                                                                                                                \n\
+    if (debug)                                                                                                  \n\
+        printf (\"\\n*** Called with obj: 0x%p sel: 0x%p is_stret: %d is_super: %d, \"                          \n\
+                \"is_super2: %d, is_fixup: %d, is_fixed: %d\\n\",                                               \n\
+                 object, sel, is_stret, is_super, is_super2, is_fixup, is_fixed);                               \n\
+    if (is_super)                                                                                               \n\
+    {                                                                                                           \n\
+        if (is_super2)                                                                                          \n\
+        {                                                                                                       \n\
+            return_struct.class_addr = ((__lldb_objc_super *) object)->class_ptr->super_ptr;                    \n\
+        }                                                                                                       \n\
+        else                                                                                                    \n\
+        {                                                                                                       \n\
+            return_struct.class_addr = ((__lldb_objc_super *) object)->class_ptr;                               \n\
+        }                                                                                                       \n\
+    }                                                                                                           \n\
+    else                                                                                                        \n\
+    {                                                                                                           \n\
+        void *class_ptr = (void *) [(id) object class];                                                         \n\
+        if (class_ptr == object)                                                                                \n\
+        {                                                                                                       \n\
+            struct __lldb_objc_class *class_as_class_struct = (struct __lldb_objc_class *) class_ptr;           \n\
+            if (debug)                                                                                          \n\
+                printf (\"Found a class object, need to return the meta class 0x%p -> 0x%p\\n\",                \n\
+                        class_ptr, class_as_class_struct->isa);                                                 \n\
+            return_struct.class_addr = class_as_class_struct->isa;                                              \n\
+        }                                                                                                       \n\
+        else                                                                                                    \n\
+        {                                                                                                       \n\
+            if (debug)                                                                                          \n\
+                printf (\"[object class] returned: 0x%p.\\n\", class_ptr);                                      \n\
+            return_struct.class_addr = class_ptr;                                                               \n\
+        }                                                                                                       \n\
+    }                                                                                                           \n\
+                                                                                                                \n\
+    if (is_fixup)                                                                                               \n\
+    {                                                                                                           \n\
+        if (is_fixed)                                                                                           \n\
+        {                                                                                                       \n\
+            return_struct.sel_addr = ((__lldb_msg_ref *) sel)->sel;                                             \n\
+        }                                                                                                       \n\
+        else                                                                                                    \n\
+        {                                                                                                       \n\
+            char *sel_name = (char *) ((__lldb_msg_ref *) sel)->sel;                                            \n\
+            return_struct.sel_addr = sel_getUid (sel_name);                                                     \n\
+            if (debug)                                                                                          \n\
+                printf (\"\\n*** Got fixed up selector: 0x%p for name %s.\\n\",                                 \n\
+                        return_struct.sel_addr, sel_name);                                                      \n\
+        }                                                                                                       \n\
+    }                                                                                                           \n\
+    else                                                                                                        \n\
+    {                                                                                                           \n\
+        return_struct.sel_addr = sel;                                                                           \n\
+    }                                                                                                           \n\
+                                                                                                                \n\
+    return_struct.impl_addr = class_getMethodImplementation (return_struct.class_addr,                          \n\
+                                                             return_struct.sel_addr);                           \n\
+    if (debug)                                                                                                  \n\
+        printf (\"\\n*** Returning implementation: 0x%p.\\n\", return_struct.impl_addr);                        \n\
+                                                                                                                \n\
+    return return_struct.impl_addr;                                                                             \n\
+}                                                                                                               \n\
+";
 
 AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::VTableRegion(AppleObjCVTables *owner, lldb::addr_t header_addr) :
     m_valid (true),
@@ -192,12 +295,12 @@ AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::SetUpRegion()
         return;
     }
     
-    uint32_t offset_ptr = 0;
-    const uint16_t header_size = data.GetU16(&offset_ptr);
-    const uint16_t descriptor_size = data.GetU16(&offset_ptr);
-    const size_t num_descriptors = data.GetU32(&offset_ptr);
+    lldb::offset_t offset = 0;
+    const uint16_t header_size = data.GetU16(&offset);
+    const uint16_t descriptor_size = data.GetU16(&offset);
+    const size_t num_descriptors = data.GetU32(&offset);
     
-    m_next_region = data.GetPointer(&offset_ptr);
+    m_next_region = data.GetPointer(&offset);
     
     // If the header size is 0, that means we've come in too early before this data is set up.
     // Set ourselves as not valid, and continue.
@@ -237,16 +340,16 @@ AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::SetUpRegion()
     // The actual code for the vtables will be laid out consecutively, so I also
     // compute the start and end of the whole code block.
 
-    offset_ptr = 0;
+    offset = 0;
     m_code_start_addr = 0;
     m_code_end_addr = 0;
 
     for (int i = 0; i < num_descriptors; i++)
     {
-        lldb::addr_t start_offset = offset_ptr;
-        uint32_t offset = desc_extractor.GetU32 (&offset_ptr);
-        uint32_t flags  = desc_extractor.GetU32 (&offset_ptr);
-        lldb::addr_t code_addr = desc_ptr + start_offset + offset;
+        lldb::addr_t start_offset = offset;
+        uint32_t voffset = desc_extractor.GetU32 (&offset);
+        uint32_t flags  = desc_extractor.GetU32 (&offset);
+        lldb::addr_t code_addr = desc_ptr + start_offset + voffset;
         m_descriptors.push_back (VTableDescriptor(flags, code_addr));
         
         if (m_code_start_addr == 0 || code_addr < m_code_start_addr)
@@ -254,7 +357,7 @@ AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::SetUpRegion()
         if (code_addr > m_code_end_addr)
             m_code_end_addr = code_addr;
             
-        offset_ptr = start_offset + descriptor_size;
+        offset = start_offset + descriptor_size;
     }
     // Finally, a little bird told me that all the vtable code blocks are the same size.  
     // Let's compute the blocks and if they are all the same add the size to the code end address:
@@ -301,13 +404,13 @@ AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::AddressInRegion (lld
 void
 AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::Dump (Stream &s)
 {
-    s.Printf ("Header addr: 0x%llx Code start: 0x%llx Code End: 0x%llx Next: 0x%llx\n", 
+    s.Printf ("Header addr: 0x%" PRIx64 " Code start: 0x%" PRIx64 " Code End: 0x%" PRIx64 " Next: 0x%" PRIx64 "\n",
               m_header_addr, m_code_start_addr, m_code_end_addr, m_next_region);
     size_t num_elements = m_descriptors.size();
     for (size_t i = 0; i < num_elements; i++)
     {
         s.Indent();
-        s.Printf ("Code start: 0x%llx Flags: %d\n", m_descriptors[i].code_start, m_descriptors[i].flags);
+        s.Printf ("Code start: 0x%" PRIx64 " Flags: %d\n", m_descriptors[i].code_start, m_descriptors[i].flags);
     }
 }
         
@@ -334,7 +437,7 @@ AppleObjCTrampolineHandler::AppleObjCVTables::InitializeVTableSymbols ()
         return true;
     Target &target = m_process_sp->GetTarget();
     
-    ModuleList &target_modules = target.GetImages();
+    const ModuleList &target_modules = target.GetImages();
     Mutex::Locker modules_locker(target_modules.GetMutex());
     size_t num_modules = target_modules.GetSize();
     if (!m_objc_module_sp)
@@ -380,6 +483,7 @@ AppleObjCTrampolineHandler::AppleObjCVTables::InitializeVTableSymbols ()
                     {
                         m_trampolines_changed_bp_id = trampolines_changed_bp_sp->GetID();
                         trampolines_changed_bp_sp->SetCallback (RefreshTrampolines, this, true);
+                        trampolines_changed_bp_sp->SetBreakpointKind ("objc-trampolines-changed");
                         return true;
                     }
                 }
@@ -425,8 +529,8 @@ AppleObjCTrampolineHandler::AppleObjCVTables::RefreshTrampolines (void *baton,
                                                                     data, 
                                                                     0,
                                                                     NULL);
-        uint32_t offset_ptr = 0;
-        lldb::addr_t region_addr = data.GetPointer(&offset_ptr);
+        lldb::offset_t offset = 0;
+        lldb::addr_t region_addr = data.GetPointer(&offset);
         
         if (region_addr != 0)
             vtable_handler->ReadRegions(region_addr);
@@ -456,7 +560,7 @@ AppleObjCTrampolineHandler::AppleObjCVTables::ReadRegions (lldb::addr_t region_a
     if (!m_process_sp)
         return false;
         
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     
     // We aren't starting at the trampoline symbol.
     InitializeVTableSymbols ();
@@ -553,8 +657,29 @@ AppleObjCTrampolineHandler::AppleObjCTrampolineHandler (const ProcessSP &process
         m_msg_forward_stret_addr = msg_forward_stret->GetAddress().GetOpcodeLoadAddress(target);
     
     // FIXME: Do some kind of logging here.
-    if (m_impl_fn_addr == LLDB_INVALID_ADDRESS || m_impl_stret_fn_addr == LLDB_INVALID_ADDRESS)
+    if (m_impl_fn_addr == LLDB_INVALID_ADDRESS)
+    {
+        // If we can't even find the ordinary get method implementation function, then we aren't going to be able to
+        // step through any method dispatches.  Warn to that effect and get out of here.
+        if (process_sp->CanJIT())
+        {
+            process_sp->GetTarget().GetDebugger().GetErrorStream().Printf("Could not find implementation lookup function \"%s\""
+                                                                          " step in through ObjC method dispatch will not work.\n",
+                                                                          get_impl_name.AsCString());
+        }
         return;
+    }
+    else if (m_impl_stret_fn_addr == LLDB_INVALID_ADDRESS)
+    {
+        // It there is no stret return lookup function, assume that it is the same as the straight lookup:
+        m_impl_stret_fn_addr = m_impl_fn_addr;
+        // Also we will use the version of the lookup code that doesn't rely on the stret version of the function.
+        g_lookup_implementation_function_code = g_lookup_implementation_no_stret_function_code;
+    }
+    else
+    {
+        g_lookup_implementation_function_code = g_lookup_implementation_with_stret_function_code;
+    }
         
     // Look up the addresses for the objc dispatch functions and cache them.  For now I'm inspecting the symbol
     // names dynamically to figure out how to dispatch to them.  If it becomes more complicated than this we can 
@@ -589,7 +714,7 @@ AppleObjCTrampolineHandler::SetupDispatchFunction (Thread &thread, ValueList &di
     ExecutionContext exe_ctx (thread.shared_from_this());
     Address impl_code_address;
     StreamString errors;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     lldb::addr_t args_addr = LLDB_INVALID_ADDRESS;
 
     // Scope for mutex locker:
@@ -616,7 +741,7 @@ AppleObjCTrampolineHandler::SetupDispatchFunction (Thread &thread, ValueList &di
                     impl_code_address = sc.symbol->GetAddress();
                     
                 //lldb::addr_t addr = impl_code_address.GetOpcodeLoadAddress (exe_ctx.GetTargetPtr());
-                //printf ("Getting address for our_utility_function: 0x%llx.\n", addr);
+                //printf ("Getting address for our_utility_function: 0x%" PRIx64 ".\n", addr);
             }
             else
             {
@@ -626,15 +751,26 @@ AppleObjCTrampolineHandler::SetupDispatchFunction (Thread &thread, ValueList &di
         }
         else if (!m_impl_code.get())
         {
-            m_impl_code.reset (new ClangUtilityFunction (g_lookup_implementation_function_code,
-                                                         g_lookup_implementation_function_name));
-            if (!m_impl_code->Install(errors, exe_ctx))
+            if (g_lookup_implementation_function_code != NULL)
+            {
+                m_impl_code.reset (new ClangUtilityFunction (g_lookup_implementation_function_code,
+                                                             g_lookup_implementation_function_name));
+                if (!m_impl_code->Install(errors, exe_ctx))
+                {
+                    if (log)
+                        log->Printf ("Failed to install implementation lookup: %s.", errors.GetData());
+                    m_impl_code.reset();
+                    return args_addr;
+                }
+            }
+            else
             {
                 if (log)
-                    log->Printf ("Failed to install implementation lookup: %s.", errors.GetData());
-                m_impl_code.reset();
-                return args_addr;
+                    log->Printf("No method lookup implementation code.");
+                errors.Printf ("No method lookup implementation code found.");
+                return LLDB_INVALID_ADDRESS;
             }
+            
             impl_code_address.Clear();
             impl_code_address.SetOffset(m_impl_code->StartAddress());
         }
@@ -732,7 +868,7 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
     
     if (found_it)
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
         // We are decoding a method dispatch.  
         // First job is to pull the arguments out:
@@ -882,7 +1018,7 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
         {
             if (log)
             {
-                log->Printf("Resolving call for class - 0x%llx and selector - 0x%llx",
+                log->Printf("Resolving call for class - 0x%" PRIx64 " and selector - 0x%" PRIx64,
                             isa_addr, sel_addr);
             }
             ObjCLanguageRuntime *objc_runtime = m_process_sp->GetObjCLanguageRuntime ();
@@ -896,7 +1032,7 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
             // Yup, it was in the cache, so we can run to that address directly.
             
             if (log)
-                log->Printf ("Found implementation address in cache: 0x%llx", impl_addr);
+                log->Printf ("Found implementation address in cache: 0x%" PRIx64, impl_addr);
                  
             ret_plan_sp.reset (new ThreadPlanRunToAddress (thread, impl_addr, stop_others));
         }
@@ -973,12 +1109,16 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
                 flag_value.GetScalar() = 0;  // FIXME - Set to 0 when debugging is done.
             dispatch_values.PushValue (flag_value);
             
+            
+            // The step through code might have to fill in the cache, so it is not safe to run only one thread.
+            // So we override the stop_others value passed in to us here:
+            const bool trampoline_stop_others = false;
             ret_plan_sp.reset (new AppleThreadPlanStepThroughObjCTrampoline (thread,
                                                                              this,
                                                                              dispatch_values,
                                                                              isa_addr,
                                                                              sel_addr,
-                                                                             stop_others));
+                                                                             trampoline_stop_others));
             if (log)
             {
                 StreamString s;

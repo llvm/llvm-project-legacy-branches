@@ -33,7 +33,7 @@ public:
     Create(bool source_init_files);
 
     static lldb::SBDebugger
-    Create(bool source_init_files, lldb::LogOutputCallback callback, void *baton);
+    Create(bool source_init_files, lldb::LogOutputCallback log_callback, void *baton);
 
     static void
     Destroy (lldb::SBDebugger &debugger);
@@ -78,7 +78,7 @@ public:
 
     void
     SetErrorFileHandle (FILE *f, bool transfer_ownership);
-
+    
     FILE *
     GetInputFileHandle ();
 
@@ -87,6 +87,12 @@ public:
 
     FILE *
     GetErrorFileHandle ();
+
+    void
+    SaveInputTerminalState();
+    
+    void
+    RestoreInputTerminalState();
 
     lldb::SBCommandInterpreter
     GetCommandInterpreter ();
@@ -166,6 +172,12 @@ public:
     bool 
     GetUseExternalEditor ();
 
+    bool
+    SetUseColor (bool use_color);
+
+    bool
+    GetUseColor () const;
+
     static bool
     GetDefaultArchitecture (char *arch_name, size_t arch_name_len);
 
@@ -193,8 +205,14 @@ public:
     void
     SetLoggingCallback (lldb::LogOutputCallback log_callback, void *baton);
     
+    // DEPRECATED
     void
-    DispatchInput (void *baton, const void *data, size_t data_len);
+    DispatchInput (void* baton,
+                   const void* data,
+                   size_t data_len);
+    
+    void
+    DispatchInput (const void *data, size_t data_len);
 
     void
     DispatchInputInterrupt ();
@@ -289,11 +307,12 @@ public:
 
 private:
 
+    friend class SBCommandInterpreter;
     friend class SBInputReader;
+    friend class SBListener;
     friend class SBProcess;
     friend class SBSourceManager;
     friend class SBTarget;
-    friend class SBListener;
     
     lldb::SBTarget
     FindTargetWithLLDBProcess (const lldb::ProcessSP &processSP);

@@ -9,6 +9,8 @@
 
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
+#include "lldb/Core/Section.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/Target.h"
 
 #include "DynamicLoaderStatic.h"
@@ -93,9 +95,12 @@ DynamicLoaderStatic::DidLaunch ()
 void
 DynamicLoaderStatic::LoadAllImagesAtFileAddresses ()
 {
-    ModuleList &module_list = m_process->GetTarget().GetImages();
+    const ModuleList &module_list = m_process->GetTarget().GetImages();
     
     ModuleList loaded_module_list;
+
+    // Disable JIT for static dynamic loader targets
+    m_process->SetCanJIT(false);
 
     Mutex::Locker mutex_locker(module_list.GetMutex());
     
@@ -141,8 +146,7 @@ DynamicLoaderStatic::LoadAllImagesAtFileAddresses ()
         }
     }
 
-    if (loaded_module_list.GetSize())
-        m_process->GetTarget().ModulesDidLoad (loaded_module_list);
+    m_process->GetTarget().ModulesDidLoad (loaded_module_list);
 }
 
 ThreadPlanSP
@@ -174,10 +178,11 @@ DynamicLoaderStatic::Terminate()
 }
 
 
-const char *
+lldb_private::ConstString
 DynamicLoaderStatic::GetPluginNameStatic()
 {
-    return "dynamic-loader.static";
+    static ConstString g_name("static");
+    return g_name;
 }
 
 const char *
@@ -190,14 +195,8 @@ DynamicLoaderStatic::GetPluginDescriptionStatic()
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+lldb_private::ConstString
 DynamicLoaderStatic::GetPluginName()
-{
-    return "DynamicLoaderStatic";
-}
-
-const char *
-DynamicLoaderStatic::GetShortPluginName()
 {
     return GetPluginNameStatic();
 }

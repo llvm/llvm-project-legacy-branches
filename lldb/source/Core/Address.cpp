@@ -10,7 +10,9 @@
 #include "lldb/Core/Address.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Section.h"
+#include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/ObjectFile.h"
+#include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/Variable.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -84,7 +86,7 @@ ReadUIntMax64 (ExecutionContextScope *exe_scope, const Address &address, uint32_
         if (GetByteOrderAndAddressSize (exe_scope, address, byte_order, addr_size))
         {
             DataExtractor data (&buf, sizeof(buf), byte_order, addr_size);
-            uint32_t offset = 0;
+            lldb::offset_t offset = 0;
             uval64 = data.GetU64(&offset);
         }
         else
@@ -229,7 +231,7 @@ Address::operator= (const Address& rhs)
     if (this != &rhs)
     {
         m_section_wp = rhs.m_section_wp;
-        m_offset = rhs.m_offset;
+        m_offset = rhs.m_offset.load();
     }
     return *this;
 }
@@ -309,8 +311,15 @@ Address::GetLoadAddress (Target *target) const
 }
 
 addr_t
-Address::GetCallableLoadAddress (Target *target) const
+Address::GetCallableLoadAddress (Target *target, bool is_indirect) const
 {
+    if (is_indirect && target) {
+        ProcessSP processSP = target->GetProcessSP();
+        Error error;
+        if (processSP.get())
+            return processSP->ResolveIndirectFunction(this, error);
+    }
+
     addr_t code_addr = GetLoadAddress (target);
 
     if (target)
@@ -382,7 +391,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
         if (section_sp)
         {
             section_sp->DumpName(s);
-            s->Printf (" + %llu", m_offset);
+            s->Printf (" + %" PRIu64, m_offset.load());
         }
         else
         {
@@ -463,7 +472,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                                         s->PutCString(symbol_name);
                                         addr_t delta = file_Addr - symbol->GetAddress().GetFileAddress();
                                         if (delta)
-                                            s->Printf(" + %llu", delta);
+                                            s->Printf(" + %" PRIu64, delta);
                                         showed_info = true;
                                     }
                                 }
@@ -694,14 +703,14 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                                                stop_if_block_is_inlined_function, 
                                                &variable_list);
                     
-                    uint32_t num_variables = variable_list.GetSize();
-                    for (uint32_t var_idx = 0; var_idx < num_variables; ++var_idx)
+                    const size_t num_variables = variable_list.GetSize();
+                    for (size_t var_idx = 0; var_idx < num_variables; ++var_idx)
                     {
                         Variable *var = variable_list.GetVariableAtIndex (var_idx).get();
                         if (var && var->LocationIsValidForAddress (*this))
                         {
                             s->Indent();
-                            s->Printf ("   Variable: id = {0x%8.8llx}, name = \"%s\", type= \"%s\", location =",
+                            s->Printf ("   Variable: id = {0x%8.8" PRIx64 "}, name = \"%s\", type= \"%s\", location =",
                                        var->GetID(),
                                        var->GetName().GetCString(),
                                        var->GetType()->GetName().GetCString());
@@ -760,7 +769,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
 uint32_t
 Address::CalculateSymbolContext (SymbolContext *sc, uint32_t resolve_scope) const
 {
-    sc->Clear();
+    sc->Clear(false);
     // Absolute addresses don't have enough information to reconstruct even their target.
 
     SectionSP section_sp (GetSection());
@@ -994,39 +1003,16 @@ lldb_private::operator> (const Address& lhs, const Address& rhs)
 bool
 lldb_private::operator== (const Address& a, const Address& rhs)
 {
-    return  a.GetSection() == rhs.GetSection() &&
-            a.GetOffset()  == rhs.GetOffset();
+    return  a.GetOffset()  == rhs.GetOffset() &&
+            a.GetSection() == rhs.GetSection();
 }
 // The operator != checks for exact inequality only (differing section, or
 // different offset)
 bool
 lldb_private::operator!= (const Address& a, const Address& rhs)
 {
-    return  a.GetSection() != rhs.GetSection() ||
-            a.GetOffset()  != rhs.GetOffset();
-}
-
-bool
-Address::IsLinkedAddress () const
-{
-    SectionSP section_sp (GetSection());
-    return section_sp && section_sp->GetLinkedSection();
-}
-
-
-void
-Address::ResolveLinkedAddress ()
-{
-    SectionSP section_sp (GetSection());
-    if (section_sp)
-    {
-        SectionSP linked_section_sp (section_sp->GetLinkedSection());
-        if (linked_section_sp)
-        {
-            m_offset += section_sp->GetLinkedOffset();
-            m_section_wp = linked_section_sp;
-        }
-    }
+    return  a.GetOffset()  != rhs.GetOffset() ||
+            a.GetSection() != rhs.GetSection();
 }
 
 AddressClass

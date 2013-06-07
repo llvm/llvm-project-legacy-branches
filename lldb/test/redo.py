@@ -28,6 +28,8 @@ redo_specs = []
 # will be considered for re-run.  Examples: ['X86_64', 'clang'].
 filename_components = []
 
+do_delay = False
+
 # There is a known bug with respect to comp_specs and arch_specs, in that if we
 # encountered "-C clang" and "-C gcc" when visiting the session files, both
 # compilers will end up in the invocation of the test driver when rerunning.
@@ -40,12 +42,13 @@ arch_specs = set()
 
 def usage():
     print"""\
-Usage: redo.py [-F filename_component] [-n] [session_dir]
+Usage: redo.py [-F filename_component] [-n] [session_dir] [-d]
 where options:
 -F : only consider the test for re-run if the session filename conatins the filename component
      for example: -F x86_64
 -n : when running the tests, do not turn on trace mode, i.e, no '-t' option
      is passed to the test driver (this will run the tests faster)
+-d : pass -d down to the test driver (introduces a delay so you can attach with a debugger)
 
 and session_dir specifies the session directory which contains previously
 recorded session infos for all the test cases which either failed or errored.
@@ -81,6 +84,7 @@ def redo(suffix, dir, names):
     global comp_pattern
     global arch_pattern
     global filename_components
+    global do_delay
 
     for name in names:
         if name.endswith(suffix):
@@ -111,6 +115,7 @@ def main():
     global no_trace
     global redo_specs
     global filename_components
+    global do_delay
 
     test_dir = sys.path[0]
     if not test_dir:
@@ -121,7 +126,7 @@ def main():
 
     index = 1
     while index < len(sys.argv):
-        if sys.argv[index].startswith('-h'):
+        if sys.argv[index].startswith('-h') or sys.argv[index].startswith('--help'):
             usage()
 
         if sys.argv[index].startswith('-'):
@@ -139,6 +144,8 @@ def main():
             filename_components.append(sys.argv[index])
         elif sys.argv[index] == '-n':
             no_trace = True
+        elif sys.argv[index] == '-d':
+            do_delay = True
 
         index += 1
 
@@ -169,12 +176,14 @@ def main():
         usage()
 
     filters = " -f ".join(redo_specs)
-    compilers = (" -C %s" % "^".join(comp_specs)) if comp_specs else None
-    archs = (" -A %s" % "^".join(arch_specs)) if arch_specs else None
+    compilers = ''
+    for comp in comp_specs:
+        compilers += " -C %s" % (comp)
+    archs = ''
+    for arch in arch_specs:
+        archs += "--arch %s " % (arch)
 
-    command = "./dotest.py %s %s -v %s -f " % (compilers if compilers else "",
-                                               archs if archs else "",
-                                               "" if no_trace else "-t")
+    command = "./dotest.py %s %s -v %s %s -f " % (compilers, archs, "" if no_trace else "-t", "-d" if do_delay else "")
 
 
     print "Running %s" % (command + filters)

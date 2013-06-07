@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <inttypes.h>
 
 #include <string>
 
@@ -62,7 +63,7 @@ typedef struct
                                              // then this option belongs to option set n.
     bool required;                           // This option is required (in the current usage level)
     const char * long_option;                // Full name for this option.
-    char short_option;                       // Single character for this option.
+    int short_option;                        // Single character for this option.
     int option_has_arg;                      // no_argument, required_argument or optional_argument
     uint32_t completion_type;                // Cookie the option class can use to do define the argument completion.
     lldb::CommandArgumentType argument_type; // Type of argument this option takes
@@ -75,34 +76,40 @@ typedef struct
 
 static OptionDefinition g_options[] =
 {
-    { LLDB_OPT_SET_1,    true , "help"           , 'h', no_argument      , NULL,  eArgTypeNone,         
+    { LLDB_OPT_SET_1,    true , "help"           , 'h', no_argument      , 0,  eArgTypeNone,
         "Prints out the usage information for the LLDB debugger." },
-    { LLDB_OPT_SET_2,    true , "version"        , 'v', no_argument      , NULL,  eArgTypeNone,         
+    { LLDB_OPT_SET_2,    true , "version"        , 'v', no_argument      , 0,  eArgTypeNone,
         "Prints out the current version number of the LLDB debugger." },
-    { LLDB_OPT_SET_3,    true , "arch"           , 'a', required_argument, NULL,  eArgTypeArchitecture, 
+    { LLDB_OPT_SET_3,    true , "arch"           , 'a', required_argument, 0,  eArgTypeArchitecture,
         "Tells the debugger to use the specified architecture when starting and running the program.  <architecture> must "
         "be one of the architectures for which the program was compiled." },
-    { LLDB_OPT_SET_3,    true , "file"           , 'f', required_argument, NULL,  eArgTypeFilename,     
+    { LLDB_OPT_SET_3,    true , "file"           , 'f', required_argument, 0,  eArgTypeFilename,
         "Tells the debugger to use the file <filename> as the program to be debugged." },
-    { LLDB_OPT_SET_4,    true , "attach-name"    , 'n', required_argument, NULL,  eArgTypeProcessName,  
+    { LLDB_OPT_SET_3,    false, "core"           , 'c', required_argument, 0,  eArgTypeFilename,
+        "Tells the debugger to use the fullpath to <path> as the core file." },
+    { LLDB_OPT_SET_4,    true , "attach-name"    , 'n', required_argument, 0,  eArgTypeProcessName,
         "Tells the debugger to attach to a process with the given name." },
-    { LLDB_OPT_SET_4,    true , "wait-for"       , 'w', no_argument      , NULL,  eArgTypeNone,         
+    { LLDB_OPT_SET_4,    true , "wait-for"       , 'w', no_argument      , 0,  eArgTypeNone,
         "Tells the debugger to wait for a process with the given pid or name to launch before attaching." },
-    { LLDB_OPT_SET_5,    true , "attach-pid"     , 'p', required_argument, NULL,  eArgTypePid,          
+    { LLDB_OPT_SET_5,    true , "attach-pid"     , 'p', required_argument, 0,  eArgTypePid,
         "Tells the debugger to attach to a process with the given pid." },
-    { LLDB_3_TO_5,       false, "script-language", 'l', required_argument, NULL,  eArgTypeScriptLang,   
+    { LLDB_3_TO_5,       false, "script-language", 'l', required_argument, 0,  eArgTypeScriptLang,
         "Tells the debugger to use the specified scripting language for user-defined scripts, rather than the default.  "
         "Valid scripting languages that can be specified include Python, Perl, Ruby and Tcl.  Currently only the Python "
         "extensions have been implemented." },
-    { LLDB_3_TO_5,       false, "debug"          , 'd', no_argument      , NULL,  eArgTypeNone,         
+    { LLDB_3_TO_5,       false, "debug"          , 'd', no_argument      , 0,  eArgTypeNone,
         "Tells the debugger to print out extra information for debugging itself." },
-    { LLDB_3_TO_5,       false, "source"         , 's', required_argument, NULL,  eArgTypeFilename,     
+    { LLDB_3_TO_5,       false, "source"         , 's', required_argument, 0,  eArgTypeFilename,
         "Tells the debugger to read in and execute the file <file>, which should contain lldb commands." },
-    { LLDB_3_TO_5,       false, "editor"         , 'e', no_argument      , NULL,  eArgTypeNone,         
+    { LLDB_3_TO_5,       false, "editor"         , 'e', no_argument      , 0,  eArgTypeNone,
         "Tells the debugger to open source files using the host's \"external editor\" mechanism." },
-    { LLDB_3_TO_5,       false, "no-lldbinit"    , 'x', no_argument      , NULL,  eArgTypeNone,         
+    { LLDB_3_TO_5,       false, "no-lldbinit"    , 'x', no_argument      , 0,  eArgTypeNone,
         "Do not automatically parse any '.lldbinit' files." },
-    { 0,                 false, NULL             , 0  , 0                , NULL,  eArgTypeNone,         NULL }
+    { LLDB_3_TO_5,       false, "no-use-colors"  , 'o', no_argument      , 0,  eArgTypeNone,
+        "Do not use colors." },
+    { LLDB_OPT_SET_6,    true , "python-path"    , 'P', no_argument      , 0,  eArgTypeNone,
+        "Prints out the path to the lldb.py file for this version of lldb." },
+    { 0,                 false, NULL             , 0  , 0                , 0,  eArgTypeNone,         NULL }
 };
 
 static const uint32_t last_option_set_with_args = 2;
@@ -115,7 +122,9 @@ Driver::Driver () :
     m_editline_reader (),
     m_io_channel_ap (),
     m_option_data (),
-    m_waiting_for_command (false)
+    m_executing_user_command (false),
+    m_waiting_for_command (false),
+    m_done(false)
 {
     // We want to be able to handle CTRL+D in the terminal to have it terminate
     // certain input
@@ -379,10 +388,12 @@ BuildGetOptTable (OptionDefinition *expanded_option_table, std::vector<struct op
 Driver::OptionData::OptionData () :
     m_args(),
     m_script_lang (lldb::eScriptLanguageDefault),
+    m_core_file (),
     m_crash_log (),
     m_source_command_files (),
     m_debug_mode (false),
     m_print_version (false),
+    m_print_python_path (false),
     m_print_help (false),
     m_wait_for(false),
     m_process_name(),
@@ -405,6 +416,7 @@ Driver::OptionData::Clear ()
     m_debug_mode = false;
     m_print_help = false;
     m_print_version = false;
+    m_print_python_path = false;
     m_use_external_editor = false;
     m_wait_for = false;
     m_process_name.erase();
@@ -501,7 +513,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
         return error;
     }
 
-    // Build the option_string argument for call to getopt_long.
+    // Build the option_string argument for call to getopt_long_only.
 
     for (int i = 0; long_options[i].name != NULL; ++i)
     {
@@ -532,7 +544,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
     m_debugger.SkipLLDBInitFiles (false);
     m_debugger.SkipAppInitFiles (false);
 
-    // Prepare for & make calls to getopt_long.
+    // Prepare for & make calls to getopt_long_only.
 #if __GLIBC__
     optind = 0;
 #else
@@ -543,7 +555,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
     while (1)
     {
         int long_options_index = -1;
-        val = ::getopt_long (argc, const_cast<char **>(argv), option_string.c_str(), long_options, &long_options_index);
+        val = ::getopt_long_only (argc, const_cast<char **>(argv), option_string.c_str(), long_options, &long_options_index);
 
         if (val == -1)
             break;
@@ -574,7 +586,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
 
             if (long_options_index >= 0)
             {
-                const char short_option = (char) g_options[long_options_index].short_option;
+                const int short_option = g_options[long_options_index].short_option;
 
                 switch (short_option)
                 {
@@ -586,10 +598,22 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
                         m_option_data.m_print_version = true;
                         break;
 
-                    case 'c':
-                        m_option_data.m_crash_log = optarg;
+                    case 'P':
+                        m_option_data.m_print_python_path = true;
                         break;
 
+                    case 'c':
+                        {
+                            SBFileSpec file(optarg);
+                            if (file.Exists())
+                            {
+                                m_option_data.m_core_file = optarg;
+                            }
+                            else
+                                error.SetErrorStringWithFormat("file specified in --core (-c) option doesn't exist: '%s'", optarg);
+                        }
+                        break;
+                    
                     case 'e':
                         m_option_data.m_use_external_editor = true;
                         break;
@@ -597,6 +621,10 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
                     case 'x':
                         m_debugger.SkipLLDBInitFiles (true);
                         m_debugger.SkipAppInitFiles (true);
+                        break;
+
+                    case 'o':
+                        m_debugger.SetUseColor (false);
                         break;
 
                     case 'f':
@@ -691,9 +719,23 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
         ::fprintf (out_fh, "%s\n", m_debugger.GetVersionString());
         exit = true;
     }
-    else if (! m_option_data.m_crash_log.empty())
+    else if (m_option_data.m_print_python_path)
     {
-        // Handle crash log stuff here.
+        SBFileSpec python_file_spec = SBHostOS::GetLLDBPythonPath();
+        if (python_file_spec.IsValid())
+        {
+            char python_path[PATH_MAX];
+            size_t num_chars = python_file_spec.GetPath(python_path, PATH_MAX);
+            if (num_chars < PATH_MAX)
+            {
+                ::fprintf (out_fh, "%s\n", python_path);
+            }
+            else
+                ::fprintf (out_fh, "<PATH TOO LONG>\n");
+        }
+        else
+            ::fprintf (out_fh, "<COULD NOT FIND PATH>\n");
+        exit = true;
     }
     else if (m_option_data.m_process_name.empty() && m_option_data.m_process_pid == LLDB_INVALID_PROCESS_ID)
     {
@@ -703,7 +745,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
         // are arguments for the inferior program. If no file was specified with
         // -f, then what is left is the program name followed by any arguments.
 
-        // Skip any options we consumed with getopt_long
+        // Skip any options we consumed with getopt_long_only
         argc -= optind;
         argv += optind;
 
@@ -720,7 +762,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
     }
     else
     {
-        // Skip any options we consumed with getopt_long
+        // Skip any options we consumed with getopt_long_only
         argc -= optind;
         //argv += optind; // Commented out to keep static analyzer happy
 
@@ -740,7 +782,7 @@ Driver::GetProcessSTDOUT ()
     size_t total_bytes = 0;
     while ((len = m_debugger.GetSelectedTarget().GetProcess().GetSTDOUT (stdio_buffer, sizeof (stdio_buffer))) > 0)
     {
-        m_io_channel_ap->OutWrite (stdio_buffer, len, ASYNC);
+        m_io_channel_ap->OutWrite (stdio_buffer, len, NO_ASYNC);
         total_bytes += len;
     }
     return total_bytes;
@@ -755,7 +797,7 @@ Driver::GetProcessSTDERR ()
     size_t total_bytes = 0;
     while ((len = m_debugger.GetSelectedTarget().GetProcess().GetSTDERR (stdio_buffer, sizeof (stdio_buffer))) > 0)
     {
-        m_io_channel_ap->ErrWrite (stdio_buffer, len, ASYNC);
+        m_io_channel_ap->ErrWrite (stdio_buffer, len, NO_ASYNC);
         total_bytes += len;
     }
     return total_bytes;
@@ -788,7 +830,6 @@ Driver::UpdateSelectedThread ()
                 StopReason thread_stop_reason = thread.GetStopReason();
                 switch (thread_stop_reason)
                 {
-                default:
                 case eStopReasonInvalid:
                 case eStopReasonNone:
                     break;
@@ -798,6 +839,8 @@ Driver::UpdateSelectedThread ()
                 case eStopReasonWatchpoint:
                 case eStopReasonSignal:
                 case eStopReasonException:
+                case eStopReasonExec:
+                case eStopReasonThreadExiting:
                     if (!other_thread.IsValid())
                         other_thread = thread;
                     break;
@@ -852,7 +895,7 @@ Driver::HandleBreakpointEvent (const SBEvent &event)
             SBBreakpoint breakpoint = SBBreakpoint::GetBreakpointFromEvent(event);
             int message_len = ::snprintf (message, sizeof(message), "%d location%s added to breakpoint %d\n", 
                                           num_new_locations,
-                                          num_new_locations == 1 ? " " : "s ",
+                                          num_new_locations == 1 ? "" : "s",
                                           breakpoint.GetID());
             m_io_channel_ap->OutWrite(message, message_len, ASYNC);
         }
@@ -912,7 +955,7 @@ Driver::HandleProcessEvent (const SBEvent &event)
         case eStateDetached:
             {
                 char message[1024];
-                int message_len = ::snprintf (message, sizeof(message), "Process %llu %s\n", process.GetProcessID(),
+                int message_len = ::snprintf (message, sizeof(message), "Process %" PRIu64 " %s\n", process.GetProcessID(),
                                               m_debugger.StateAsCString (event_state));
                 m_io_channel_ap->OutWrite(message, message_len, ASYNC);
             }
@@ -937,11 +980,32 @@ Driver::HandleProcessEvent (const SBEvent &event)
             // Make sure the program hasn't been auto-restarted:
             if (SBProcess::GetRestartedFromEvent (event))
             {
+                size_t num_reasons = SBProcess::GetNumRestartedReasonsFromEvent(event);
+                if (num_reasons > 0)
+                {
                 // FIXME: Do we want to report this, or would that just be annoyingly chatty?
-                char message[1024];
-                int message_len = ::snprintf (message, sizeof(message), "Process %llu stopped and was programmatically restarted.\n",
+                    if (num_reasons == 1)
+                    {
+                        char message[1024];
+                        const char *reason = SBProcess::GetRestartedReasonAtIndexFromEvent (event, 0);
+                        int message_len = ::snprintf (message, sizeof(message), "Process %" PRIu64 " stopped and restarted: %s\n",
+                                              process.GetProcessID(), reason ? reason : "<UNKNOWN REASON>");
+                        m_io_channel_ap->OutWrite(message, message_len, ASYNC);
+                    }
+                    else
+                    {
+                        char message[1024];
+                        int message_len = ::snprintf (message, sizeof(message), "Process %" PRIu64 " stopped and restarted, reasons:\n",
                                               process.GetProcessID());
-                m_io_channel_ap->OutWrite(message, message_len, ASYNC);
+                        m_io_channel_ap->OutWrite(message, message_len, ASYNC);
+                        for (size_t i = 0; i < num_reasons; i++)
+                        {
+                            const char *reason = SBProcess::GetRestartedReasonAtIndexFromEvent (event, i);
+                            int message_len = ::snprintf(message, sizeof(message), "\t%s\n", reason ? reason : "<UNKNOWN REASON>");
+                            m_io_channel_ap->OutWrite(message, message_len, ASYNC);
+                        }
+                    }
+                }
             }
             else
             {
@@ -971,6 +1035,26 @@ Driver::HandleProcessEvent (const SBEvent &event)
     }
 }
 
+void
+Driver::HandleThreadEvent (const SBEvent &event)
+{
+    // At present the only thread event we handle is the Frame Changed event, and all we do for that is just
+    // reprint the thread status for that thread.
+    using namespace lldb;
+    const uint32_t event_type = event.GetType();
+    if (event_type == SBThread::eBroadcastBitStackChanged
+        || event_type == SBThread::eBroadcastBitThreadSelected)
+    {
+        SBThread thread = SBThread::GetThreadFromEvent (event);
+        if (thread.IsValid())
+        {
+            SBStream out_stream;
+            thread.GetStatus(out_stream);
+            m_io_channel_ap->OutWrite (out_stream.GetData (), out_stream.GetSize (), ASYNC);
+        }
+    }
+}
+
 //  This function handles events broadcast by the IOChannel (HasInput, UserInterrupt, or ThreadShouldExit).
 
 bool
@@ -992,13 +1076,30 @@ Driver::HandleIOEvent (const SBEvent &event)
         
         // We don't want the result to bypass the OutWrite function in IOChannel, as this can result in odd
         // output orderings and problems with the prompt.
+        
+        // Note that we are in the process of executing a command
+        m_executing_user_command = true;
+
         m_debugger.GetCommandInterpreter().HandleCommand (command_string, result, true);
 
-        if (result.GetOutputSize() > 0)
-            m_io_channel_ap->OutWrite (result.GetOutput(), result.GetOutputSize(), NO_ASYNC);
-            
-        if (result.GetErrorSize() > 0)
-            m_io_channel_ap->OutWrite (result.GetError(), result.GetErrorSize(), NO_ASYNC);
+        // Note that we are back from executing a user command
+        m_executing_user_command = false;
+
+        // Display any STDOUT/STDERR _prior_ to emitting the command result text
+        GetProcessSTDOUT ();
+        GetProcessSTDERR ();
+
+        const bool only_if_no_immediate = true;
+
+        // Now emit the command output text from the command we just executed
+        const size_t output_size = result.GetOutputSize();
+        if (output_size > 0)
+            m_io_channel_ap->OutWrite (result.GetOutput(only_if_no_immediate), output_size, NO_ASYNC);
+
+        // Now emit the command error text from the command we just executed
+        const size_t error_size = result.GetErrorSize();
+        if (error_size > 0)
+            m_io_channel_ap->OutWrite (result.GetError(only_if_no_immediate), error_size, NO_ASYNC);
 
         // We are done getting and running our command, we can now clear the
         // m_waiting_for_command so we can get another one.
@@ -1066,7 +1167,8 @@ Driver::EditLineInputReaderCallback
         break;
 
     case eInputReaderReactivate:
-        driver->ReadyForCommand();
+        if (driver->m_executing_user_command == false)
+            driver->ReadyForCommand();
         break;
 
     case eInputReaderDeactivate:
@@ -1261,12 +1363,16 @@ Driver::MainLoop ()
     m_debugger.PushInputReader (m_editline_reader);
 
     SBListener listener(m_debugger.GetListener());
-    listener.StartListeningForEventClass(m_debugger, 
-                                         SBTarget::GetBroadcasterClassName(), 
-                                         SBTarget::eBroadcastBitBreakpointChanged);
     if (listener.IsValid())
     {
 
+        listener.StartListeningForEventClass(m_debugger, 
+                                         SBTarget::GetBroadcasterClassName(), 
+                                         SBTarget::eBroadcastBitBreakpointChanged);
+        listener.StartListeningForEventClass(m_debugger, 
+                                         SBThread::GetBroadcasterClassName(),
+                                         SBThread::eBroadcastBitStackChanged |
+                                         SBThread::eBroadcastBitThreadSelected);
         listener.StartListeningForEvents (*m_io_channel_ap,
                                           IOChannel::eBroadcastBitHasUserInput |
                                           IOChannel::eBroadcastBitUserInterrupt |
@@ -1296,6 +1402,7 @@ Driver::MainLoop ()
             // Now we handle options we got from the command line
             char command_string[PATH_MAX * 2];
             const size_t num_source_command_files = GetNumSourceCommandFiles();
+            const bool dump_stream_only_if_no_immediate = true;
             if (num_source_command_files > 0)
             {
                 for (size_t i=0; i < num_source_command_files; ++i)
@@ -1308,8 +1415,26 @@ Driver::MainLoop ()
                         result.PutError (m_debugger.GetErrorFileHandle());
                         result.PutOutput (m_debugger.GetOutputFileHandle());
                     }
+                    
+                    // if the command sourcing generated an error - dump the result object
+                    if (result.Succeeded() == false)
+                    {
+                        const size_t output_size = result.GetOutputSize();
+                        if (output_size > 0)
+                            m_io_channel_ap->OutWrite (result.GetOutput(dump_stream_only_if_no_immediate), output_size, NO_ASYNC);
+                        const size_t error_size = result.GetErrorSize();
+                        if (error_size > 0)
+                            m_io_channel_ap->OutWrite (result.GetError(dump_stream_only_if_no_immediate), error_size, NO_ASYNC);
+                    }
+                    
+                    result.Clear();
                 }
             }
+
+            // Was there a core file specified?
+            std::string core_file_spec("");
+            if (!m_option_data.m_core_file.empty())
+                core_file_spec.append("--core ").append(m_option_data.m_core_file);
 
             const size_t num_args = m_option_data.m_args.size();
             if (num_args > 0)
@@ -1318,13 +1443,15 @@ Driver::MainLoop ()
                 if (m_debugger.GetDefaultArchitecture (arch_name, sizeof (arch_name)))
                     ::snprintf (command_string, 
                                 sizeof (command_string), 
-                                "target create --arch=%s \"%s\"", 
+                                "target create --arch=%s %s \"%s\"", 
                                 arch_name,
+                                core_file_spec.c_str(),
                                 m_option_data.m_args[0].c_str());
                 else
                     ::snprintf (command_string, 
                                 sizeof(command_string), 
-                                "target create \"%s\"", 
+                                "target create %s \"%s\"", 
+                                core_file_spec.c_str(),
                                 m_option_data.m_args[0].c_str());
 
                 m_debugger.HandleCommand (command_string);
@@ -1342,6 +1469,14 @@ Driver::MainLoop ()
                         m_debugger.HandleCommand (arg_cstr);
                     }
                 }
+            }
+            else if (!core_file_spec.empty())
+            {
+                ::snprintf (command_string, 
+                            sizeof(command_string), 
+                            "target create %s", 
+                            core_file_spec.c_str());
+                m_debugger.HandleCommand (command_string);;
             }
 
             // Now that all option parsing is done, we try and parse the .lldbinit
@@ -1373,7 +1508,7 @@ Driver::MainLoop ()
                 {
                     command_str.append("-p ");
                     char pid_buffer[32];
-                    ::snprintf (pid_buffer, sizeof(pid_buffer), "%llu", m_option_data.m_process_pid);
+                    ::snprintf (pid_buffer, sizeof(pid_buffer), "%" PRIu64, m_option_data.m_process_pid);
                     command_str.append(pid_buffer);
                 }
                 else 
@@ -1430,6 +1565,10 @@ Driver::MainLoop ()
                         {
                             HandleBreakpointEvent (event);
                         }
+                        else if (SBThread::EventIsThreadEvent (event))
+                        {
+                            HandleThreadEvent (event);
+                        }
                         else if (event.BroadcasterMatchesRef (sb_interpreter.GetBroadcaster()))
                         {
                             // TODO: deprecate the eBroadcastBitQuitCommandReceived event
@@ -1454,9 +1593,15 @@ Driver::MainLoop ()
                 }
             }
 
-            editline_output_pty.CloseMasterFileDescriptor();
+            master_out_comm.SetReadThreadBytesReceivedCallback(NULL, NULL);
             master_out_comm.Disconnect();
+            master_out_comm.ReadThreadStop();
+
+            out_comm_2.SetReadThreadBytesReceivedCallback(NULL, NULL);
             out_comm_2.Disconnect();
+            out_comm_2.ReadThreadStop();
+
+            editline_output_pty.CloseMasterFileDescriptor();
             reset_stdin_termios();
             fclose (stdin);
 
@@ -1491,6 +1636,15 @@ Driver::ReadyForCommand ()
     }
 }
 
+void
+Driver::ResizeWindow (unsigned short col)
+{
+    GetDebugger().SetTerminalWidth (col);
+    if (m_io_channel_ap.get() != NULL)
+    {
+        m_io_channel_ap->ElResize();
+    }
+}
 
 void
 sigwinch_handler (int signo)
@@ -1501,7 +1655,7 @@ sigwinch_handler (int signo)
     {
         if ((window_size.ws_col > 0) && g_driver != NULL)
         {
-            g_driver->GetDebugger().SetTerminalWidth (window_size.ws_col);
+            g_driver->ResizeWindow (window_size.ws_col);
         }
     }
 }
@@ -1524,6 +1678,24 @@ sigint_handler (int signo)
 	exit (signo);
 }
 
+void
+sigtstp_handler (int signo)
+{
+    g_driver->GetDebugger().SaveInputTerminalState();
+    signal (signo, SIG_DFL);
+    kill (getpid(), signo);
+    signal (signo, sigtstp_handler);
+}
+
+void
+sigcont_handler (int signo)
+{
+    g_driver->GetDebugger().RestoreInputTerminalState();
+    signal (signo, SIG_DFL);
+    kill (getpid(), signo);
+    signal (signo, sigcont_handler);
+}
+
 int
 main (int argc, char const *argv[], const char *envp[])
 {
@@ -1534,6 +1706,8 @@ main (int argc, char const *argv[], const char *envp[])
     signal (SIGPIPE, SIG_IGN);
     signal (SIGWINCH, sigwinch_handler);
     signal (SIGINT, sigint_handler);
+    signal (SIGTSTP, sigtstp_handler);
+    signal (SIGCONT, sigcont_handler);
 
     // Create a scope for driver so that the driver object will destroy itself
     // before SBDebugger::Terminate() is called.

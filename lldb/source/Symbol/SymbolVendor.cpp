@@ -15,6 +15,8 @@
 // Project includes
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
+#include "lldb/Core/Stream.h"
+#include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolFile.h"
 
@@ -30,16 +32,16 @@ using namespace lldb_private;
 // also allow for finding separate debug information files.
 //----------------------------------------------------------------------
 SymbolVendor*
-SymbolVendor::FindPlugin (const lldb::ModuleSP &module_sp)
+SymbolVendor::FindPlugin (const lldb::ModuleSP &module_sp, lldb_private::Stream *feedback_strm)
 {
-    std::auto_ptr<SymbolVendor> instance_ap;
+    std::unique_ptr<SymbolVendor> instance_ap;
     //----------------------------------------------------------------------
     // We currently only have one debug symbol parser...
     //----------------------------------------------------------------------
     SymbolVendorCreateInstance create_callback;
-    for (uint32_t idx = 0; (create_callback = PluginManager::GetSymbolVendorCreateCallbackAtIndex(idx)) != NULL; ++idx)
+    for (size_t idx = 0; (create_callback = PluginManager::GetSymbolVendorCreateCallbackAtIndex(idx)) != NULL; ++idx)
     {
-        instance_ap.reset(create_callback(module_sp));
+        instance_ap.reset(create_callback(module_sp, feedback_strm));
 
         if (instance_ap.get())
         {
@@ -100,13 +102,13 @@ SymbolVendor::AddSymbolFileRepresentation(const ObjectFileSP &objfile_sp)
 }
 
 bool
-SymbolVendor::SetCompileUnitAtIndex (uint32_t idx, const CompUnitSP &cu_sp)
+SymbolVendor::SetCompileUnitAtIndex (size_t idx, const CompUnitSP &cu_sp)
 {
     ModuleSP module_sp(GetModule());
     if (module_sp)
     {
         lldb_private::Mutex::Locker locker(module_sp->GetMutex());
-        const uint32_t num_compile_units = GetNumCompileUnits();
+        const size_t num_compile_units = GetNumCompileUnits();
         if (idx < num_compile_units)
         {
             // Fire off an assertion if this compile unit already exists for now.
@@ -128,7 +130,7 @@ SymbolVendor::SetCompileUnitAtIndex (uint32_t idx, const CompUnitSP &cu_sp)
     return false;
 }
 
-uint32_t
+size_t
 SymbolVendor::GetNumCompileUnits()
 {
     ModuleSP module_sp(GetModule());
@@ -149,6 +151,20 @@ SymbolVendor::GetNumCompileUnits()
     }
     return m_compile_units.size();
 }
+
+lldb::LanguageType
+SymbolVendor::ParseCompileUnitLanguage (const SymbolContext& sc)
+{
+    ModuleSP module_sp(GetModule());
+    if (module_sp)
+    {
+        lldb_private::Mutex::Locker locker(module_sp->GetMutex());
+        if (m_sym_file_ap.get())
+            return m_sym_file_ap->ParseCompileUnitLanguage(sc);
+    }
+    return eLanguageTypeUnknown;
+}
+
 
 size_t
 SymbolVendor::ParseCompileUnitFunctions (const SymbolContext &sc)
@@ -268,8 +284,8 @@ SymbolVendor::ResolveSymbolContext (const FileSpec& file_spec, uint32_t line, bo
     return 0;
 }
 
-uint32_t
-SymbolVendor::FindGlobalVariables (const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, VariableList& variables)
+size_t
+SymbolVendor::FindGlobalVariables (const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, size_t max_matches, VariableList& variables)
 {
     ModuleSP module_sp(GetModule());
     if (module_sp)
@@ -281,8 +297,8 @@ SymbolVendor::FindGlobalVariables (const ConstString &name, const ClangNamespace
     return 0;
 }
 
-uint32_t
-SymbolVendor::FindGlobalVariables (const RegularExpression& regex, bool append, uint32_t max_matches, VariableList& variables)
+size_t
+SymbolVendor::FindGlobalVariables (const RegularExpression& regex, bool append, size_t max_matches, VariableList& variables)
 {
     ModuleSP module_sp(GetModule());
     if (module_sp)
@@ -294,7 +310,7 @@ SymbolVendor::FindGlobalVariables (const RegularExpression& regex, bool append, 
     return 0;
 }
 
-uint32_t
+size_t
 SymbolVendor::FindFunctions(const ConstString &name, const ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool include_inlines, bool append, SymbolContextList& sc_list)
 {
     ModuleSP module_sp(GetModule());
@@ -307,7 +323,7 @@ SymbolVendor::FindFunctions(const ConstString &name, const ClangNamespaceDecl *n
     return 0;
 }
 
-uint32_t
+size_t
 SymbolVendor::FindFunctions(const RegularExpression& regex, bool include_inlines, bool append, SymbolContextList& sc_list)
 {
     ModuleSP module_sp(GetModule());
@@ -321,8 +337,8 @@ SymbolVendor::FindFunctions(const RegularExpression& regex, bool include_inlines
 }
 
 
-uint32_t
-SymbolVendor::FindTypes (const SymbolContext& sc, const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, TypeList& types)
+size_t
+SymbolVendor::FindTypes (const SymbolContext& sc, const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, size_t max_matches, TypeList& types)
 {
     ModuleSP module_sp(GetModule());
     if (module_sp)
@@ -393,13 +409,13 @@ SymbolVendor::Dump(Stream *s)
 }
 
 CompUnitSP
-SymbolVendor::GetCompileUnitAtIndex(uint32_t idx)
+SymbolVendor::GetCompileUnitAtIndex(size_t idx)
 {
     CompUnitSP cu_sp;
     ModuleSP module_sp(GetModule());
     if (module_sp)
     {
-        const uint32_t num_compile_units = GetNumCompileUnits();
+        const size_t num_compile_units = GetNumCompileUnits();
         if (idx < num_compile_units)
         {
             cu_sp = m_compile_units[idx];
@@ -417,16 +433,11 @@ SymbolVendor::GetCompileUnitAtIndex(uint32_t idx)
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+lldb_private::ConstString
 SymbolVendor::GetPluginName()
 {
-    return "SymbolVendor";
-}
-
-const char *
-SymbolVendor::GetShortPluginName()
-{
-    return "vendor-default";
+    static ConstString g_name("vendor-default");
+    return g_name;
 }
 
 uint32_t

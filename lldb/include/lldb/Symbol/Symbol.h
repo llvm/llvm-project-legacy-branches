@@ -37,7 +37,8 @@ public:
             bool is_artificial,
             const lldb::SectionSP &section_sp,
             lldb::addr_t value,
-            uint32_t size,
+            lldb::addr_t size,
+            bool size_is_valid,
             uint32_t flags);
 
     Symbol (uint32_t symID,
@@ -49,6 +50,7 @@ public:
             bool is_trampoline,
             bool is_artificial,
             const AddressRange &range,
+            bool size_is_valid,
             uint32_t flags);
 
     Symbol (const Symbol& rhs);
@@ -91,7 +93,7 @@ public:
     }
 
     const ConstString &
-    GetName ()
+    GetName () const
     {
         return m_mangled.GetName();
     }
@@ -205,11 +207,14 @@ public:
     bool
     IsTrampoline () const;
 
+    bool
+    IsIndirect () const;
+
     lldb::addr_t
     GetByteSize () const;
     
     void
-    SetByteSize (uint32_t size)
+    SetByteSize (lldb::addr_t size)
     {
         m_calculated_size = size > 0;
         m_addr_range.SetByteSize(size);
@@ -250,6 +255,17 @@ public:
     uint32_t
     GetPrologueByteSize ();
 
+    bool
+    GetDemangledNameIsSynthesized() const
+    {
+        return m_demangled_is_synthesized;
+    }
+    void
+    SetDemangledNameIsSynthesized(bool b)
+    {
+        m_demangled_is_synthesized = b;
+    }
+
     //------------------------------------------------------------------
     /// @copydoc SymbolContextScope::CalculateSymbolContext(SymbolContext*)
     ///
@@ -284,6 +300,7 @@ protected:
                     m_size_is_sibling:1,    // m_size contains the index of this symbol's sibling
                     m_size_is_synthesized:1,// non-zero if this symbol's size was calculated using a delta between this symbol and the next
                     m_calculated_size:1,
+                    m_demangled_is_synthesized:1, // The demangled name was created should not be used for expressions or other lookups
                     m_type:8;
     uint32_t        m_flags;                // A copy of the flags from the original symbol table, the ObjectFile plug-in can interpret these
     AddressRange    m_addr_range;           // Contains the value, or the section offset address when the value is an address in a section, and the size (if any)

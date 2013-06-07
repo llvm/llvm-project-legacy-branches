@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class WatchpointSetErrorTestCase(TestBase):
 
@@ -34,9 +35,7 @@ class WatchpointSetErrorTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Add a breakpoint to set a watchpoint when stopped on the breakpoint.
-        self.expect("breakpoint set -l %d" % self.line, BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='%s', line = %d, locations = 1" %
-                       (self.source, self.line))
+        lldbutil.run_break_set_by_file_and_line (self, None, self.line, num_expected_locations=1)
 
         # Run the program.
         self.runCmd("run", RUN_SUCCEEDED)
@@ -59,15 +58,11 @@ class WatchpointSetErrorTestCase(TestBase):
         # 'watchpoint set expression' with '-w' or '-x' specified now needs
         # an option terminator and a raw expression after that.
         self.expect("watchpoint set expression -w write --", error=True,
-            startstr = 'error: required argument missing; specify an expression to evaulate into the addres to watch for')
+            startstr = 'error: ')
 
         # It's an error if the expression did not evaluate to an address.
         self.expect("watchpoint set expression MyAggregateDataType", error=True,
             startstr = 'error: expression did not evaluate to an address')
-
-        # Check for missing option terminator '--'.
-        self.expect("watchpoint set expression -w write -x 1 g_char_ptr", error=True,
-            startstr = 'error: did you forget to enter the option terminator string "--"?')
 
         # Wrong size parameter is an error.
         self.expect("watchpoint set variable -x -128", error=True,

@@ -25,6 +25,15 @@
 
 namespace lldb_private {
 
+  static inline bool
+  isprint8 (int ch)
+  {
+      if (ch & 0xffffff00u)
+          return false;
+      return isprint(ch);
+  }
+
+
 //----------------------------------------------------------------------
 /// @class Options Options.h "lldb/Interpreter/Options.h"
 /// @brief A command line option parsing protocol class.
@@ -36,10 +45,10 @@ namespace lldb_private {
 /// \endcode
 ///
 /// The options are specified using the format defined for the libc
-/// options parsing function getopt_long:
+/// options parsing function getopt_long_only:
 /// \code
 ///     #include <getopt.h>
-///     int getopt_long(int argc, char * const *argv, const char *optstring, const struct option *longopts, int *longindex);
+///     int getopt_long_only(int argc, char * const *argv, const char *optstring, const struct option *longopts, int *longindex);
 /// \endcode
 ///
 /// Example code:
@@ -130,7 +139,7 @@ public:
     /// Get the option definitions to use when parsing Args options.
     ///
     /// @see Args::ParseOptions (Options&)
-    /// @see man getopt_long
+    /// @see man getopt_long_only
     //------------------------------------------------------------------
     struct option *
     GetLongOptions ();
@@ -191,7 +200,7 @@ public:
     ///
     ///
     /// @see Args::ParseOptions (Options&)
-    /// @see man getopt_long
+    /// @see man getopt_long_only
     //------------------------------------------------------------------
     virtual Error
     SetOptionValue (uint32_t option_idx, const char *option_arg) = 0;
@@ -296,7 +305,7 @@ public:
     
 protected:
     // This is a set of options expressed as indexes into the options table for this Option.
-    typedef std::set<char> OptionSet;
+    typedef std::set<int> OptionSet;
     typedef std::vector<OptionSet> OptionSetVector;
 
     CommandInterpreter &m_interpreter;

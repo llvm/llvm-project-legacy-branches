@@ -237,7 +237,17 @@ RegisterValue::GetScalarValue (Scalar &scalar) const
     switch (m_type)
     {
         case eTypeInvalid:      break;
-        case eTypeBytes:        break;
+        case eTypeBytes:
+        {
+            switch (m_data.buffer.length)
+            {
+            default:    break;
+            case 1:     scalar = m_data.uint8; return true;
+            case 2:     scalar = m_data.uint16; return true;
+            case 4:     scalar = m_data.uint32; return true;
+            case 8:     scalar = m_data.uint64; return true;
+            }
+        }
         case eTypeUInt8:        scalar = m_data.uint8; return true;
         case eTypeUInt16:       scalar = m_data.uint16; return true;
         case eTypeUInt32:       scalar = m_data.uint32; return true;
@@ -287,9 +297,9 @@ RegisterValue::SetType (const RegisterInfo *reg_info)
         case eEncodingIEEE754:
             if (byte_size == sizeof(float))
                 m_type = eTypeFloat;
-            if (byte_size == sizeof(double))
+            else if (byte_size == sizeof(double))
                 m_type = eTypeDouble;
-            if (byte_size == sizeof(long double))
+            else if (byte_size == sizeof(long double))
                 m_type = eTypeLongDouble;
             break;
 
@@ -301,7 +311,7 @@ RegisterValue::SetType (const RegisterInfo *reg_info)
 }
 
 Error
-RegisterValue::SetValueFromData (const RegisterInfo *reg_info, DataExtractor &src, uint32_t src_offset, bool partial_data_ok)
+RegisterValue::SetValueFromData (const RegisterInfo *reg_info, DataExtractor &src, lldb::offset_t src_offset, bool partial_data_ok)
 {
     Error error;
     
@@ -450,7 +460,6 @@ RegisterValue::SetValueFromCString (const RegisterInfo *reg_info, const char *va
     const uint32_t byte_size = reg_info->byte_size;
     switch (reg_info->encoding)
     {
-        default:
         case eEncodingInvalid:
             error.SetErrorString ("Invalid encoding.");
             break;
@@ -462,7 +471,7 @@ RegisterValue::SetValueFromCString (const RegisterInfo *reg_info, const char *va
                 if (!success)
                     error.SetErrorStringWithFormat ("'%s' is not a valid unsigned integer string value", value_str);
                 else if (!Args::UInt64ValueIsValidForByteSize (uval64, byte_size))
-                    error.SetErrorStringWithFormat ("value 0x%llx is too large to fit in a %u byte unsigned integer value", uval64, byte_size);
+                    error.SetErrorStringWithFormat ("value 0x%" PRIx64 " is too large to fit in a %u byte unsigned integer value", uval64, byte_size);
                 else
                 {
                     if (!SetUInt (uval64, reg_info->byte_size))
@@ -483,7 +492,7 @@ RegisterValue::SetValueFromCString (const RegisterInfo *reg_info, const char *va
                 if (!success)
                     error.SetErrorStringWithFormat ("'%s' is not a valid signed integer string value", value_str);
                 else if (!Args::SInt64ValueIsValidForByteSize (sval64, byte_size))
-                    error.SetErrorStringWithFormat ("value 0x%llx is too large to fit in a %u byte signed integer value", sval64, byte_size);
+                    error.SetErrorStringWithFormat ("value 0x%" PRIx64 " is too large to fit in a %u byte signed integer value", sval64, byte_size);
                 else
                 {
                     if (!SetUInt (sval64, reg_info->byte_size))
@@ -637,7 +646,6 @@ RegisterValue::CopyValue (const RegisterValue &rhs)
     m_type = rhs.m_type;
     switch (m_type)
     {
-        default:
         case eTypeInvalid: 
             return false;
         case eTypeUInt8:        m_data.uint8 = rhs.m_data.uint8; break;
@@ -671,6 +679,16 @@ RegisterValue::GetAsUInt16 (uint16_t fail_value, bool *success_ptr) const
         default:            break;
         case eTypeUInt8:    return m_data.uint8;
         case eTypeUInt16:   return m_data.uint16;
+        case eTypeBytes:
+        {
+            switch (m_data.buffer.length)
+            {
+            default:    break;
+            case 1:     return m_data.uint8;
+            case 2:     return m_data.uint16;
+            }
+        }
+        break;
     }
     if (success_ptr)
         *success_ptr = false;
@@ -700,6 +718,17 @@ RegisterValue::GetAsUInt32 (uint32_t fail_value, bool *success_ptr) const
             if (sizeof(long double) == sizeof(uint32_t))
                 return m_data.uint32;
             break;
+        case eTypeBytes:
+        {
+            switch (m_data.buffer.length)
+            {
+            default:    break;
+            case 1:     return m_data.uint8;
+            case 2:     return m_data.uint16;
+            case 4:     return m_data.uint32;
+            }
+        }
+        break;
     }
     if (success_ptr)
         *success_ptr = false;
@@ -730,6 +759,18 @@ RegisterValue::GetAsUInt64 (uint64_t fail_value, bool *success_ptr) const
             if (sizeof(long double) == sizeof(uint64_t))
                 return m_data.uint64;
             break;
+        case eTypeBytes:
+        {
+            switch (m_data.buffer.length)
+            {
+            default:    break;
+            case 1:     return m_data.uint8;
+            case 2:     return m_data.uint16;
+            case 4:     return m_data.uint32;
+            case 8:     return m_data.uint64;
+            }
+        }
+        break;
     }
     if (success_ptr)
         *success_ptr = false;
@@ -762,6 +803,20 @@ RegisterValue::GetAsUInt128 (__uint128_t fail_value, bool *success_ptr) const
             if (sizeof(long double) == sizeof(__uint128_t))
                 return m_data.uint128;
             break;
+        case eTypeBytes:
+        {
+            switch (m_data.buffer.length)
+            {
+            default:
+                break;
+            case 1:     return m_data.uint8;
+            case 2:     return m_data.uint16;
+            case 4:     return m_data.uint32;
+            case 8:     return m_data.uint64;
+            case 16:    return m_data.uint128;
+            }
+        }
+        break;
     }
     if (success_ptr)
         *success_ptr = false;
@@ -983,12 +1038,11 @@ RegisterValue::SetBytes (const void *bytes, size_t length, lldb::ByteOrder byte_
     // m_data.buffer.bytes, or make it something that is allocated on
     // the heap. Since the data buffer is in a union, we can't make it
     // a collection class like SmallVector...
-    assert (length <= sizeof (m_data.buffer.bytes));
     if (bytes && length > 0)
     {
+        assert (length <= sizeof (m_data.buffer.bytes) && "Storing too many bytes in a RegisterValue.");
         m_type = eTypeBytes;
         m_data.buffer.length = length;
-        assert (length < sizeof (m_data.buffer.bytes));
         memcpy (m_data.buffer.bytes, bytes, length);
         m_data.buffer.byte_order = byte_order;
     }

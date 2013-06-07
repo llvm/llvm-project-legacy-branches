@@ -237,7 +237,7 @@ MachException::Data::GetStopInfo(struct DNBThreadStopInfo *stop_info) const
         size_t idx;
         if (desc < end_desc)
         {
-            desc += snprintf(desc, end_desc - desc, " data[%zu] = {", stop_info->details.exception.data_count);
+            desc += snprintf(desc, end_desc - desc, " data[%llu] = {", (uint64_t)stop_info->details.exception.data_count);
 
             for (idx = 0; desc < end_desc && idx < stop_info->details.exception.data_count; ++idx)
                 desc += snprintf(desc, end_desc - desc, "0x%llx%c", (uint64_t)exc_data[idx], ((idx + 1 == stop_info->details.exception.data_count) ? '}' : ','));
@@ -278,7 +278,7 @@ MachException::Message::Receive(mach_port_t port, mach_msg_option_t options, mac
     if (log_exceptions && ((options & MACH_RCV_TIMEOUT) == 0))
     {
         // Dump this log message if we have no timeout in case it never returns
-        DNBLogThreaded ("::mach_msg ( msg->{bits = %#x, size = %u remote_port = %#x, local_port = %#x, reserved = 0x%x, id = 0x%x}, option = %#x, send_size = 0, rcv_size = %zu, rcv_name = %#x, timeout = %u, notify = %#x)",
+        DNBLogThreaded ("::mach_msg ( msg->{bits = %#x, size = %u remote_port = %#x, local_port = %#x, reserved = 0x%x, id = 0x%x}, option = %#x, send_size = 0, rcv_size = %llu, rcv_name = %#x, timeout = %u, notify = %#x)",
                         exc_msg.hdr.msgh_bits,
                         exc_msg.hdr.msgh_size,
                         exc_msg.hdr.msgh_remote_port,
@@ -286,7 +286,7 @@ MachException::Message::Receive(mach_port_t port, mach_msg_option_t options, mac
                         exc_msg.hdr.msgh_reserved,
                         exc_msg.hdr.msgh_id,
                         options,
-                        sizeof (exc_msg.data),
+                        (uint64_t)sizeof (exc_msg.data),
                         port,
                         mach_msg_timeout,
                         notify_port);
@@ -384,7 +384,7 @@ MachException::Message::Reply(MachProcess *process, int signal)
         if (state_pid != -1)
         {
             errno = 0;
-            if (::ptrace (PT_THUPDATE, state_pid, (caddr_t)state.thread_port, soft_signal) != 0)
+            if (::ptrace (PT_THUPDATE, state_pid, (caddr_t)((uintptr_t)state.thread_port), soft_signal) != 0)
                 err.SetError(errno, DNBError::POSIX);
             else
                 err.Clear();
@@ -464,7 +464,7 @@ MachException::Data::Dump() const
         size_t idx;
         for (idx = 0; idx < exc_data_count; ++idx)
         {
-            DNBLogThreadedIf(LOG_EXCEPTIONS, "            exc_data[%zu]: 0x%llx", idx, (uint64_t)exc_data[idx]);
+            DNBLogThreadedIf(LOG_EXCEPTIONS, "            exc_data[%llu]: 0x%llx", (uint64_t)idx, (uint64_t)exc_data[idx]);
         }
     }
 }
@@ -480,6 +480,17 @@ MachException::Data::Dump() const
                            EXC_MASK_RPC_ALERT       | \
                            EXC_MASK_MACHINE)
 
+// Don't listen for EXC_RESOURCE, it should really get handled by the system handler.
+
+#ifndef EXC_RESOURCE
+#define EXC_RESOURCE 11
+#endif
+
+#ifndef EXC_MASK_RESOURCE
+#define EXC_MASK_RESOURCE (1 << EXC_RESOURCE)
+#endif
+
+#define LLDB_EXC_MASK (EXC_MASK_ALL & ~EXC_MASK_RESOURCE)
 
 kern_return_t
 MachException::PortInfo::Save (task_t task)
@@ -490,7 +501,7 @@ MachException::PortInfo::Save (task_t task)
     // and back off to just what is supported on the current system
     DNBError err;
 
-    mask = EXC_MASK_ALL;
+    mask = LLDB_EXC_MASK;
 
     count = (sizeof (ports) / sizeof (ports[0]));
     err = ::task_get_exception_ports (task, mask, masks, &count, ports, behaviors, flavors);

@@ -386,7 +386,7 @@ for line in content.splitlines():
                 new_content.add_line(section_iter % d[cls+'-section'])
                 new_content.add_line(compile_unit_iter % d[cls+'-compile-unit'])
                 new_content.add_line(d[cls+'-symbol-in-section'])
-            
+
             # This special purpose iterator is for SBValue only!!!
             if cls == "SBValue":
                 new_content.add_line(linked_list_iter_def)
@@ -433,5 +433,11 @@ new_content.finish()
 
 with open(output_name, 'w') as f_out:
     f_out.write(new_content.getvalue())
-    f_out.write("debugger_unique_id = 0\n")
-    f_out.write("SBDebugger.Initialize()\n")
+    f_out.write('''debugger_unique_id = 0
+SBDebugger.Initialize()
+debugger = None
+target = SBTarget()
+process = SBProcess()
+thread = SBThread()
+frame = SBFrame()''')
+

@@ -21,12 +21,12 @@ class ProcessGDBRemote;
 class ThreadGDBRemote : public lldb_private::Thread
 {
 public:
-    ThreadGDBRemote (const lldb::ProcessSP &process_sp, lldb::tid_t tid);
+    ThreadGDBRemote (lldb_private::Process &process, lldb::tid_t tid);
 
     virtual
     ~ThreadGDBRemote ();
 
-    virtual bool
+    virtual void
     WillResume (lldb::StateType resume_state);
 
     virtual void
@@ -43,9 +43,6 @@ public:
 
     virtual lldb::RegisterContextSP
     CreateRegisterContextForFrame (lldb_private::StackFrame *frame);
-
-    virtual void
-    ClearStackFrames ();
 
     void
     Dump (lldb_private::Log *log, uint32_t index);
@@ -101,8 +98,8 @@ protected:
     void
     SetStopInfoFromPacket (StringExtractor &stop_packet, uint32_t stop_id);
 
-    virtual lldb::StopInfoSP
-    GetPrivateStopReason ();
+    virtual bool
+    CalculateStopInfo ();
 
 
 };

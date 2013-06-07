@@ -50,6 +50,12 @@ StringList::AppendString (const char *str)
 }
 
 void
+StringList::AppendString (const std::string &s)
+{
+    m_strings.push_back (s);
+}
+
+void
 StringList::AppendString (const char *str, size_t str_len)
 {
     if (str)
@@ -69,9 +75,9 @@ StringList::AppendList (const char **strv, int strc)
 void
 StringList::AppendList (StringList strings)
 {
-    uint32_t len = strings.GetSize();
+    size_t len = strings.GetSize();
 
-    for (uint32_t i = 0; i < len; ++i)
+    for (size_t i = 0; i < len; ++i)
         m_strings.push_back (strings.GetStringAtIndex(i));
 }
 
@@ -81,7 +87,7 @@ StringList::ReadFileLines (FileSpec &input_file)
     return input_file.ReadFileLines (m_strings);
 }
 
-uint32_t
+size_t
 StringList::GetSize () const
 {
     return m_strings.size();
@@ -98,7 +104,7 @@ StringList::GetStringAtIndex (size_t idx) const
 void
 StringList::Join (const char *separator, Stream &strm)
 {
-    uint32_t size = GetSize();
+    size_t size = GetSize();
     
     if (size == 0)
         return;
@@ -121,8 +127,8 @@ void
 StringList::LongestCommonPrefix (std::string &common_prefix)
 {
     //arg_sstr_collection::iterator pos, end = m_args.end();
-    int pos = 0;
-    int end = m_strings.size();
+    size_t pos = 0;
+    size_t end = m_strings.size();
 
     if (pos == end)
         common_prefix.clear();
@@ -253,3 +259,32 @@ StringList::operator << (StringList strings)
     AppendList(strings);
     return *this;
 }
+
+size_t
+StringList::AutoComplete (const char *s, StringList &matches, size_t &exact_idx) const
+{
+    matches.Clear();
+    exact_idx = SIZE_MAX;
+    if (s && s[0])
+    {
+        const size_t s_len = strlen (s);
+        const size_t num_strings = m_strings.size();
+        
+        for (size_t i=0; i<num_strings; ++i)
+        {
+            if (m_strings[i].find(s) == 0)
+            {
+                if (exact_idx == SIZE_MAX && m_strings[i].size() == s_len)
+                    exact_idx = matches.GetSize();
+                matches.AppendString (m_strings[i]);
+            }
+        }
+    }
+    else
+    {
+        // No string, so it matches everything
+        matches = *this;
+    }
+    return matches.GetSize();
+}
+

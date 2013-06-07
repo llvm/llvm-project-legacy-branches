@@ -37,6 +37,9 @@ public:
     bool
     operator == (const lldb::SBBreakpoint& rhs);
 
+    bool
+    operator != (const lldb::SBBreakpoint& rhs);
+    
     break_id_t
     GetID () const;
 
@@ -63,6 +66,15 @@ public:
 
     bool
     IsEnabled ();
+    
+    void
+    SetOneShot (bool one_shot);
+
+    bool
+    IsOneShot () const;
+    
+    bool
+    IsInternal ();
 
     uint32_t
     GetHitCount () const;

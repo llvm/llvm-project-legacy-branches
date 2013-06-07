@@ -18,15 +18,20 @@
 #include <stack>
 
 #include "lldb/lldb-public.h"
+
+#include "lldb/API/SBDefines.h"
+
 #include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/Communication.h"
-#include "lldb/Core/FormatManager.h"
 #include "lldb/Core/InputReaderStack.h"
 #include "lldb/Core/Listener.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/SourceManager.h"
 #include "lldb/Core/UserID.h"
 #include "lldb/Core/UserSettingsController.h"
+#include "lldb/DataFormatters/FormatManager.h"
+#include "lldb/Host/Terminal.h"
+#include "lldb/Interpreter/OptionValueProperties.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Platform.h"
 #include "lldb/Target/TargetList.h"
@@ -39,266 +44,17 @@ namespace lldb_private {
 ///
 /// Provides a global root objects for the debugger core.
 //----------------------------------------------------------------------
-    
-
-class DebuggerInstanceSettings : public InstanceSettings
-{
-public:
-    
-    enum StopDisassemblyType
-    {
-        eStopDisassemblyTypeNever = 0,
-        eStopDisassemblyTypeNoSource,
-        eStopDisassemblyTypeAlways
-    };
-    
-
-    DebuggerInstanceSettings (const lldb::UserSettingsControllerSP &m_owner_sp, bool live_instance = true, const char *name = NULL);
-
-    DebuggerInstanceSettings (const DebuggerInstanceSettings &rhs);
-
-    virtual
-    ~DebuggerInstanceSettings ();
-
-    DebuggerInstanceSettings&
-    operator= (const DebuggerInstanceSettings &rhs);
-
-    void
-    UpdateInstanceSettingsVariable (const ConstString &var_name,
-                                    const char *index_value,
-                                    const char *value,
-                                    const ConstString &instance_name,
-                                    const SettingEntry &entry,
-                                    VarSetOperationType op,
-                                    Error &err,
-                                    bool pending);
-
-    bool
-    GetInstanceSettingsValue (const SettingEntry &entry,
-                              const ConstString &var_name,
-                              StringList &value,
-                              Error *err);
-
-    uint32_t
-    GetTerminalWidth () const
-    {
-        return m_term_width;
-    }
-
-    void
-    SetTerminalWidth (uint32_t term_width)
-    {
-        Error err;
-        if (ValidTermWidthValue(term_width, err))
-            m_term_width = term_width;
-    }
-
-    uint32_t
-    GetStopSourceLineCount (bool before) const
-    {
-        if (before)
-            return m_stop_source_before_count;
-        else
-            return m_stop_source_after_count;
-    }
-
-    
-    void
-    SetStopSourceLineCount (bool before, uint32_t n)
-    {
-        if (before)
-            m_stop_source_before_count = n;
-        else
-            m_stop_source_after_count = n;
-    }
-
-    StopDisassemblyType
-    GetStopDisassemblyDisplay () const
-    {
-        return m_stop_disassembly_display;
-    }
-    
-
-    uint32_t
-    GetDisassemblyLineCount () const
-    {
-        return m_stop_disassembly_count;
-    }
-    
-    void
-    SetDisassemblyLineCount (uint32_t n)
-    {
-        m_stop_disassembly_count = n;
-    }
-    
-    const char *
-    GetPrompt() const
-    {
-        return m_prompt.c_str();
-    }
-
-    void
-    SetPrompt(const char *p)
-    {
-        if (p)
-            m_prompt.assign (p);
-        else
-            m_prompt.assign ("(lldb) ");
-        BroadcastPromptChange (m_instance_name, m_prompt.c_str());
-    }
-    
-    bool
-    GetNotifyVoid() const
-    {
-        return m_notify_void;
-    }
-
-    const char *
-    GetFrameFormat() const
-    {
-        return m_frame_format.c_str();
-    }
-
-    bool
-    SetFrameFormat(const char *frame_format)
-    {
-        if (frame_format && frame_format[0])
-        {
-            m_frame_format.assign (frame_format);
-            return true;
-        }
-        return false;
-    }
-
-    const char *
-    GetThreadFormat() const
-    {
-        return m_thread_format.c_str();
-    }
-
-    bool
-    SetThreadFormat(const char *thread_format)
-    {
-        if (thread_format && thread_format[0])
-        {
-            m_thread_format.assign (thread_format);
-            return true;
-        }
-        return false;
-    }
-
-    lldb::ScriptLanguage 
-    GetScriptLanguage() const
-    {
-        return m_script_lang;
-    }
-
-    void
-    SetScriptLanguage (lldb::ScriptLanguage script_lang)
-    {
-        m_script_lang = script_lang;
-    }
-
-    bool
-    GetUseExternalEditor () const
-    {
-        return m_use_external_editor;
-    }
-
-    bool
-    SetUseExternalEditor (bool use_external_editor_p)
-    {
-        bool old_value = m_use_external_editor;
-        m_use_external_editor = use_external_editor_p;
-        return old_value;
-    }
-    
-    bool 
-    GetAutoConfirm () const
-    {
-        return m_auto_confirm_on;
-    }
-    
-    void
-    SetAutoConfirm (bool auto_confirm_on) 
-    {
-        m_auto_confirm_on = auto_confirm_on;
-    }
-    
-protected:
-
-    void
-    CopyInstanceSettings (const lldb::InstanceSettingsSP &new_settings,
-                          bool pending);
-
-    bool
-    BroadcastPromptChange (const ConstString &instance_name, const char *new_prompt);
-
-    bool
-    ValidTermWidthValue (const char *value, Error err);
-
-    bool
-    ValidTermWidthValue (uint32_t value, Error err);
-
-    const ConstString
-    CreateInstanceName ();
-
-    static OptionEnumValueElement g_show_disassembly_enum_values[];
-
-private:
-
-    uint32_t m_term_width;
-    uint32_t m_stop_source_before_count;
-    uint32_t m_stop_source_after_count;
-    uint32_t m_stop_disassembly_count;
-    StopDisassemblyType m_stop_disassembly_display;
-    std::string m_prompt;
-    bool m_notify_void;
-    std::string m_frame_format;
-    std::string m_thread_format;
-    lldb::ScriptLanguage m_script_lang;
-    bool m_use_external_editor;
-    bool m_auto_confirm_on;
-};
-
 
 
 class Debugger :
-    public STD_ENABLE_SHARED_FROM_THIS(Debugger),
+    public std::enable_shared_from_this<Debugger>,
     public UserID,
-    public DebuggerInstanceSettings,
+    public Properties,
     public BroadcasterManager
 {
 friend class SourceManager;  // For GetSourceFileCache.
 
 public:
-
-    class SettingsController : public UserSettingsController
-    {
-    public:
-
-        SettingsController ();
-
-        virtual
-        ~SettingsController ();
-
-        static SettingEntry global_settings_table[];
-        static SettingEntry instance_settings_table[];
-
-    protected:
-
-        lldb::InstanceSettingsSP
-        CreateInstanceSettings (const char *instance_name);
-
-    private:
-
-        // Class-wide settings.
-
-        DISALLOW_COPY_AND_ASSIGN (SettingsController);
-    };
-
-    static lldb::UserSettingsControllerSP &
-    GetSettingsController ();
 
     static lldb::DebuggerSP
     CreateInstance (lldb::LogOutputCallback log_callback = NULL, void *baton = NULL);
@@ -361,6 +117,12 @@ public:
 
     void
     SetErrorFileHandle (FILE *fh, bool tranfer_ownership);
+    
+    void
+    SaveInputTerminalState();
+    
+    void
+    RestoreInputTerminalState();
 
     Stream&
     GetOutputStream ()
@@ -397,10 +159,7 @@ public:
     // information, but it can look up files by absolute path and display them to you.
     // To get the target's source manager, call GetSourceManager on the target instead.
     SourceManager &
-    GetSourceManager ()
-    {
-        return m_source_manager;
-    }
+    GetSourceManager ();
 
 public:
     
@@ -465,11 +224,11 @@ public:
     static lldb::DebuggerSP
     FindDebuggerWithInstanceName (const ConstString &instance_name);
     
-    static uint32_t
+    static size_t
     GetNumDebuggers();
     
     static lldb::DebuggerSP
-    GetDebuggerAtIndex (uint32_t);
+    GetDebuggerAtIndex (size_t index);
 
     static bool
     FormatPrompt (const char *format,
@@ -477,7 +236,6 @@ public:
                   const ExecutionContext *exe_ctx,
                   const Address *addr,
                   Stream &s,
-                  const char **end,
                   ValueObject* valobj = NULL);
 
 
@@ -499,6 +257,86 @@ public:
     void
     SetLoggingCallback (lldb::LogOutputCallback log_callback, void *baton);
     
+
+    //----------------------------------------------------------------------
+    // Properties Functions
+    //----------------------------------------------------------------------
+    enum StopDisassemblyType
+    {
+        eStopDisassemblyTypeNever = 0,
+        eStopDisassemblyTypeNoSource,
+        eStopDisassemblyTypeAlways
+    };
+    
+    virtual Error
+    SetPropertyValue (const ExecutionContext *exe_ctx,
+                      VarSetOperationType op,
+                      const char *property_path,
+                      const char *value);
+
+    bool
+    GetAutoConfirm () const;
+    
+    const char *
+    GetFrameFormat() const;
+    
+    const char *
+    GetThreadFormat() const;
+    
+    lldb::ScriptLanguage
+    GetScriptLanguage() const;
+    
+    bool
+    SetScriptLanguage (lldb::ScriptLanguage script_lang);
+    
+    uint32_t
+    GetTerminalWidth () const;
+    
+    bool
+    SetTerminalWidth (uint32_t term_width);
+    
+    const char *
+    GetPrompt() const;
+    
+    void
+    SetPrompt(const char *p);
+    
+    bool
+    GetUseExternalEditor () const;
+    
+    bool
+    SetUseExternalEditor (bool use_external_editor_p);
+    
+    bool
+    GetUseColor () const;
+    
+    bool
+    SetUseColor (bool use_color);
+    
+    uint32_t
+    GetStopSourceLineCount (bool before) const;
+    
+    StopDisassemblyType
+    GetStopDisassemblyDisplay () const;
+    
+    uint32_t
+    GetDisassemblyLineCount () const;
+    
+    bool
+    GetNotifyVoid () const;
+
+    
+    const ConstString &
+    GetInstanceName()
+    {
+        return m_instance_name;
+    }
+    
+    typedef bool (*LLDBCommandPluginInit) (lldb::SBDebugger& debugger);
+    
+    bool
+    LoadPlugin (const FileSpec& spec, Error& error);
+
 protected:
 
     static void
@@ -518,25 +356,31 @@ protected:
     {
         return m_source_file_cache;
     }
-
     Communication m_input_comm;
     StreamFile m_input_file;
     StreamFile m_output_file;
     StreamFile m_error_file;
+    TerminalState m_terminal_state;
     TargetList m_target_list;
     PlatformList m_platform_list;
     Listener m_listener;
-    SourceManager m_source_manager;    // This is a scratch source manager that we return if we have no targets.
+    std::unique_ptr<SourceManager> m_source_manager_ap;    // This is a scratch source manager that we return if we have no targets.
     SourceManager::SourceFileCache m_source_file_cache; // All the source managers for targets created in this debugger used this shared
                                                         // source file cache.
-    std::auto_ptr<CommandInterpreter> m_command_interpreter_ap;
+    std::unique_ptr<CommandInterpreter> m_command_interpreter_ap;
 
     InputReaderStack m_input_reader_stack;
     std::string m_input_reader_data;
-    typedef std::map<std::string, lldb::StreamSP> LogStreamMap;
+    typedef std::map<std::string, lldb::StreamWP> LogStreamMap;
     LogStreamMap m_log_streams;
     lldb::StreamSP m_log_callback_stream_sp;
-
+    ConstString m_instance_name;
+    typedef std::vector<lldb::DynamicLibrarySP> LoadedPluginsList;
+    LoadedPluginsList m_loaded_plugins;
+    
+    void
+    InstanceInitialize ();
+    
 private:
 
     // Use Debugger::CreateInstance() to get a shared pointer to a new

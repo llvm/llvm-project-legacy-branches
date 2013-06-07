@@ -47,7 +47,7 @@ public:
         // Nothing to do when flushing a buffer based stream...
     }
 
-    virtual int
+    virtual size_t
     Write (const void *s, size_t length)
     {
         if (s && length)
@@ -61,6 +61,10 @@ public:
         m_packet.clear();
     }
 
+    // Beware, this might not be NULL terminated as you can expect from
+    // StringString as there may be random bits in the llvm::SmallVector. If
+    // you are using this class to create a C string, be sure the call PutChar ('\0')
+    // after you have created your string, or use StreamString.
     const char *
     GetData () const
     {

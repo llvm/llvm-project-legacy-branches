@@ -68,7 +68,7 @@ SBCommandReturnObject::IsValid() const
 const char *
 SBCommandReturnObject::GetOutput ()
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     if (m_opaque_ap.get())
     {
@@ -88,7 +88,7 @@ SBCommandReturnObject::GetOutput ()
 const char *
 SBCommandReturnObject::GetError ()
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     if (m_opaque_ap.get())
     {
@@ -190,6 +190,13 @@ SBCommandReturnObject::AppendMessage (const char *message)
         m_opaque_ap->AppendMessage (message);
 }
 
+void
+SBCommandReturnObject::AppendWarning (const char *message)
+{
+    if (m_opaque_ap.get())
+        m_opaque_ap->AppendWarning (message);
+}
+
 CommandReturnObject *
 SBCommandReturnObject::operator ->() const
 {
@@ -261,7 +268,7 @@ SBCommandReturnObject::SetImmediateOutputFile (FILE *fh)
     if (m_opaque_ap.get())
         m_opaque_ap->SetImmediateOutputFile (fh);
 }
-    
+
 void
 SBCommandReturnObject::SetImmediateErrorFile (FILE *fh)
 {
@@ -274,8 +281,38 @@ SBCommandReturnObject::PutCString(const char* string, int len)
 {
     if (m_opaque_ap.get())
     {
-        m_opaque_ap->AppendMessage(string, len);
+        if (len == 0 || string == NULL || *string == 0)
+        {
+            return;
+        }
+        else if (len > 0)
+        {
+            std::string buffer(string, len);
+            m_opaque_ap->AppendMessage(buffer.c_str());
+        }
+        else
+            m_opaque_ap->AppendMessage(string);
     }
+}
+
+const char *
+SBCommandReturnObject::GetOutput (bool only_if_no_immediate)
+{
+    if (!m_opaque_ap.get())
+        return NULL;
+    if (only_if_no_immediate == false || m_opaque_ap->GetImmediateOutputStream().get() == NULL)
+        return GetOutput();
+    return NULL;
+}
+
+const char *
+SBCommandReturnObject::GetError (bool only_if_no_immediate)
+{
+    if (!m_opaque_ap.get())
+        return NULL;
+    if (only_if_no_immediate == false || m_opaque_ap->GetImmediateErrorStream().get() == NULL)
+        return GetError();
+    return NULL;
 }
 
 size_t

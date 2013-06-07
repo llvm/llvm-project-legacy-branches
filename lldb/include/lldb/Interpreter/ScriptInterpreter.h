@@ -41,6 +41,11 @@ public:
         return m_object;
     }
     
+    operator bool ()
+    {
+        return m_object != NULL;
+    }
+    
     ScriptInterpreterObject&
     operator = (const ScriptInterpreterObject& rhs)
     {
@@ -56,6 +61,22 @@ public:
 protected:
     void* m_object;
 };
+    
+class ScriptInterpreterLocker
+{
+public:
+    
+    ScriptInterpreterLocker ()
+    {
+    }
+    
+    virtual ~ScriptInterpreterLocker ()
+    {
+    }
+private:
+    DISALLOW_COPY_AND_ASSIGN (ScriptInterpreterLocker);
+};
+
 
 class ScriptInterpreter
 {
@@ -79,15 +100,22 @@ public:
                                                           void** pyfunct_wrapper,
                                                           std::string& retval);
     
-    typedef void* (*SWIGPythonCreateSyntheticProvider) (const std::string python_class_name,
+    typedef void* (*SWIGPythonCreateSyntheticProvider) (const char *python_class_name,
                                                         const char *session_dictionary_name,
                                                         const lldb::ValueObjectSP& valobj_sp);
+
+    typedef void* (*SWIGPythonCreateOSPlugin) (const char *python_class_name,
+                                               const char *session_dictionary_name,
+                                               const lldb::ProcessSP& process_sp);
     
-    typedef uint32_t       (*SWIGPythonCalculateNumChildren)        (void *implementor);
-    typedef void*          (*SWIGPythonGetChildAtIndex)             (void *implementor, uint32_t idx);
-    typedef int            (*SWIGPythonGetIndexOfChildWithName)     (void *implementor, const char* child_name);
-    typedef void*          (*SWIGPythonCastPyObjectToSBValue)       (void* data);
-    typedef bool           (*SWIGPythonUpdateSynthProviderInstance) (void* data);
+    typedef uint32_t       (*SWIGPythonCalculateNumChildren)                   (void *implementor);
+    typedef void*          (*SWIGPythonGetChildAtIndex)                        (void *implementor, uint32_t idx);
+    typedef int            (*SWIGPythonGetIndexOfChildWithName)                (void *implementor, const char* child_name);
+    typedef void*          (*SWIGPythonCastPyObjectToSBValue)                  (void* data);
+    typedef lldb::ValueObjectSP  (*SWIGPythonGetValueObjectSPFromSBValue)      (void* data);
+    typedef bool           (*SWIGPythonUpdateSynthProviderInstance)            (void* data);
+    typedef bool           (*SWIGPythonMightHaveChildrenSynthProviderInstance) (void* data);
+
     
     typedef bool           (*SWIGPythonCallCommand)                 (const char *python_function_name,
                                                                      const char *session_dictionary_name,
@@ -96,7 +124,7 @@ public:
                                                                      std::string& err_msg,
                                                                      lldb_private::CommandReturnObject& cmd_retobj);
     
-    typedef bool           (*SWIGPythonCallModuleInit)              (const std::string python_module_name,
+    typedef bool           (*SWIGPythonCallModuleInit)              (const char *python_module_name,
                                                                      const char *session_dictionary_name,
                                                                      lldb::DebuggerSP& debugger);
 
@@ -122,20 +150,81 @@ public:
 
     virtual ~ScriptInterpreter ();
 
+    struct ExecuteScriptOptions
+    {
+    public:
+        ExecuteScriptOptions () :
+            m_enable_io(true),
+            m_set_lldb_globals(true),
+            m_maskout_errors(true)
+        {
+        }
+        
+        bool
+        GetEnableIO () const
+        {
+            return m_enable_io;
+        }
+        
+        bool
+        GetSetLLDBGlobals () const
+        {
+            return m_set_lldb_globals;
+        }
+        
+        bool
+        GetMaskoutErrors () const
+        {
+            return m_maskout_errors;
+        }
+        
+        ExecuteScriptOptions&
+        SetEnableIO (bool enable)
+        {
+            m_enable_io = enable;
+            return *this;
+        }
+
+        ExecuteScriptOptions&
+        SetSetLLDBGlobals (bool set)
+        {
+            m_set_lldb_globals = set;
+            return *this;
+        }
+
+        ExecuteScriptOptions&
+        SetMaskoutErrors (bool maskout)
+        {
+            m_maskout_errors = maskout;
+            return *this;
+        }
+        
+    private:
+        bool m_enable_io;
+        bool m_set_lldb_globals;
+        bool m_maskout_errors;
+    };
+    
     virtual bool
-    ExecuteOneLine (const char *command, CommandReturnObject *result, bool enable_io) = 0;
+    ExecuteOneLine (const char *command,
+                    CommandReturnObject *result,
+                    const ExecuteScriptOptions &options = ExecuteScriptOptions()) = 0;
 
     virtual void
     ExecuteInterpreterLoop () = 0;
 
     virtual bool
-    ExecuteOneLineWithReturn (const char *in_string, ScriptReturnType return_type, void *ret_value, bool enable_io)
+    ExecuteOneLineWithReturn (const char *in_string,
+                              ScriptReturnType return_type,
+                              void *ret_value,
+                              const ExecuteScriptOptions &options = ExecuteScriptOptions())
     {
         return true;
     }
 
     virtual bool
-    ExecuteMultipleLines (const char *in_string, bool enable_io)
+    ExecuteMultipleLines (const char *in_string,
+                          const ExecuteScriptOptions &options = ExecuteScriptOptions())
     {
         return true;
     }
@@ -189,12 +278,46 @@ public:
     }
     
     virtual lldb::ScriptInterpreterObjectSP
-    CreateSyntheticScriptedProvider (std::string class_name,
+    CreateSyntheticScriptedProvider (const char *class_name,
                                      lldb::ValueObjectSP valobj)
     {
         return lldb::ScriptInterpreterObjectSP();
     }
     
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_CreatePluginObject (const char *class_name,
+                                 lldb::ProcessSP process_sp)
+    {
+        return lldb::ScriptInterpreterObjectSP();
+    }
+    
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_RegisterInfo (lldb::ScriptInterpreterObjectSP os_plugin_object_sp)
+    {
+        return lldb::ScriptInterpreterObjectSP();
+    }
+    
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_ThreadsInfo (lldb::ScriptInterpreterObjectSP os_plugin_object_sp)
+    {
+        return lldb::ScriptInterpreterObjectSP();
+    }
+    
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_RegisterContextData (lldb::ScriptInterpreterObjectSP os_plugin_object_sp,
+                                  lldb::tid_t thread_id)
+    {
+        return lldb::ScriptInterpreterObjectSP();
+    }
+
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_CreateThread (lldb::ScriptInterpreterObjectSP os_plugin_object_sp,
+                           lldb::tid_t tid,
+                           lldb::addr_t context)
+    {
+        return lldb::ScriptInterpreterObjectSP();
+    }
+
     virtual bool
     GenerateFunction(const char *signature, const StringList &input)
     {
@@ -234,7 +357,7 @@ public:
         return false;
     }
     
-    virtual uint32_t
+    virtual size_t
     CalculateNumChildren (const lldb::ScriptInterpreterObjectSP& implementor)
     {
         return 0;
@@ -257,7 +380,13 @@ public:
     {
         return false;
     }
-        
+    
+    virtual bool
+    MightHaveChildrenSynthProviderInstance (const lldb::ScriptInterpreterObjectSP& implementor)
+    {
+        return true;
+    }
+    
     virtual bool
     RunScriptBasedCommand (const char* impl_function,
                            const char* args,
@@ -268,15 +397,23 @@ public:
         return false;
     }
     
-    virtual std::string
-    GetDocumentationForItem (const char* item)
+    virtual bool
+    GetDocumentationForItem (const char* item, std::string& dest)
     {
-        return std::string("");
+		dest.clear();
+        return false;
+    }
+    
+    virtual bool
+    CheckObjectExists (const char* name)
+    {
+        return false;
     }
 
     virtual bool
     LoadScriptingModule (const char* filename,
                          bool can_reload,
+                         bool init_session,
                          lldb_private::Error& error)
     {
         error.SetErrorString("loading unimplemented");
@@ -288,6 +425,9 @@ public:
     {
         return lldb::ScriptInterpreterObjectSP(new ScriptInterpreterObject(object));
     }
+    
+    virtual std::unique_ptr<ScriptInterpreterLocker>
+    AcquireInterpreterLock ();
     
     const char *
     GetScriptInterpreterPtyName ();

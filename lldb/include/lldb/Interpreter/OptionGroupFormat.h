@@ -15,7 +15,9 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Interpreter/Options.h"
-#include "lldb/Interpreter/NamedOptionValue.h"
+#include "lldb/Interpreter/OptionValueFormat.h"
+#include "lldb/Interpreter/OptionValueSInt64.h"
+#include "lldb/Interpreter/OptionValueUInt64.h"
 
 namespace lldb_private {
 
@@ -95,6 +97,11 @@ public:
         return m_count;
     }
     
+    bool
+    HasGDBFormat () const
+    {
+        return m_has_gdb_format;
+    }
     
     bool
     AnyOptionWasSet () const
@@ -107,13 +114,18 @@ public:
 protected:
 
     bool
-    ParserGDBFormatLetter (char format_letter, lldb::Format &format, uint32_t &byte_size);
+    ParserGDBFormatLetter (CommandInterpreter &interpreter,
+                           char format_letter,
+                           lldb::Format &format,
+                           uint32_t &byte_size);
 
     OptionValueFormat m_format;
     OptionValueUInt64 m_byte_size;
     OptionValueUInt64 m_count;
     char m_prev_gdb_format;
     char m_prev_gdb_size;
+    
+    bool m_has_gdb_format;
 };
 
 } // namespace lldb_private

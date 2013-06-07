@@ -330,6 +330,29 @@ public:
     const ConstString &
     GetFilename () const;
 
+    //------------------------------------------------------------------
+    /// Returns true if the filespec represents an implementation source
+    /// file (files with a ".c", ".cpp", ".m", ".mm" (many more)
+    /// extension).
+    ///
+    /// @return
+    ///     \b true if the filespec represents an implementation source
+    ///     file, \b false otherwise.
+    //------------------------------------------------------------------
+    bool
+    IsSourceImplementationFile () const;
+
+    //------------------------------------------------------------------
+    /// Returns true if the filespec represents path that is relative
+    /// path to the current working directory.
+    ///
+    /// @return
+    ///     \b true if the filespec represents a current working
+    ///     directory relative path, \b false otherwise.
+    //------------------------------------------------------------------
+    bool
+    IsRelativeToCurrentWorkingDirectory () const;
+    
     TimeValue
     GetModificationTime () const;
 
@@ -360,19 +383,15 @@ public:
     //------------------------------------------------------------------
     /// Extract the full path to the file.
     ///
-    /// Extract the directory and path into a std::string. This is
-    /// needed as the directory and path are stored in separate string
-    /// values.
-    ///
-    /// @param[out] path
-    ///     The buffer in which to place the extracted full path.
+    /// Extract the directory and path into a std::string, which is returned.
     ///
     /// @return
-    ///     Returns the number of characters that make up this path.
+    ///     Returns a std::string with the directory and filename 
+    ///     concatenated.
     //------------------------------------------------------------------
-    size_t
-    GetPath (std::string& path) const;
-    
+    std::string
+    GetPath () const;
+
     //------------------------------------------------------------------
     /// Extract the extension of the file.
     ///
@@ -403,6 +422,36 @@ public:
     
     FileType
     GetFileType () const;
+
+    bool
+    IsDirectory () const
+    {
+        return GetFileType() == FileSpec::eFileTypeDirectory;
+    }
+
+    bool
+    IsPipe () const
+    {
+        return GetFileType() == FileSpec::eFileTypePipe;
+    }
+
+    bool
+    IsRegularFile () const
+    {
+        return GetFileType() == FileSpec::eFileTypeRegular;
+    }
+
+    bool
+    IsSocket () const
+    {
+        return GetFileType() == FileSpec::eFileTypeSocket;
+    }
+
+    bool
+    IsSymbolicLink () const
+    {
+        return GetFileType() == FileSpec::eFileTypeSymbolicLink;
+    }
 
     //------------------------------------------------------------------
     /// Get the memory cost of this object.
@@ -483,6 +532,21 @@ public:
     size_t
     ReadFileContents (off_t file_offset, void *dst, size_t dst_len, Error *error_ptr) const;
 
+    
+    //------------------------------------------------------------------
+    /// Read the entire contents of a file as data that can be used
+    /// as a C string.
+    ///
+    /// Read the entire contents of a file and ensure that the data
+    /// is NULL terminated so it can be used as a C string.
+    ///
+    /// @return
+    ///     A shared pointer to the data. This shared pointer can
+    ///     contain a NULL DataBuffer pointer, so the contained pointer
+    ///     must be checked prior to using it.
+    //------------------------------------------------------------------
+    lldb::DataBufferSP
+    ReadFileContentsAsCString(Error *error_ptr = NULL);
     //------------------------------------------------------------------
     /// Change the file specificed with a new path.
     ///

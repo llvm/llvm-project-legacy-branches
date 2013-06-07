@@ -16,6 +16,7 @@
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Core/State.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/StopInfo.h"
@@ -35,8 +36,8 @@ using namespace lldb_private;
 // Thread Registers
 //----------------------------------------------------------------------
 
-ThreadMachCore::ThreadMachCore (const lldb::ProcessSP &process_sp, lldb::tid_t tid) :
-    Thread(process_sp, tid),
+ThreadMachCore::ThreadMachCore (Process &process, lldb::tid_t tid) :
+    Thread(process, tid),
     m_thread_name (),
     m_dispatch_queue_name (),
     m_thread_dispatch_qaddr (LLDB_INVALID_ADDRESS),
@@ -71,16 +72,6 @@ ThreadMachCore::RefreshStateAfterStop()
     const bool force = false;
     GetRegisterContext()->InvalidateIfNeeded (force);
 }
-
-void
-ThreadMachCore::ClearStackFrames ()
-{
-    Unwind *unwinder = GetUnwinder ();
-    if (unwinder)
-        unwinder->Clear();
-    Thread::ClearStackFrames();
-}
-
 
 bool
 ThreadMachCore::ThreadIDIsValid (lldb::tid_t thread)
@@ -117,43 +108,25 @@ ThreadMachCore::CreateRegisterContextForFrame (StackFrame *frame)
         }
         reg_ctx_sp = m_thread_reg_ctx_sp;
     }
-    else if (m_unwinder_ap.get())
+    else
     {
-        reg_ctx_sp = m_unwinder_ap->CreateRegisterContextForFrame (frame);
+        Unwind *unwinder = GetUnwinder ();
+        if (unwinder)
+            reg_ctx_sp = unwinder->CreateRegisterContextForFrame (frame);
     }
     return reg_ctx_sp;
 }
 
-lldb::StopInfoSP
-ThreadMachCore::GetPrivateStopReason ()
+bool
+ThreadMachCore::CalculateStopInfo ()
 {
     ProcessSP process_sp (GetProcess());
-
     if (process_sp)
     {
-        const uint32_t process_stop_id = process_sp->GetStopID();
-        if (m_thread_stop_reason_stop_id != process_stop_id ||
-            (m_actual_stop_info_sp && !m_actual_stop_info_sp->IsValid()))
-        {
-            // TODO: can we query the initial state of the thread here?
-            // For now I am just going to pretend that a SIGSTOP happened.
-
-            SetStopInfo(StopInfo::CreateStopReasonWithSignal (*this, SIGSTOP));
-
-            // If GetKDPProcess().SetThreadStopInfo() doesn't find a stop reason
-            // for this thread, then m_actual_stop_info_sp will not ever contain
-            // a valid stop reason and the "m_actual_stop_info_sp->IsValid() == false"
-            // check will never be able to tell us if we have the correct stop info
-            // for this thread and we will continually send qThreadStopInfo packets
-            // down to the remote KDP server, so we need to keep our own notion
-            // of the stop ID that m_actual_stop_info_sp is valid for (even if it
-            // contains nothing). We use m_thread_stop_reason_stop_id for this below.
-    //        m_thread_stop_reason_stop_id = process_stop_id;
-    //        m_actual_stop_info_sp.reset();
-
-        }
+        SetStopInfo(StopInfo::CreateStopReasonWithSignal (*this, SIGSTOP));
+        return true;
     }
-    return m_actual_stop_info_sp;
+    return false;
 }
 
 

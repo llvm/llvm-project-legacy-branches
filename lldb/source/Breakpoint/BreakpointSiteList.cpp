@@ -69,10 +69,10 @@ BreakpointSiteList::FindIDByAddress (lldb::addr_t addr)
     BreakpointSiteSP bp = FindByAddress (addr);
     if (bp)
     {
-        //DBLogIf(PD_LOG_BREAKPOINTS, "BreakpointSiteList::%s ( addr = 0x%8.8llx ) => %u", __FUNCTION__, (uint64_t)addr, bp->GetID());
+        //DBLogIf(PD_LOG_BREAKPOINTS, "BreakpointSiteList::%s ( addr = 0x%8.8" PRIx64 " ) => %u", __FUNCTION__, (uint64_t)addr, bp->GetID());
         return bp.get()->GetID();
     }
-    //DBLogIf(PD_LOG_BREAKPOINTS, "BreakpointSiteList::%s ( addr = 0x%8.8llx ) => NONE", __FUNCTION__, (uint64_t)addr);
+    //DBLogIf(PD_LOG_BREAKPOINTS, "BreakpointSiteList::%s ( addr = 0x%8.8" PRIx64 " ) => NONE", __FUNCTION__, (uint64_t)addr);
     return LLDB_INVALID_BREAK_ID;
 }
 
@@ -169,7 +169,7 @@ BreakpointSiteList::BreakpointSiteContainsBreakpoint (lldb::break_id_t bp_site_i
 {
     collection::const_iterator pos = GetIDConstIterator(bp_site_id);
     if (pos != m_bp_site_list.end())
-        pos->second->IsBreakpointAtThisSite (bp_id);
+        return pos->second->IsBreakpointAtThisSite (bp_id);
 
     return false;
 }

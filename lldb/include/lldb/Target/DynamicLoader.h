@@ -93,7 +93,20 @@ public:
     DidLaunch () = 0;
     
     
-
+    //------------------------------------------------------------------
+    /// Helper function that can be used to detect when a process has
+    /// called exec and is now a new and different process. This can
+    /// be called when necessary to try and detect the exec. The process
+    /// might be able to answer this question, but sometimes it might
+    /// not be able and the dynamic loader often knows what the program
+    /// entry point is. So the process and the dynamic loader can work
+    /// together to detect this.
+    //------------------------------------------------------------------
+    virtual bool
+    ProcessDidExec ()
+    {
+        return false;
+    }
     //------------------------------------------------------------------
     /// Get whether the process should stop when images change.
     ///
@@ -216,7 +229,6 @@ protected:
     // Member variables.
     //------------------------------------------------------------------
     Process* m_process; ///< The process that this dynamic loader plug-in is tracking.
-    bool m_stop_when_images_change; ///< Boolean value that indicates if the process should stop when imamges change.
 private:
     DISALLOW_COPY_AND_ASSIGN (DynamicLoader);
 

@@ -211,10 +211,25 @@ class Image:
         self.module = None
         self.symfile = None
         self.slide = None
+        
     
     def dump(self, prefix):
         print "%s%s" % (prefix, self)
-    
+
+    def debug_dump(self):
+        print 'path = "%s"' % (self.path)
+        print 'resolved_path = "%s"' % (self.resolved_path)
+        print 'resolved = %i' % (self.resolved)
+        print 'unavailable = %i' % (self.unavailable)
+        print 'uuid = %s' % (self.uuid)
+        print 'section_infos = %s' % (self.section_infos)
+        print 'identifier = "%s"' % (self.identifier)
+        print 'version = %s' % (self.version)
+        print 'arch = %s' % (self.arch)
+        print 'module = %s' % (self.module)
+        print 'symfile = "%s"' % (self.symfile)
+        print 'slide = %i (0x%x)' % (self.slide, self.slide)
+        
     def __str__(self):
         s = "%s %s %s" % (self.get_uuid(), self.version, self.get_resolved_path())
         for section_info in self.section_infos:
@@ -363,7 +378,7 @@ class Symbolicator:
         """A class the represents the information needed to symbolicate addresses in a program"""
         self.target = None
         self.images = list() # a list of images to be used when symbolicating
-
+        self.addr_mask = 0xffffffffffffffff
     
     def __str__(self):
         s = "Symbolicator:\n"
@@ -398,6 +413,12 @@ class Symbolicator:
             for image in self.images:
                 self.target = image.create_target ()
                 if self.target:
+                    if self.target.GetAddressByteSize() == 4:
+                        triple = self.target.triple
+                        if triple:
+                            arch = triple.split('-')[0]
+                            if "arm" in arch:
+                                self.addr_mask = 0xfffffffffffffffe
                     return self.target
         return None
     
@@ -405,9 +426,19 @@ class Symbolicator:
         if not self.target:
             self.create_target()
         if self.target:
-            image = self.find_image_containing_load_addr (load_addr)
-            if image:
-                image.add_module (self.target)
+            live_process = False
+            process = self.target.process
+            if process:
+                state = process.state
+                if state > lldb.eStateUnloaded and state < lldb.eStateDetached:
+                    live_process = True
+            # If we don't have a live process, we can attempt to find the image
+            # that a load address belongs to and lazily load its module in the
+            # target, but we shouldn't do any of this if we have a live process
+            if not live_process:
+                image = self.find_image_containing_load_addr (load_addr)
+                if image:
+                    image.add_module (self.target)
             symbolicated_address = Address(self.target, load_addr)
             if symbolicated_address.symbolicate (verbose):
                 if symbolicated_address.so_addr:

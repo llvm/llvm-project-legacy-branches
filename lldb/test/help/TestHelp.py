@@ -77,8 +77,13 @@ class HelpCommandTestCase(TestBase):
         version_str = self.version_number_string()
         import re
         match = re.match('[0-9]+', version_str)
+        if sys.platform.startswith("darwin"):
+            search_regexp = ['lldb-' + (version_str if match else '[0-9]+')]
+        else:
+            search_regexp = ['lldb version (\d|\.)+.*$']
+
         self.expect("version",
-            patterns = ['LLDB-' + (version_str if match else '[0-9]+')])
+            patterns = search_regexp)
 
     def test_help_should_not_crash_lldb(self):
         """Command 'help disasm' should not crash lldb."""
@@ -87,7 +92,10 @@ class HelpCommandTestCase(TestBase):
 
     def test_help_should_not_hang_emacsshell(self):
         """Command 'settings set term-width 0' should not hang the help command."""
-        self.runCmd("settings set term-width 0")
+        self.expect("settings set term-width 0",
+                    COMMAND_FAILED_AS_EXPECTED, error=True,
+            substrs = ['error: 0 is out of range, valid values must be between'])
+        # self.runCmd("settings set term-width 0")
         self.expect("help",
             startstr = 'The following is a list of built-in, permanent debugger commands')
 

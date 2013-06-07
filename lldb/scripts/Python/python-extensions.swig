@@ -25,7 +25,6 @@
                     return PyString_FromStringAndSize (desc, desc_len);
                 else
                     return PyString_FromString("");
-
         }
 }
 %extend lldb::SBBreakpoint {
@@ -41,6 +40,21 @@
                 else
                     return PyString_FromString("");
         }
+        
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
+
 }
 %extend lldb::SBBreakpointLocation {
         PyObject *lldb::SBBreakpointLocation::__str__ (){
@@ -56,6 +70,23 @@
                     return PyString_FromString("");
         }
 }
+
+%extend lldb::SBBroadcaster {
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
+}
+
 %extend lldb::SBCommandReturnObject {
         PyObject *lldb::SBCommandReturnObject::__str__ (){
                 lldb::SBStream description;
@@ -69,6 +100,19 @@
                 else
                     return PyString_FromString("");
         }
+        
+        /* the write() and flush() calls are not part of the SB API proper, and are solely for Python usage
+        they are meant to make an SBCommandReturnObject into a file-like object so that instructions of the sort
+        print >>sb_command_return_object, "something"
+        will work correctly */
+
+        void lldb::SBCommandReturnObject::write (const char* str)
+        {
+            if (str)
+                $self->Printf("%s",str);
+        }
+        void lldb::SBCommandReturnObject::flush ()
+        {}
 }
 %extend lldb::SBCompileUnit {
         PyObject *lldb::SBCompileUnit::__str__ (){
@@ -83,6 +127,19 @@
                 else
                     return PyString_FromString("");
         }
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
 }
 %extend lldb::SBData {
         PyObject *lldb::SBData::__str__ (){
@@ -111,6 +168,35 @@
                 else
                     return PyString_FromString("");
         }
+}
+%extend lldb::SBDeclaration {
+        PyObject *lldb::SBDeclaration::__str__ (){
+                lldb::SBStream description;
+                $self->GetDescription (description);
+                const char *desc = description.GetData();
+                size_t desc_len = description.GetSize();
+                if (desc_len > 0 && (desc[desc_len-1] == '\n' || desc[desc_len-1] == '\r'))
+                    --desc_len;
+                if (desc_len > 0)
+                    return PyString_FromStringAndSize (desc, desc_len);
+                else
+                    return PyString_FromString("");
+        }
+        
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
+
 }
 %extend lldb::SBError {
         PyObject *lldb::SBError::__str__ (){
@@ -167,6 +253,21 @@
                 else
                     return PyString_FromString("");
         }
+        
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
+
 }
 %extend lldb::SBInstruction {
         PyObject *lldb::SBInstruction::__str__ (){
@@ -209,6 +310,20 @@
                 else
                     return PyString_FromString("");
         }
+        
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
 }
 %extend lldb::SBModule {
         PyObject *lldb::SBModule::__str__ (){
@@ -223,6 +338,20 @@
                 else
                     return PyString_FromString("");
         }
+        
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
 }
 %extend lldb::SBProcess {
         PyObject *lldb::SBProcess::__str__ (){
@@ -251,6 +380,34 @@
                 else
                     return PyString_FromString("");
         }
+        
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
+}
+%extend lldb::SBStream {
+        /* the write() and flush() calls are not part of the SB API proper, and are solely for Python usage
+        they are meant to make an SBStream into a file-like object so that instructions of the sort
+        print >>sb_stream, "something"
+        will work correctly */
+
+        void lldb::SBStream::write (const char* str)
+        {
+            if (str)
+                $self->Printf("%s",str);
+        }
+        void lldb::SBStream::flush ()
+        {}
 }
 %extend lldb::SBSymbol {
         PyObject *lldb::SBSymbol::__str__ (){
@@ -265,6 +422,19 @@
                 else
                     return PyString_FromString("");
         }
+    %pythoncode %{
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
 }
 %extend lldb::SBSymbolContext {
         PyObject *lldb::SBSymbolContext::__str__ (){
@@ -294,6 +464,7 @@
                     return PyString_FromString("");
         }
 }
+
 %extend lldb::SBTarget {
         PyObject *lldb::SBTarget::__str__ (){
                 lldb::SBStream description;
@@ -307,7 +478,22 @@
                 else
                     return PyString_FromString("");
         }
+
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
 }
+
 %extend lldb::SBType {
         PyObject *lldb::SBType::__str__ (){
                 lldb::SBStream description;
@@ -349,6 +535,19 @@
                 else
                     return PyString_FromString("");
         }
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
 }
 %extend lldb::SBTypeFormat {
         PyObject *lldb::SBTypeFormat::__str__ (){
@@ -391,6 +590,19 @@
                 else
                     return PyString_FromString("");
         }
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
 }
 %extend lldb::SBTypeSummary {
         PyObject *lldb::SBTypeSummary::__str__ (){
@@ -405,6 +617,19 @@
                 else
                     return PyString_FromString("");
         }
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
 }
 %extend lldb::SBTypeSynthetic {
         PyObject *lldb::SBTypeSynthetic::__str__ (){
@@ -419,6 +644,19 @@
                 else
                     return PyString_FromString("");
         }
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
 }
 %extend lldb::SBThread {
         PyObject *lldb::SBThread::__str__ (){
@@ -433,6 +671,19 @@
                 else
                     return PyString_FromString("");
         }
+    %pythoncode %{ 
+        def __eq__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return False 
+            
+            return getattr(_lldb,self.__class__.__name__+"___eq__")(self, rhs)
+            
+        def __ne__(self, rhs):
+            if not isinstance(rhs, type(self)): 
+                return True 
+            
+            return getattr(_lldb,self.__class__.__name__+"___ne__")(self, rhs)
+    %}
 }
 %extend lldb::SBValue {
         PyObject *lldb::SBValue::__str__ (){
@@ -449,7 +700,7 @@
         }
 }
 %extend lldb::SBValueList {
-        PyObject *lldb::SBValueList::__repr__ (){
+        PyObject *lldb::SBValueList::__str__ (){
                 lldb::SBStream description;
                 const size_t n = $self->GetSize();
                 if (n)
@@ -467,7 +718,8 @@
                     --desc_len;
                 if (desc_len > 0)
                     return PyString_FromStringAndSize (desc, desc_len);
-                return Py_None;
+                else
+                    return PyString_FromString("");
         }
 }
 %extend lldb::SBWatchpoint {
@@ -485,6 +737,25 @@
         }
 }
 
+
+// %extend lldb::SBDebugger {
+//         // FIXME: We can't get the callback and baton
+//         PyObject *lldb::SBDebugger (){
+//             // Only call Py_XDECREF if we have a Python object (or NULL)
+//             if (LLDBSwigPythonCallPythonLogOutputCallback == $self->GetLogOutPutCallback())
+//                 Py_XDECREF($self->GetCallbackBaton());
+//         }
+// }
+// %extend lldb::SBInputReader {
+//         // FIXME: m_callback_function is private and we have no other
+//         // way to access it.
+//         PyObject *lldb::SBInputReader::__del__ (){
+//             // Only call Py_XDECREF if we have a Python object (or NULL)
+//             if (LLDBSwigPythonCallSBInputReaderCallback == $self->m_callback_function)
+//                 Py_XDECREF($self->m_callback_baton);
+//         }
+// }
+
 %pythoncode %{
 
 class declaration(object):
@@ -493,6 +764,24 @@ class declaration(object):
         self.file = file
         self.line = line
         self.col = col
+
+class value_iter(object):
+    def __iter__(self):
+        return self
+    
+    def next(self):
+        if self.index >= self.length:
+            raise StopIteration()
+        child_sbvalue = self.sbvalue.GetChildAtIndex(self.index)
+        self.index += 1
+        return value(child_sbvalue)
+        
+    def __init__(self,value):
+        self.index = 0
+        self.sbvalue = value
+        if type(self.sbvalue) is value:
+            self.sbvalue = self.sbvalue.sbvalue
+        self.length = self.sbvalue.GetNumChildren()
 
 class value(object):
     '''A class designed to wrap lldb.SBValue() objects so the resulting object
@@ -519,15 +808,23 @@ class value(object):
 
     def __getitem__(self, key):
         # Allow array access if this value has children...
+        if type(key) is value:
+            key = int(key)
         if type(key) is int:
-            return value(self.sbvalue.GetValueForExpressionPath("[%i]" % key))
-        raise TypeError
+            child_sbvalue = (self.sbvalue.GetValueForExpressionPath("[%i]" % key))
+            if child_sbvalue and child_sbvalue.IsValid():
+                return value(child_sbvalue)
+            raise IndexError("Index '%d' is out of range" % key)
+        raise TypeError("No array item of type %s" % str(type(key)))
+
+    def __iter__(self):
+        return value_iter(self.sbvalue)
 
     def __getattr__(self, name):
         child_sbvalue = self.sbvalue.GetChildMemberWithName (name)
-        if child_sbvalue:
+        if child_sbvalue and child_sbvalue.IsValid():
             return value(child_sbvalue)
-        raise AttributeError
+        raise AttributeError("Attribute '%s' is not defined" % name)
 
     def __add__(self, other):
         return int(self) + int(other)
@@ -671,10 +968,26 @@ class value(object):
     def __hex__(self):
         return '0x%x' % self.sbvalue.GetValueAsUnsigned()
 
+    def __len__(self):
+        return self.sbvalue.GetNumChildren()
+
     def __eq__(self, other):
-        return self.sbvalue.GetValueAsUnsigned() == self.sbvalue.GetValueAsUnsigned()
-                                                                    
+        if type(other) is int:
+                return int(self) == other
+        elif type(other) is str:
+                return str(self) == other
+        elif type(other) is value:
+                self_err = SBError()
+                other_err = SBError()
+                self_val = self.sbvalue.GetValueAsUnsigned(self_err)
+                if self_err.fail:
+                        raise ValueError("unable to extract value of self")
+                other_val = other.sbvalue.GetValueAsUnsigned(other_err)
+                if other_err.fail:
+                        raise ValueError("unable to extract value of other")
+                return self_val == other_val
+        raise TypeError("Unknown type %s, No equality operation defined." % str(type(other)))
+
     def __neq__(self, other):
         return not self.__eq__(other)
 %}
-

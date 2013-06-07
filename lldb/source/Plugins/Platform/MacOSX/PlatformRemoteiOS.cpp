@@ -18,6 +18,7 @@
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleList.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Host/FileSpec.h"
@@ -64,7 +65,7 @@ PlatformRemoteiOS::Initialize ()
 {
     if (g_initialize_count++ == 0)
     {
-        PluginManager::RegisterPlugin (PlatformRemoteiOS::GetShortPluginNameStatic(),
+        PluginManager::RegisterPlugin (PlatformRemoteiOS::GetPluginNameStatic(),
                                        PlatformRemoteiOS::GetDescriptionStatic(),
                                        PlatformRemoteiOS::CreateInstance);
     }
@@ -101,14 +102,18 @@ PlatformRemoteiOS::CreateInstance (bool force, const ArchSpec *arch)
                         create = true;
                         break;
 
+#if defined(__APPLE__)
+                    // Only accept "unknown" for the vendor if the host is Apple and
+                    // it "unknown" wasn't specified (it was just returned becasue it
+                    // was NOT specified)
                     case llvm::Triple::UnknownArch:
                         create = !arch->TripleVendorWasSpecified();
                         break;
 
+#endif
                     default:
                         break;
                 }
-                
                 if (create)
                 {
                     switch (triple.getOS())
@@ -117,10 +122,14 @@ PlatformRemoteiOS::CreateInstance (bool force, const ArchSpec *arch)
                         case llvm::Triple::IOS:     // This is the right triple value for iOS debugging
                             break;
 
+#if defined(__APPLE__)
+                        // Only accept "unknown" for the OS if the host is Apple and
+                        // it "unknown" wasn't specified (it was just returned becasue it
+                        // was NOT specified)
                         case llvm::Triple::UnknownOS:
                             create = !arch->TripleOSWasSpecified();
                             break;
-                            
+#endif
                         default:
                             create = false;
                             break;
@@ -139,16 +148,11 @@ PlatformRemoteiOS::CreateInstance (bool force, const ArchSpec *arch)
 }
 
 
-const char *
+lldb_private::ConstString
 PlatformRemoteiOS::GetPluginNameStatic ()
 {
-    return "PlatformRemoteiOS";
-}
-
-const char *
-PlatformRemoteiOS::GetShortPluginNameStatic()
-{
-    return "remote-ios";
+    static ConstString g_name("remote-ios");
+    return g_name;
 }
 
 const char *
@@ -196,13 +200,92 @@ PlatformRemoteiOS::GetStatus (Stream &strm)
     for (uint32_t i=0; i<num_sdk_infos; ++i)
     {
         const SDKDirectoryInfo &sdk_dir_info = m_sdk_directory_infos[i];
-        strm.Printf (" SDK Roots: [%2u] \"%s/%s\"\n",
+        strm.Printf (" SDK Roots: [%2u] \"%s\"\n",
                      i,
-                     sdk_dir_info.directory.GetDirectory().GetCString(),
-                     sdk_dir_info.directory.GetFilename().GetCString());
+                     sdk_dir_info.directory.GetPath().c_str());
     }
 }
 
+
+Error
+PlatformRemoteiOS::ResolveExecutable (const FileSpec &exe_file,
+                                      const ArchSpec &exe_arch,
+                                      lldb::ModuleSP &exe_module_sp,
+                                      const FileSpecList *module_search_paths_ptr)
+{
+    Error error;
+    // Nothing special to do here, just use the actual file and architecture
+
+    FileSpec resolved_exe_file (exe_file);
+    
+    // If we have "ls" as the exe_file, resolve the executable loation based on
+    // the current path variables
+    // TODO: resolve bare executables in the Platform SDK
+//    if (!resolved_exe_file.Exists())
+//        resolved_exe_file.ResolveExecutableLocation ();
+
+    // Resolve any executable within a bundle on MacOSX
+    // TODO: verify that this handles shallow bundles, if not then implement one ourselves
+    Host::ResolveExecutableInBundle (resolved_exe_file);
+
+    if (resolved_exe_file.Exists())
+    {
+        if (exe_arch.IsValid())
+        {
+            ModuleSpec module_spec (resolved_exe_file, exe_arch);
+            error = ModuleList::GetSharedModule (module_spec,
+                                                 exe_module_sp, 
+                                                 NULL,
+                                                 NULL, 
+                                                 NULL);
+        
+            if (exe_module_sp && exe_module_sp->GetObjectFile())
+                return error;
+            exe_module_sp.reset();
+        }
+        // No valid architecture was specified or the exact ARM slice wasn't
+        // found so ask the platform for the architectures that we should be
+        // using (in the correct order) and see if we can find a match that way
+        StreamString arch_names;
+        ArchSpec platform_arch;
+        for (uint32_t idx = 0; GetSupportedArchitectureAtIndex (idx, platform_arch); ++idx)
+        {
+            ModuleSpec module_spec (resolved_exe_file, platform_arch);
+            error = ModuleList::GetSharedModule (module_spec, 
+                                                 exe_module_sp, 
+                                                 NULL,
+                                                 NULL, 
+                                                 NULL);
+            // Did we find an executable using one of the 
+            if (error.Success())
+            {
+                if (exe_module_sp && exe_module_sp->GetObjectFile())
+                    break;
+                else
+                    error.SetErrorToGenericError();
+            }
+            
+            if (idx > 0)
+                arch_names.PutCString (", ");
+            arch_names.PutCString (platform_arch.GetArchitectureName());
+        }
+        
+        if (error.Fail() || !exe_module_sp)
+        {
+            error.SetErrorStringWithFormat ("'%s' doesn't contain any '%s' platform architectures: %s",
+                                            exe_file.GetPath().c_str(),
+                                            GetPluginName().GetCString(),
+                                            arch_names.GetString().c_str());
+        }
+    }
+    else
+    {
+        error.SetErrorStringWithFormat ("'%s' does not exist",
+                                        exe_file.GetPath().c_str());
+    }
+
+    return error;
+}
 
 FileSpec::EnumerateDirectoryResult 
 PlatformRemoteiOS::GetContainedFilesIntoVectorOfStringsCallback (void *baton,
@@ -573,7 +656,7 @@ PlatformRemoteiOS::GetSymbolFile (const FileSpec &platform_file,
 
         error.SetErrorStringWithFormat ("unable to locate a platform file for '%s' in platform '%s'", 
                                         platform_file_path,
-                                        GetPluginName());
+                                        GetPluginName().GetCString());
     }
     else
     {
@@ -619,7 +702,7 @@ PlatformRemoteiOS::GetSharedModule (const ModuleSpec &module_spec,
             {
                 if (GetFileInSDK (platform_file_path, m_last_module_sdk_idx, local_file))
                 {
-                    //printf ("sdk[%u] last: '%s/%s'\n", m_last_module_sdk_idx, local_file.GetDirectory().GetCString(), local_file.GetFilename().GetCString());
+                    //printf ("sdk[%u] last: '%s'\n", m_last_module_sdk_idx, local_file.GetPath().c_str());
                     module_sp.reset();
                     error = ResolveExecutable (local_file,
                                                module_spec.GetArchitecture(),
@@ -645,7 +728,7 @@ PlatformRemoteiOS::GetSharedModule (const ModuleSpec &module_spec,
                 }
                 if (GetFileInSDK (platform_file_path, sdk_idx, local_file))
                 {
-                    //printf ("sdk[%u]: '%s/%s'\n", sdk_idx, local_file.GetDirectory().GetCString(), local_file.GetFilename().GetCString());
+                    //printf ("sdk[%u]: '%s'\n", sdk_idx, local_file.GetPath().c_str());
                     
                     error = ResolveExecutable (local_file,
                                                module_spec.GetArchitecture(),

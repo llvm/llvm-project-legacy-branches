@@ -75,7 +75,10 @@ class Utilities:
 		logger = lldb.formatters.Logger.Logger()
 		# assume the only thing that has a Foundation.framework is a Mac
 		# assume anything < Lion does not even exist
-		mod = target.module['Foundation']
+		try:
+			mod = target.module['Foundation']
+		except:
+			mod = None
 		if mod is None or mod.IsValid() == 0:
 			return None
 		ver = mod.GetVersion()
@@ -101,9 +104,8 @@ class Utilities:
 			return class_data,wrapper
 		if class_data.is_kvo():
 			class_data = class_data.get_superclass()
-		if class_data.is_valid() == 0:
-			statistics.metric_hit('invalid_isa',valobj)
-			wrapper = InvalidISA_Description()
+		if class_data.class_name() == '_NSZombie_OriginalClass':
+			wrapper = ThisIsZombie_Description()
 			return class_data,wrapper
 		return class_data,None
 
@@ -240,17 +242,6 @@ class Class_Data_V2:
 			logger >> "Marking as invalid - cachePointer is not allowed"
 			self.valid = 0
 			return
-
-		self.vtablePointer = Utilities.read_child_of(self.valobj,3*self.sys_params.pointer_size,self.sys_params.types_cache.addr_ptr_type)
-		if not(Utilities.is_valid_pointer(self.vtablePointer,self.sys_params.pointer_size,allow_tagged=0)):
-			logger >> "Marking as invalid - vtablePointer is invalid"
-			self.valid = 0
-			return
-		if not(Utilities.is_allowed_pointer(self.vtablePointer)):
-			logger >> "Marking as invalid - vtablePointer is not allowed"
-			self.valid = 0
-			return
-
 		self.dataPointer = Utilities.read_child_of(self.valobj,4*self.sys_params.pointer_size,self.sys_params.types_cache.addr_ptr_type)
 		if not(Utilities.is_valid_pointer(self.dataPointer,self.sys_params.pointer_size,allow_tagged=0)):
 			logger >> "Marking as invalid - dataPointer is invalid"
@@ -319,7 +310,6 @@ class Class_Data_V2:
 		return 'isaPointer = ' + hex(self.isaPointer) + "\n" + \
 		 "superclassIsaPointer = " + hex(self.superclassIsaPointer) + "\n" + \
 		 "cachePointer = " + hex(self.cachePointer) + "\n" + \
-		 "vtablePointer = " + hex(self.vtablePointer) + "\n" + \
 		 "data = " + hex(self.dataPointer)
 
 	def is_tagged(self):
@@ -592,7 +582,7 @@ class SystemParameters:
 		global isa_caches
 
 		process = valobj.GetTarget().GetProcess()
-		self.pid = process.GetProcessID()
+		self.pid = process.GetUniqueID() # using the unique ID for added guarantees (see svn revision 172628 for further details)
 
 		if runtime_version.look_for_key(self.pid):
 			self.runtime_version = runtime_version.get_value(self.pid)
@@ -786,3 +776,6 @@ class InvalidISA_Description(SpecialSituation_Description):
 	def message(self):
 		return '<not an Objective-C object>'
 
+class ThisIsZombie_Description(SpecialSituation_Description):
+	def message(self):
+		return '<freed object>'

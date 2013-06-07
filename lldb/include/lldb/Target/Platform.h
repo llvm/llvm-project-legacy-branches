@@ -95,6 +95,23 @@ namespace lldb_private {
         ~Platform();
 
         //------------------------------------------------------------------
+        /// Find a platform plugin for a given process.
+        ///
+        /// Scans the installed Platform plug-ins and tries to find
+        /// an instance that can be used for \a process
+        ///
+        /// @param[in] process
+        ///     The process for which to try and locate a platform
+        ///     plug-in instance.
+        ///
+        /// @param[in] plugin_name
+        ///     An optional name of a specific platform plug-in that
+        ///     should be used. If NULL, pick the best plug-in.
+        //------------------------------------------------------------------
+        static Platform*
+        FindPlugin (Process *process, const ConstString &plugin_name);
+
+        //------------------------------------------------------------------
         /// Set the target's executable based off of the existing 
         /// architecture information in \a target given a path to an 
         /// executable \a exe_file.
@@ -118,6 +135,59 @@ namespace lldb_private {
                            const ArchSpec &arch,
                            lldb::ModuleSP &module_sp,
                            const FileSpecList *module_search_paths_ptr);
+
+        
+        //------------------------------------------------------------------
+        /// Find a symbol file given a symbol file module specification.
+        ///
+        /// Each platform might have tricks to find symbol files for an
+        /// executable given information in a symbol file ModuleSpec. Some
+        /// platforms might also support symbol files that are bundles and
+        /// know how to extract the right symbol file given a bundle.
+        ///
+        /// @param[in] target
+        ///     The target in which we are trying to resolve the symbol file.
+        ///     The target has a list of modules that we might be able to
+        ///     use in order to help find the right symbol file. If the
+        ///     "m_file" or "m_platform_file" entries in the \a sym_spec
+        ///     are filled in, then we might be able to locate a module in
+        ///     the target, extract its UUID and locate a symbol file.
+        ///     If just the "m_uuid" is specified, then we might be able
+        ///     to find the module in the target that matches that UUID
+        ///     and pair the symbol file along with it. If just "m_symbol_file"
+        ///     is specified, we can use a variety of tricks to locate the
+        ///     symbols in an SDK, PDK, or other development kit location.
+        ///
+        /// @param[in] sym_spec
+        ///     A module spec that describes some information about the
+        ///     symbol file we are trying to resolve. The ModuleSpec might
+        ///     contain the following:
+        ///     m_file - A full or partial path to an executable from the
+        ///              target (might be empty).
+        ///     m_platform_file - Another executable hint that contains
+        ///                       the path to the file as known on the
+        ///                       local/remote platform.
+        ///     m_symbol_file - A full or partial path to a symbol file
+        ///                     or symbol bundle that should be used when
+        ///                     trying to resolve the symbol file.
+        ///     m_arch - The architecture we are looking for when resolving
+        ///              the symbol file.
+        ///     m_uuid - The UUID of the executable and symbol file. This
+        ///              can often be used to match up an exectuable with
+        ///              a symbol file, or resolve an symbol file in a
+        ///              symbol file bundle.
+        ///
+        /// @param[out] sym_file
+        ///     The resolved symbol file spec if the returned error
+        ///     indicates succes.
+        ///
+        /// @return
+        ///     Returns an error that describes success or failure.
+        //------------------------------------------------------------------
+        virtual Error
+        ResolveSymbolFile (Target &target,
+                           const ModuleSpec &sym_spec,
+                           FileSpec &sym_file);
 
         //------------------------------------------------------------------
         /// Resolves the FileSpec to a (possibly) remote path. Remote
@@ -146,7 +216,7 @@ namespace lldb_private {
 
         // Returns the the hostname if we are connected, else the short plugin
         // name.
-        const char *
+        ConstString
         GetName ();
 
         virtual const char *
@@ -239,6 +309,16 @@ namespace lldb_private {
                  const UUID *uuid_ptr,
                  FileSpec &local_file);
 
+        //----------------------------------------------------------------------
+        // Locate the scripting resource given a module specification.
+        //
+        // Locating the file should happen only on the local computer or using
+        // the current computers global settings.
+        //----------------------------------------------------------------------
+        virtual FileSpecList
+        LocateExecutableScriptingResources (Target *target,
+                                            Module &module);
+        
         virtual Error
         GetSharedModule (const ModuleSpec &module_spec, 
                          lldb::ModuleSP &module_sp,
@@ -286,7 +366,9 @@ namespace lldb_private {
         /// architecture and the target triple contained within.
         //------------------------------------------------------------------
         virtual bool
-        IsCompatibleArchitecture (const ArchSpec &arch, ArchSpec *compatible_arch_ptr = NULL);
+        IsCompatibleArchitecture (const ArchSpec &arch,
+                                  bool exact_arch_match,
+                                  ArchSpec *compatible_arch_ptr);
 
         //------------------------------------------------------------------
         /// Not all platforms will support debugging a process by spawning
@@ -416,13 +498,13 @@ namespace lldb_private {
         }
 
         // Used for column widths
-        uint32_t
+        size_t
         GetMaxUserIDNameLength() const
         {
             return m_max_uid_name_len;
         }
         // Used for column widths
-        uint32_t
+        size_t
         GetMaxGroupIDNameLength() const
         {
             return m_max_gid_name_len;
@@ -477,13 +559,15 @@ namespace lldb_private {
         virtual lldb::user_id_t
         OpenFile (const FileSpec& file_spec,
                   uint32_t flags,
-                  mode_t mode)
+                  mode_t mode,
+                  Error &error)
         {
             return UINT64_MAX;
         }
         
         virtual bool
-        CloseFile (lldb::user_id_t fd)
+        CloseFile (lldb::user_id_t fd,
+                   Error &error)
         {
             return false;
         }
@@ -494,18 +578,26 @@ namespace lldb_private {
             return UINT64_MAX;
         }
 
-        virtual uint32_t
-        ReadFile (lldb::user_id_t fd, uint64_t offset,
-                  void *data_ptr, size_t len)
+        virtual uint64_t
+        ReadFile (lldb::user_id_t fd,
+                  uint64_t offset,
+                  void *dst,
+                  uint64_t dst_len,
+                  Error &error)
         {
-            return UINT32_MAX;
+            error.SetErrorStringWithFormat ("Platform::ReadFile() is not supported in the %s platform", GetName().GetCString());
+            return -1;
         }
         
-        virtual uint32_t
-        WriteFile (lldb::user_id_t fd, uint64_t offset,
-                   void* data, size_t len)
+        virtual uint64_t
+        WriteFile (lldb::user_id_t fd,
+                   uint64_t offset,
+                   const void* src,
+                   uint64_t src_len,
+                   Error &error)
         {
-            return UINT32_MAX;
+            error.SetErrorStringWithFormat ("Platform::ReadFile() is not supported in the %s platform", GetName().GetCString());
+            return -1;
         }
         
         virtual Error
@@ -514,6 +606,9 @@ namespace lldb_private {
                  uint32_t uid = UINT32_MAX,
                  uint32_t gid = UINT32_MAX);
                 
+        virtual size_t
+        GetEnvironment (StringList &environment);
+        
         virtual Error
         GetFile (const FileSpec& source,
                  const FileSpec& destination);
@@ -521,6 +616,14 @@ namespace lldb_private {
         virtual bool
         GetFileExists (const lldb_private::FileSpec& file_spec);
         
+        virtual uint32_t
+        GetFilePermissions (const lldb_private::FileSpec &file_spec,
+                            Error &error)
+        {
+            error.SetErrorStringWithFormat ("Platform::GetFilePermissions() is not supported in the %s platform", GetName().GetCString());
+            return 0;
+        }
+
         virtual bool
         GetSupportsRSync ()
         {
@@ -646,8 +749,8 @@ namespace lldb_private {
         Mutex m_gid_map_mutex;
         IDToNameMap m_uid_map;
         IDToNameMap m_gid_map;
-        uint32_t m_max_uid_name_len;
-        uint32_t m_max_gid_name_len;
+        size_t m_max_uid_name_len;
+        size_t m_max_gid_name_len;
         bool m_supports_rsync;
         std::string m_rsync_opts;
         std::string m_rsync_prefix;

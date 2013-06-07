@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "PlatformDarwin.h"
 
 // C Includes
@@ -16,7 +18,14 @@
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Error.h"
+#include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
+#include "lldb/Core/Timer.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Host/Symbols.h"
+#include "lldb/Symbol/ObjectFile.h"
+#include "lldb/Symbol/SymbolFile.h"
+#include "lldb/Symbol/SymbolVendor.h"
 #include "lldb/Target/Target.h"
 
 using namespace lldb;
@@ -42,6 +51,75 @@ PlatformDarwin::~PlatformDarwin()
 {
 }
 
+FileSpecList
+PlatformDarwin::LocateExecutableScriptingResources (Target *target,
+                                                    Module &module)
+{
+    FileSpecList file_list;
+    if (target && target->GetDebugger().GetScriptLanguage() == eScriptLanguagePython)
+    {
+        // NB some extensions might be meaningful and should not be stripped - "this.binary.file"
+        // should not lose ".file" but GetFileNameStrippingExtension() will do precisely that.
+        // Ideally, we should have a per-platform list of extensions (".exe", ".app", ".dSYM", ".framework")
+        // which should be stripped while leaving "this.binary.file" as-is.
+        FileSpec module_spec = module.GetFileSpec();
+        
+        if (module_spec)
+        {
+            SymbolVendor *symbols = module.GetSymbolVendor ();
+            if (symbols)
+            {
+                SymbolFile *symfile = symbols->GetSymbolFile();
+                if (symfile)
+                {
+                    ObjectFile *objfile = symfile->GetObjectFile();
+                    if (objfile)
+                    {
+                        FileSpec symfile_spec (objfile->GetFileSpec());
+                        if (symfile_spec && symfile_spec.Exists())
+                        {
+                            while (module_spec.GetFilename())
+                            {
+                                std::string module_basename (module_spec.GetFilename().GetCString());
+
+                                // FIXME: for Python, we cannot allow certain characters in module
+                                // filenames we import. Theoretically, different scripting languages may
+                                // have different sets of forbidden tokens in filenames, and that should
+                                // be dealt with by each ScriptInterpreter. For now, we just replace dots
+                                // with underscores, but if we ever support anything other than Python
+                                // we will need to rework this
+                                std::replace(module_basename.begin(), module_basename.end(), '.', '_');
+                                std::replace(module_basename.begin(), module_basename.end(), ' ', '_');
+                                std::replace(module_basename.begin(), module_basename.end(), '-', '_');
+                                
+
+                                StreamString path_string;
+                                // for OSX we are going to be in .dSYM/Contents/Resources/DWARF/<basename>
+                                // let us go to .dSYM/Contents/Resources/Python/<basename>.py and see if the file exists
+                                path_string.Printf("%s/../Python/%s.py",symfile_spec.GetDirectory().GetCString(), module_basename.c_str());
+                                FileSpec script_fspec(path_string.GetData(), true);
+                                if (script_fspec.Exists())
+                                {
+                                    file_list.Append (script_fspec);
+                                    break;
+                                }
+                                
+                                // If we didn't find the python file, then keep
+                                // stripping the extensions and try again
+                                ConstString filename_no_extension (module_spec.GetFileNameStrippingExtension());
+                                if (module_spec.GetFilename() == filename_no_extension)
+                                    break;
+                                
+                                module_spec.GetFilename() = filename_no_extension;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return file_list;
+}
 
 Error
 PlatformDarwin::ResolveExecutable (const FileSpec &exe_file,
@@ -117,10 +195,8 @@ PlatformDarwin::ResolveExecutable (const FileSpec &exe_file,
             if (error.Fail() || exe_module_sp.get() == NULL || exe_module_sp->GetObjectFile() == NULL)
             {
                 exe_module_sp.reset();
-                error.SetErrorStringWithFormat ("'%s%s%s' doesn't contain the architecture %s",
-                                                exe_file.GetDirectory().AsCString(""),
-                                                exe_file.GetDirectory() ? "/" : "",
-                                                exe_file.GetFilename().AsCString(""),
+                error.SetErrorStringWithFormat ("'%s' doesn't contain the architecture %s",
+                                                exe_file.GetPath().c_str(),
                                                 exe_arch.GetArchitectureName());
             }
         }
@@ -153,11 +229,9 @@ PlatformDarwin::ResolveExecutable (const FileSpec &exe_file,
             
             if (error.Fail() || !exe_module_sp)
             {
-                error.SetErrorStringWithFormat ("'%s%s%s' doesn't contain any '%s' platform architectures: %s",
-                                                exe_file.GetDirectory().AsCString(""),
-                                                exe_file.GetDirectory() ? "/" : "",
-                                                exe_file.GetFilename().AsCString(""),
-                                                GetShortPluginName(),
+                error.SetErrorStringWithFormat ("'%s' doesn't contain any '%s' platform architectures: %s",
+                                                exe_file.GetPath().c_str(),
+                                                GetPluginName().GetCString(),
                                                 arch_names.GetString().c_str());
             }
         }
@@ -166,6 +240,32 @@ PlatformDarwin::ResolveExecutable (const FileSpec &exe_file,
     return error;
 }
 
+Error
+PlatformDarwin::ResolveSymbolFile (Target &target,
+                                   const ModuleSpec &sym_spec,
+                                   FileSpec &sym_file)
+{
+    Error error;
+    sym_file = sym_spec.GetSymbolFileSpec();
+    if (sym_file.Exists())
+    {
+        if (sym_file.GetFileType() == FileSpec::eFileTypeDirectory)
+        {
+            sym_file = Symbols::FindSymbolFileInBundle (sym_file,
+                                                        sym_spec.GetUUIDPtr(),
+                                                        sym_spec.GetArchitecturePtr());
+        }
+    }
+    else
+    {
+        if (sym_spec.GetUUID().IsValid())
+        {
+            
+        }
+    }
+    return error;
+    
+}
 
 static lldb_private::Error
 MakeCacheFolderForFile (const FileSpec& module_cache_spec)
@@ -209,8 +309,7 @@ PlatformDarwin::GetSharedModuleWithLocalCache (const lldb_private::ModuleSpec &m
            module_spec.GetSymbolFileSpec().GetFilename().AsCString());
 
     std::string cache_path(GetLocalCacheDirectory());
-    std::string module_path;
-    module_spec.GetFileSpec().GetPath(module_path);
+    std::string module_path (module_spec.GetFileSpec().GetPath());
     cache_path.append(module_path);
     FileSpec module_cache_spec(cache_path.c_str(),false);
     
@@ -337,33 +436,52 @@ PlatformDarwin::GetSharedModule (const ModuleSpec &module_spec,
             FileSpec bundle_directory;
             if (Host::GetBundleDirectory (platform_file, bundle_directory))
             {
-                char platform_path[PATH_MAX];
-                char bundle_dir[PATH_MAX];
-                platform_file.GetPath (platform_path, sizeof(platform_path));
-                const size_t bundle_directory_len = bundle_directory.GetPath (bundle_dir, sizeof(bundle_dir));
-                char new_path[PATH_MAX];
-                size_t num_module_search_paths = module_search_paths_ptr->GetSize();
-                for (size_t i=0; i<num_module_search_paths; ++i)
+                if (platform_file == bundle_directory)
                 {
-                    const size_t search_path_len = module_search_paths_ptr->GetFileSpecAtIndex(i).GetPath(new_path, sizeof(new_path));
-                    if (search_path_len < sizeof(new_path))
+                    ModuleSpec new_module_spec (module_spec);
+                    new_module_spec.GetFileSpec() = bundle_directory;
+                    if (Host::ResolveExecutableInBundle (new_module_spec.GetFileSpec()))
                     {
-                        snprintf (new_path + search_path_len, sizeof(new_path) - search_path_len, "/%s", platform_path + bundle_directory_len);
-                        FileSpec new_file_spec (new_path, false);
-                        if (new_file_spec.Exists())
+                        Error new_error (Platform::GetSharedModule (new_module_spec,
+                                                                    module_sp,
+                                                                    NULL,
+                                                                    old_module_sp_ptr,
+                                                                    did_create_ptr));
+                        
+                        if (module_sp)
+                            return new_error;
+                    }
+                }
+                else
+                {
+                    char platform_path[PATH_MAX];
+                    char bundle_dir[PATH_MAX];
+                    platform_file.GetPath (platform_path, sizeof(platform_path));
+                    const size_t bundle_directory_len = bundle_directory.GetPath (bundle_dir, sizeof(bundle_dir));
+                    char new_path[PATH_MAX];
+                    size_t num_module_search_paths = module_search_paths_ptr->GetSize();
+                    for (size_t i=0; i<num_module_search_paths; ++i)
+                    {
+                        const size_t search_path_len = module_search_paths_ptr->GetFileSpecAtIndex(i).GetPath(new_path, sizeof(new_path));
+                        if (search_path_len < sizeof(new_path))
                         {
-                            ModuleSpec new_module_spec (module_spec);
-                            new_module_spec.GetFileSpec() = new_file_spec;
-                            Error new_error (Platform::GetSharedModule (new_module_spec,
-                                                                        module_sp,
-                                                                        NULL,
-                                                                        old_module_sp_ptr,
-                                                                        did_create_ptr));
-                            
-                            if (module_sp)
+                            snprintf (new_path + search_path_len, sizeof(new_path) - search_path_len, "/%s", platform_path + bundle_directory_len);
+                            FileSpec new_file_spec (new_path, false);
+                            if (new_file_spec.Exists())
                             {
-                                module_sp->SetPlatformFileSpec(new_file_spec);
-                                return new_error;
+                                ModuleSpec new_module_spec (module_spec);
+                                new_module_spec.GetFileSpec() = new_file_spec;
+                                Error new_error (Platform::GetSharedModule (new_module_spec,
+                                                                            module_sp,
+                                                                            NULL,
+                                                                            old_module_sp_ptr,
+                                                                            did_create_ptr));
+                                
+                                if (module_sp)
+                                {
+                                    module_sp->SetPlatformFileSpec(new_file_spec);
+                                    return new_error;
+                                }
                             }
                         }
                     }
@@ -508,7 +626,7 @@ PlatformDarwin::ConnectRemote (Args& args)
     Error error;
     if (IsHost())
     {
-        error.SetErrorStringWithFormat ("can't connect to the host platform '%s', always connected", GetShortPluginName());
+        error.SetErrorStringWithFormat ("can't connect to the host platform '%s', always connected", GetPluginName().GetCString());
     }
     else
     {
@@ -528,7 +646,7 @@ PlatformDarwin::ConnectRemote (Args& args)
     {
         if (m_options.get())
         {
-            OptionGroupOptions* options = (OptionGroupOptions*)m_options.get();
+            OptionGroupOptions* options = m_options.get();
             OptionGroupPlatformRSync* m_rsync_options = (OptionGroupPlatformRSync*)options->GetGroupWithOption('r');
             OptionGroupPlatformSSH* m_ssh_options = (OptionGroupPlatformSSH*)options->GetGroupWithOption('s');
             OptionGroupPlatformCaching* m_cache_options = (OptionGroupPlatformCaching*)options->GetGroupWithOption('c');
@@ -559,7 +677,7 @@ PlatformDarwin::DisconnectRemote ()
     
     if (IsHost())
     {
-        error.SetErrorStringWithFormat ("can't disconnect from the host platform '%s', always connected", GetShortPluginName());
+        error.SetErrorStringWithFormat ("can't disconnect from the host platform '%s', always connected", GetPluginName().GetCString());
     }
     else
     {
@@ -642,10 +760,9 @@ PlatformDarwin::Attach (ProcessAttachInfo &attach_info,
         if (target == NULL)
         {
             TargetSP new_target_sp;
-            FileSpec emptyFileSpec;
             
             error = debugger.GetTargetList().CreateTarget (debugger,
-                                                           emptyFileSpec,
+                                                           NULL,
                                                            NULL, 
                                                            false,
                                                            NULL,
@@ -730,7 +847,7 @@ PlatformDarwin::x86GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
     {
         ArchSpec platform_arch (Host::GetArchitecture (Host::eSystemDefaultArchitecture));
         ArchSpec platform_arch64 (Host::GetArchitecture (Host::eSystemDefaultArchitecture64));
-        if (platform_arch == platform_arch64)
+        if (platform_arch.IsExactMatch(platform_arch64))
         {
             // This macosx platform supports both 32 and 64 bit. Since we already
             // returned the 64 bit arch for idx == 0, return the 32 bit arch 
@@ -759,18 +876,22 @@ PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
             case  1: arch.SetTriple ("armv7f-apple-ios");   return true;
             case  2: arch.SetTriple ("armv7k-apple-ios");   return true;
             case  3: arch.SetTriple ("armv7s-apple-ios");   return true;
-            case  4: arch.SetTriple ("armv6-apple-ios");    return true;
-            case  5: arch.SetTriple ("armv5-apple-ios");    return true;
-            case  6: arch.SetTriple ("armv4-apple-ios");    return true;
-            case  7: arch.SetTriple ("arm-apple-ios");      return true;
-            case  8: arch.SetTriple ("thumbv7-apple-ios");  return true;
-            case  9: arch.SetTriple ("thumbv7f-apple-ios"); return true;
-            case 10: arch.SetTriple ("thumbv7k-apple-ios"); return true;
-            case 11: arch.SetTriple ("thumbv7s-apple-ios"); return true;
-            case 12: arch.SetTriple ("thumbv6-apple-ios");  return true;
-            case 13: arch.SetTriple ("thumbv5-apple-ios");  return true;
-            case 14: arch.SetTriple ("thumbv4t-apple-ios"); return true;
-            case 15: arch.SetTriple ("thumb-apple-ios");    return true;
+            case  4: arch.SetTriple ("armv7m-apple-ios");   return true;
+            case  5: arch.SetTriple ("armv7em-apple-ios");  return true;
+            case  6: arch.SetTriple ("armv6-apple-ios");    return true;
+            case  7: arch.SetTriple ("armv5-apple-ios");    return true;
+            case  8: arch.SetTriple ("armv4-apple-ios");    return true;
+            case  9: arch.SetTriple ("arm-apple-ios");      return true;
+            case 10: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case 11: arch.SetTriple ("thumbv7f-apple-ios"); return true;
+            case 12: arch.SetTriple ("thumbv7k-apple-ios"); return true;
+            case 13: arch.SetTriple ("thumbv7s-apple-ios"); return true;
+            case 14: arch.SetTriple ("thumbv7m-apple-ios"); return true;
+            case 15: arch.SetTriple ("thumbv7em-apple-ios"); return true;
+            case 16: arch.SetTriple ("thumbv6-apple-ios");  return true;
+            case 17: arch.SetTriple ("thumbv5-apple-ios");  return true;
+            case 18: arch.SetTriple ("thumbv4t-apple-ios"); return true;
+            case 19: arch.SetTriple ("thumb-apple-ios");    return true;
         default: break;
         }
         break;
@@ -823,6 +944,44 @@ PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
             case  4: arch.SetTriple ("armv4-apple-ios");    return true;
             case  5: arch.SetTriple ("arm-apple-ios");      return true;
             case  6: arch.SetTriple ("thumbv7s-apple-ios"); return true;
+            case  7: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case  8: arch.SetTriple ("thumbv6-apple-ios");  return true;
+            case  9: arch.SetTriple ("thumbv5-apple-ios");  return true;
+            case 10: arch.SetTriple ("thumbv4t-apple-ios"); return true;
+            case 11: arch.SetTriple ("thumb-apple-ios");    return true;
+            default: break;
+        }
+        break;
+
+    case ArchSpec::eCore_arm_armv7m:
+        switch (idx)
+        {
+            case  0: arch.SetTriple ("armv7m-apple-ios");   return true;
+            case  1: arch.SetTriple ("armv7-apple-ios");    return true;
+            case  2: arch.SetTriple ("armv6-apple-ios");    return true;
+            case  3: arch.SetTriple ("armv5-apple-ios");    return true;
+            case  4: arch.SetTriple ("armv4-apple-ios");    return true;
+            case  5: arch.SetTriple ("arm-apple-ios");      return true;
+            case  6: arch.SetTriple ("thumbv7m-apple-ios"); return true;
+            case  7: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case  8: arch.SetTriple ("thumbv6-apple-ios");  return true;
+            case  9: arch.SetTriple ("thumbv5-apple-ios");  return true;
+            case 10: arch.SetTriple ("thumbv4t-apple-ios"); return true;
+            case 11: arch.SetTriple ("thumb-apple-ios");    return true;
+            default: break;
+        }
+        break;
+
+    case ArchSpec::eCore_arm_armv7em:
+        switch (idx)
+        {
+            case  0: arch.SetTriple ("armv7em-apple-ios");   return true;
+            case  1: arch.SetTriple ("armv7-apple-ios");    return true;
+            case  2: arch.SetTriple ("armv6-apple-ios");    return true;
+            case  3: arch.SetTriple ("armv5-apple-ios");    return true;
+            case  4: arch.SetTriple ("armv4-apple-ios");    return true;
+            case  5: arch.SetTriple ("arm-apple-ios");      return true;
+            case  6: arch.SetTriple ("thumbv7em-apple-ios"); return true;
             case  7: arch.SetTriple ("thumbv7-apple-ios");  return true;
             case  8: arch.SetTriple ("thumbv6-apple-ios");  return true;
             case  9: arch.SetTriple ("thumbv5-apple-ios");  return true;
@@ -944,6 +1103,43 @@ PlatformDarwin::GetDeveloperDirectory()
             }
         }
         
+        if (!developer_dir_path_valid)
+        {
+            FileSpec xcode_select_cmd ("/usr/bin/xcode-select", false);
+            if (xcode_select_cmd.Exists())
+            {
+                int exit_status = -1;
+                int signo = -1;
+                std::string command_output;
+                Error error = Host::RunShellCommand ("/usr/bin/xcode-select --print-path", 
+                                                     NULL,                                 // current working directory
+                                                     &exit_status,
+                                                     &signo,
+                                                     &command_output,
+                                                     2,                                     // short timeout
+                                                     NULL);                                 // don't run in a shell
+                if (error.Success() && exit_status == 0 && !command_output.empty())
+                {
+                    const char *cmd_output_ptr = command_output.c_str();
+                    developer_dir_path[sizeof (developer_dir_path) - 1] = '\0';
+                    int i;
+                    for (i = 0; i < sizeof (developer_dir_path) - 1; i++)
+                    {
+                        if (cmd_output_ptr[i] == '\r' || cmd_output_ptr[i] == '\n' || cmd_output_ptr[i] == '\0')
+                            break;
+                        developer_dir_path[i] = cmd_output_ptr[i];
+                    }
+                    developer_dir_path[i] = '\0';
+
+                    FileSpec devel_dir (developer_dir_path, false);
+                    if (devel_dir.Exists() && devel_dir.IsDirectory())
+                    {
+                        developer_dir_path_valid = true;
+                    }
+                }
+            }
+        }
+
         if (developer_dir_path_valid)
         {
             temp_file_spec.SetFile (developer_dir_path, false);
@@ -1000,7 +1196,19 @@ PlatformDarwin::SetThreadCreationBreakpoint (Target &target)
                                      eFunctionNameTypeFull,
                                      skip_prologue,
                                      internal);
+    bp_sp->SetBreakpointKind("thread-creation");
 
     return bp_sp;
 }
 
+size_t
+PlatformDarwin::GetEnvironment (StringList &env)
+{
+    if (IsRemote())
+    {
+        if (m_remote_platform_sp)
+            return m_remote_platform_sp->GetEnvironment(env);
+        return 0;
+    }
+    return Host::GetEnvironment(env);
+}

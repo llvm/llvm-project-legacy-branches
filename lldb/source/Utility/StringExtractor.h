@@ -45,10 +45,10 @@ public:
     bool
     IsGood() const
     {
-        return m_index != UINT32_MAX;
+        return m_index != UINT64_MAX;
     }
 
-    uint32_t
+    uint64_t
     GetFilePos () const
     {
         return m_index;
@@ -73,13 +73,19 @@ public:
         return m_packet;
     }
 
+    const std::string &
+    GetStringRef () const
+    {
+        return m_packet;
+    }
+
     bool
     Empty()
     {
         return m_packet.empty();
     }
 
-    uint32_t
+    size_t
     GetBytesLeft ()
     {
         if (m_index < m_packet.size())
@@ -89,17 +95,23 @@ public:
     char
     GetChar (char fail_value = '\0');
 
-    int8_t
-    GetHexS8 (int8_t fail_value = 0);
-
     uint8_t
     GetHexU8 (uint8_t fail_value = 0, bool set_eof_on_fail = true);
 
     bool
     GetNameColonValue (std::string &name, std::string &value);
 
+    int32_t
+    GetS32 (int32_t fail_value, int base = 0);
+
     uint32_t
     GetU32 (uint32_t fail_value, int base = 0);
+
+    int64_t
+    GetS64 (int64_t fail_value, int base = 0);
+    
+    uint64_t
+    GetU64 (uint64_t fail_value, int base = 0);
 
     uint32_t
     GetHexMaxU32 (bool little_endian, uint32_t fail_value);
@@ -133,13 +145,10 @@ protected:
     // For StringExtractor only
     //------------------------------------------------------------------
     std::string m_packet;   // The string in which to extract data.
-    uint32_t m_index;       // When extracting data from a packet, this index
+    uint64_t m_index;       // When extracting data from a packet, this index
                             // will march along as things get extracted. If set
-                            // to UINT32_MAX the end of the packet data was
+                            // to UINT64_MAX the end of the packet data was
                             // reached when decoding information
-
-    uint32_t
-    GetNumHexASCIICharsAtFilePos (uint32_t max = UINT32_MAX) const;
 };
 
 #endif  // utility_StringExtractor_h_

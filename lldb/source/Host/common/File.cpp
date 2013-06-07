@@ -89,9 +89,7 @@ File::File (const FileSpec& filespec,
 {
     if (filespec)
     {
-        std::string path;
-        filespec.GetPath(path);
-        Open (path.c_str(), options, permissions);
+        Open (filespec.GetPath().c_str(), options, permissions);
     }
 }
 
@@ -263,6 +261,53 @@ File::Open (const char *path, uint32_t options, uint32_t permissions)
     return error;
 }
 
+uint32_t
+File::GetPermissions (const char *path, Error &error)
+{
+    if (path && path[0])
+    {
+        struct stat file_stats;
+        if (::stat (path, &file_stats) == -1)
+            error.SetErrorToErrno();
+        else
+        {
+            error.Clear();
+            return file_stats.st_mode; // All bits from lldb_private::File::Permissions match those in POSIX mode bits
+        }
+    }
+    else
+    {
+        if (path)
+            error.SetErrorString ("invalid path");
+        else
+            error.SetErrorString ("empty path");        
+    }
+    return 0;
+}
+
+uint32_t
+File::GetPermissions(Error &error) const
+{
+    int fd = GetDescriptor();
+    if (fd != kInvalidDescriptor)
+    {
+        struct stat file_stats;
+        if (::fstat (fd, &file_stats) == -1)
+            error.SetErrorToErrno();
+        else
+        {
+            error.Clear();
+            return file_stats.st_mode; // All bits from lldb_private::File::Permissions match those in POSIX mode bits
+        }
+    }
+    else
+    {
+        error.SetErrorString ("invalid file descriptor");
+    }
+    return 0;
+}
+
+
 Error
 File::Close ()
 {
@@ -334,58 +379,109 @@ File::GetFileSpec (FileSpec &file_spec) const
     return error;
 }
 
-Error
-File::SeekFromStart (off_t& offset)
+off_t
+File::SeekFromStart (off_t offset, Error *error_ptr)
 {
-    Error error;
+    off_t result = 0;
     if (DescriptorIsValid())
     {
-        offset = ::lseek (m_descriptor, offset, SEEK_SET);
+        result = ::lseek (m_descriptor, offset, SEEK_SET);
 
-        if (offset == -1)
-            error.SetErrorToErrno();
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    else 
+    else if (StreamIsValid ())
     {
-        error.SetErrorString("invalid file handle");
+        result = ::fseek(m_stream, offset, SEEK_SET);
+        
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    return error;
+    else if (error_ptr)
+    {
+        error_ptr->SetErrorString("invalid file handle");
+    }
+    return result;
 }
 
-Error
-File::SeekFromCurrent (off_t& offset)
+off_t
+File::SeekFromCurrent (off_t offset,  Error *error_ptr)
 {
-    Error error;
+    off_t result = -1;
     if (DescriptorIsValid())
     {
-        offset = ::lseek (m_descriptor, offset, SEEK_CUR);
+        result = ::lseek (m_descriptor, offset, SEEK_CUR);
         
-        if (offset == -1)
-            error.SetErrorToErrno();
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    else 
+    else if (StreamIsValid ())
     {
-        error.SetErrorString("invalid file handle");
+        result = ::fseek(m_stream, offset, SEEK_CUR);
+        
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    return error;
+    else if (error_ptr)
+    {
+        error_ptr->SetErrorString("invalid file handle");
+    }
+    return result;
 }
 
-Error
-File::SeekFromEnd (off_t& offset)
+off_t
+File::SeekFromEnd (off_t offset, Error *error_ptr)
 {
-    Error error;
+    off_t result = -1;
     if (DescriptorIsValid())
     {
-        offset = ::lseek (m_descriptor, offset, SEEK_CUR);
+        result = ::lseek (m_descriptor, offset, SEEK_END);
         
-        if (offset == -1)
-            error.SetErrorToErrno();
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    else 
+    else if (StreamIsValid ())
     {
-        error.SetErrorString("invalid file handle");
+        result = ::fseek(m_stream, offset, SEEK_END);
+        
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    return error;
+    else if (error_ptr)
+    {
+        error_ptr->SetErrorString("invalid file handle");
+    }
+    return result;
 }
 
 Error
@@ -554,7 +650,7 @@ File::Read (void *buf, size_t &num_bytes, off_t &offset)
 }
 
 Error
-File::Read (size_t &num_bytes, off_t &offset, DataBufferSP &data_buffer_sp)
+File::Read (size_t &num_bytes, off_t &offset, bool null_terminate, DataBufferSP &data_buffer_sp)
 {
     Error error;
     
@@ -572,8 +668,8 @@ File::Read (size_t &num_bytes, off_t &offset, DataBufferSP &data_buffer_sp)
                     if (num_bytes > bytes_left)
                         num_bytes = bytes_left;
                         
-                    std::auto_ptr<DataBufferHeap> data_heap_ap;
-                    data_heap_ap.reset(new DataBufferHeap(num_bytes, '\0'));
+                    std::unique_ptr<DataBufferHeap> data_heap_ap;
+                    data_heap_ap.reset(new DataBufferHeap(num_bytes + (null_terminate ? 1 : 0), '\0'));
                         
                     if (data_heap_ap.get())
                     {
@@ -641,12 +737,12 @@ File::Write (const void *buf, size_t &num_bytes, off_t &offset)
 //------------------------------------------------------------------
 // Print some formatted output to the stream.
 //------------------------------------------------------------------
-int
+size_t
 File::Printf (const char *format, ...)
 {
     va_list args;
     va_start (args, format);
-    int result = PrintfVarArg (format, args);
+    size_t result = PrintfVarArg (format, args);
     va_end (args);
     return result;
 }
@@ -654,10 +750,10 @@ File::Printf (const char *format, ...)
 //------------------------------------------------------------------
 // Print some formatted output to the stream.
 //------------------------------------------------------------------
-int
+size_t
 File::PrintfVarArg (const char *format, va_list args)
 {
-    int result = 0;
+    size_t result = 0;
     if (DescriptorIsValid())
     {
         char *s = NULL;
@@ -679,3 +775,51 @@ File::PrintfVarArg (const char *format, va_list args)
     }
     return result;
 }
+
+mode_t
+File::ConvertOpenOptionsForPOSIXOpen (uint32_t open_options)
+{
+    mode_t mode = 0;
+    if (open_options & eOpenOptionRead && open_options & eOpenOptionWrite)
+        mode |= O_RDWR;
+    else if (open_options & eOpenOptionWrite)
+        mode |= O_WRONLY;
+    
+    if (open_options & eOpenOptionAppend)
+        mode |= O_APPEND;
+
+    if (open_options & eOpenOptionTruncate)
+        mode |= O_TRUNC;
+
+    if (open_options & eOpenOptionNonBlocking)
+        mode |= O_NONBLOCK;
+
+    if (open_options & eOpenOptionCanCreateNewOnly)
+        mode |= O_CREAT | O_EXCL;
+    else if (open_options & eOpenOptionCanCreate)
+        mode |= O_CREAT;
+
+    return mode;
+}
+
+#define	O_RDONLY	0x0000		/* open for reading only */
+#define	O_WRONLY	0x0001		/* open for writing only */
+#define	O_RDWR		0x0002		/* open for reading and writing */
+#define	O_ACCMODE	0x0003		/* mask for above modes */
+#define	O_NONBLOCK	0x0004		/* no delay */
+#define	O_APPEND	0x0008		/* set append mode */
+#define	O_SYNC		0x0080		/* synch I/O file integrity */
+#define	O_SHLOCK	0x0010		/* open with shared file lock */
+#define	O_EXLOCK	0x0020		/* open with exclusive file lock */
+#define	O_ASYNC		0x0040		/* signal pgrp when data ready */
+#define	O_FSYNC		O_SYNC		/* source compatibility: do not use */
+#define O_NOFOLLOW  0x0100      /* don't follow symlinks */
+#define	O_CREAT		0x0200		/* create if nonexistant */
+#define	O_TRUNC		0x0400		/* truncate to zero length */
+#define	O_EXCL		0x0800		/* error if already exists */
+#define	O_EVTONLY	0x8000		/* descriptor requested for event notifications only */
+#define	O_NOCTTY	0x20000		/* don't assign controlling terminal */
+#define O_DIRECTORY	0x100000
+#define O_SYMLINK	0x200000	/* allow open of a symlink */
+#define O_DSYNC 	0x400000	/* synch I/O data integrity */
+#define	O_CLOEXEC	0x1000000	/* implicitly set FD_CLOEXEC */

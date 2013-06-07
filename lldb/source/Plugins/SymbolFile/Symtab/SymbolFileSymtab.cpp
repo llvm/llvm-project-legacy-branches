@@ -12,13 +12,15 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/Timer.h"
+#include "lldb/Symbol/ClangExternalASTSourceCommon.h"
+#include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/ObjectFile.h"
-#include "lldb/Symbol/Symtab.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/Symbol.h"
-#include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/SymbolContext.h"
-#include "lldb/Symbol/Function.h"
+#include "lldb/Symbol/Symtab.h"
+#include "lldb/Symbol/TypeList.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -38,10 +40,11 @@ SymbolFileSymtab::Terminate()
 }
 
 
-const char *
+lldb_private::ConstString
 SymbolFileSymtab::GetPluginNameStatic()
 {
-    return "symbol-file.symtab";
+    static ConstString g_name("symtab");
+    return g_name;
 }
 
 const char *
@@ -156,6 +159,13 @@ SymbolFileSymtab::ParseCompileUnitAtIndex(uint32_t idx)
     }
     return cu_sp;
 }
+
+lldb::LanguageType
+SymbolFileSymtab::ParseCompileUnitLanguage (const SymbolContext& sc)
+{
+    return eLanguageTypeUnknown;
+}
+
 
 size_t
 SymbolFileSymtab::ParseCompileUnitFunctions (const SymbolContext &sc)
@@ -372,76 +382,14 @@ SymbolFileSymtab::FindTypes (const lldb_private::SymbolContext& sc,
                              uint32_t max_matches, 
                              lldb_private::TypeList& types)
 {
-    if (!append)
-        types.Clear();
-        
-    if (!m_objc_class_name_to_index.IsEmpty())
-    {
-        TypeMap::iterator iter = m_objc_class_types.find(name);
-        
-        if (iter != m_objc_class_types.end())
-        {
-            types.Insert(iter->second);
-            return 1;
-        }
-        
-        const Symtab::NameToIndexMap::Entry *match = m_objc_class_name_to_index.FindFirstValueForName(name.GetCString());
-        
-        if (match == NULL)
-            return 0;
-                    
-        const bool isForwardDecl = false;
-        const bool isInternal = true;
-        
-        ClangASTContext &ast = GetClangASTContext();
-        
-        lldb::clang_type_t objc_object_type = ast.CreateObjCClass (name.AsCString(), 
-                                                                   ast.GetTranslationUnitDecl(), 
-                                                                   isForwardDecl, 
-                                                                   isInternal,
-                                                                   0xffaaffaaffaaffaall);
-        
-        Declaration decl;
-        
-        lldb::TypeSP type(new Type (match->value,
-                                    this,
-                                    name,
-                                    0,      // byte_size - don't change this from 0, we currently use that to identify these "synthetic" ObjC class types.
-                                    NULL,   // SymbolContextScope*
-                                    0,      // encoding_uid
-                                    Type::eEncodingInvalid,
-                                    decl,
-                                    objc_object_type,
-                                    Type::eResolveStateFull));
-        
-        m_objc_class_types[name] = type;
-        
-        types.Insert(type);
-        
-        return 1;
-    }
-
     return 0;
 }
-//
-//uint32_t
-//SymbolFileSymtab::FindTypes(const SymbolContext& sc, const RegularExpression& regex, bool append, uint32_t max_matches, TypeList& types)
-//{
-//  return 0;
-//}
-
 
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+lldb_private::ConstString
 SymbolFileSymtab::GetPluginName()
-{
-    return "SymbolFileSymtab";
-}
-
-const char *
-SymbolFileSymtab::GetShortPluginName()
 {
     return GetPluginNameStatic();
 }

@@ -26,7 +26,9 @@
 
 namespace lldb_private {
 
-class CommandInterpreter : public Broadcaster
+class CommandInterpreter :
+    public Broadcaster,
+    public Properties
 {
 public:
     typedef std::map<std::string, OptionArgVectorSP> OptionArgMap;
@@ -112,6 +114,9 @@ public:
 
     bool
     RemoveAlias (const char *alias_name);
+    
+    bool
+    GetAliasFullName (const char *cmd, std::string &full_name);
 
     bool
     RemoveUser (const char *alias_name);
@@ -276,7 +281,7 @@ public:
                              const char *command_word,
                              const char *separator,
                              const char *help_text,
-                             uint32_t max_word_len);
+                             size_t max_word_len);
     
     // this mimics OutputFormattedHelpText but it does perform a much simpler
     // formatting, basically ensuring line alignment. This is only good if you have
@@ -285,10 +290,10 @@ public:
     // and have it printed in a reasonable way on screen. If so, use OutputFormattedHelpText 
     void
     OutputHelpText (Stream &stream,
-                             const char *command_word,
-                             const char *separator,
-                             const char *help_text,
-                             uint32_t max_word_len);
+                    const char *command_word,
+                    const char *separator,
+                    const char *help_text,
+                    uint32_t max_word_len);
 
     Debugger &
     GetDebugger ()
@@ -333,10 +338,6 @@ public:
     Initialize ();
 
     void
-    CrossRegisterCommand (const char *dest_cmd, 
-                          const char *object_type);
-
-    void
     SetScriptLanguage (lldb::ScriptLanguage lang);
 
 
@@ -363,7 +364,7 @@ public:
     GetOptionArgumentPosition (const char *in_string);
 
     ScriptInterpreter *
-    GetScriptInterpreter ();
+    GetScriptInterpreter (bool can_create = true);
 
     void
     SkipLLDBInitFiles (bool skip_lldbinit_files)
@@ -389,34 +390,15 @@ public:
     const char *
     FindHistoryString (const char *input_str) const;
 
-
-#ifndef SWIG
-    void
-    AddLogChannel (const char *name, 
-                   const Log::Callbacks &log_callbacks);
-
-    bool
-    GetLogChannelCallbacks (const char *channel, 
-                            Log::Callbacks &log_callbacks);
-
-    bool
-    RemoveLogChannel (const char *name);
-#endif
-
     size_t
     FindLongestCommandWord (CommandObject::CommandMap &dict);
 
     void
     FindCommandsForApropos (const char *word, 
                             StringList &commands_found, 
-                            StringList &commands_help);
-
-    void
-    AproposAllSubCommands (CommandObject *cmd_obj, 
-                           const char *prefix, 
-                           const char *search_word, 
-                           StringList &commands_found, 
-                           StringList &commands_help);
+                            StringList &commands_help,
+                            bool search_builtin_commands,
+                            bool search_user_commands);
                            
     bool
     GetBatchCommandMode () { return m_batch_command_mode; }
@@ -449,6 +431,15 @@ public:
         return "*** Some of your variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to %s or raise the limit by changing the target.max-children-count setting.\n";
     }
     
+    //------------------------------------------------------------------
+    // Properties
+    //------------------------------------------------------------------
+    bool
+    GetExpandRegexAliases () const;
+    
+    bool
+    GetPromptOnQuit () const;
+
 protected:
     friend class Debugger;
 
@@ -474,7 +465,7 @@ private:
     OptionArgMap m_alias_options;               // Stores any options (with or without arguments) that go with any alias.
     std::vector<std::string> m_command_history;
     std::string m_repeat_command;               // Stores the command that will be executed for an empty command string.
-    std::auto_ptr<ScriptInterpreter> m_script_interpreter_ap;
+    std::unique_ptr<ScriptInterpreter> m_script_interpreter_ap;
     char m_comment_char;
     char m_repeat_char;
     bool m_batch_command_mode;

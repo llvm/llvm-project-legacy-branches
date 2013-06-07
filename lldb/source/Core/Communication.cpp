@@ -108,7 +108,7 @@ Communication::Disconnect (Error *error_ptr)
         // don't want to pay for the overhead it might cause if every time we
         // access the connection we have to take a lock.
         //
-        // This auto_ptr will cleanup after itself when this object goes away,
+        // This unique pointer will cleanup after itself when this object goes away,
         // so there is no need to currently have it destroy itself immediately
         // upon disconnnect.
         //connection_sp.reset();
@@ -136,10 +136,10 @@ size_t
 Communication::Read (void *dst, size_t dst_len, uint32_t timeout_usec, ConnectionStatus &status, Error *error_ptr)
 {
     lldb_private::LogIfAnyCategoriesSet (LIBLLDB_LOG_COMMUNICATION,
-                                         "%p Communication::Read (dst = %p, dst_len = %zu, timeout = %u usec) connection = %p",
+                                         "%p Communication::Read (dst = %p, dst_len = %" PRIu64 ", timeout = %u usec) connection = %p",
                                          this, 
                                          dst, 
-                                         dst_len, 
+                                         (uint64_t)dst_len,
                                          timeout_usec, 
                                          m_connection_sp.get());
 
@@ -208,12 +208,12 @@ Communication::Write (const void *src, size_t src_len, ConnectionStatus &status,
 {
     lldb::ConnectionSP connection_sp (m_connection_sp);
 
-    Mutex::Locker (m_write_mutex);
+    Mutex::Locker locker(m_write_mutex);
     lldb_private::LogIfAnyCategoriesSet (LIBLLDB_LOG_COMMUNICATION,
-                                         "%p Communication::Write (src = %p, src_len = %zu) connection = %p",
+                                         "%p Communication::Write (src = %p, src_len = %" PRIu64 ") connection = %p",
                                          this, 
                                          src, 
-                                         src_len, 
+                                         (uint64_t)src_len,
                                          connection_sp.get());
 
     if (connection_sp.get())
@@ -295,8 +295,8 @@ void
 Communication::AppendBytesToCache (const uint8_t * bytes, size_t len, bool broadcast, ConnectionStatus status)
 {
     lldb_private::LogIfAnyCategoriesSet (LIBLLDB_LOG_COMMUNICATION,
-                                 "%p Communication::AppendBytesToCache (src = %p, src_len = %zu, broadcast = %i)",
-                                 this, bytes, len, broadcast);
+                                 "%p Communication::AppendBytesToCache (src = %p, src_len = %" PRIu64 ", broadcast = %i)",
+                                 this, bytes, (uint64_t)len, broadcast);
     if ((bytes == NULL || len == 0)
         && (status != lldb::eConnectionStatusEndOfFile))
         return;
@@ -338,7 +338,7 @@ Communication::ReadThread (void *p)
 {
     Communication *comm = (Communication *)p;
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_COMMUNICATION));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_COMMUNICATION));
 
     if (log)
         log->Printf ("%p Communication::ReadThread () thread starting...", p);
@@ -374,14 +374,13 @@ Communication::ReadThread (void *p)
         case eConnectionStatusLostConnection:   // Lost connection while connected to a valid connection
             done = true;
             // Fall through...
-        default:
         case eConnectionStatusError:            // Check GetError() for details
         case eConnectionStatusTimedOut:         // Request timed out
             if (log)
-                error.LogIfError(log.get(), 
-                                 "%p Communication::ReadFromConnection () => status = %s", 
-                                 p, 
-                                 Communication::ConnectionStatusAsCString (status));
+                error.LogIfError (log,
+                                  "%p Communication::ReadFromConnection () => status = %s",
+                                  p,
+                                  Communication::ConnectionStatusAsCString (status));
             break;
         }
     }

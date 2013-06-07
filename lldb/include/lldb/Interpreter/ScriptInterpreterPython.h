@@ -39,7 +39,9 @@ public:
     ~ScriptInterpreterPython ();
 
     bool
-    ExecuteOneLine (const char *command, CommandReturnObject *result, bool enable_io);
+    ExecuteOneLine (const char *command,
+                    CommandReturnObject *result,
+                    const ExecuteScriptOptions &options = ExecuteScriptOptions());
 
     void
     ExecuteInterpreterLoop ();
@@ -48,10 +50,11 @@ public:
     ExecuteOneLineWithReturn (const char *in_string, 
                               ScriptInterpreter::ScriptReturnType return_type,
                               void *ret_value,
-                              bool enable_io);
+                              const ExecuteScriptOptions &options = ExecuteScriptOptions());
 
     bool
-    ExecuteMultipleLines (const char *in_string, bool enable_io);
+    ExecuteMultipleLines (const char *in_string,
+                          const ExecuteScriptOptions &options = ExecuteScriptOptions());
 
     bool
     ExportFunctionDefinitionToInterpreter (StringList &function_def);
@@ -73,10 +76,29 @@ public:
     GenerateScriptAliasFunction (StringList &input, std::string& output);
     
     lldb::ScriptInterpreterObjectSP
-    CreateSyntheticScriptedProvider (std::string class_name,
+    CreateSyntheticScriptedProvider (const char *class_name,
                                      lldb::ValueObjectSP valobj);
     
-    virtual uint32_t
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_CreatePluginObject (const char *class_name,
+                                 lldb::ProcessSP process_sp);
+    
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_RegisterInfo (lldb::ScriptInterpreterObjectSP os_plugin_object_sp);
+    
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_ThreadsInfo (lldb::ScriptInterpreterObjectSP os_plugin_object_sp);
+    
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_RegisterContextData (lldb::ScriptInterpreterObjectSP os_plugin_object_sp,
+                                  lldb::tid_t thread_id);
+    
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_CreateThread (lldb::ScriptInterpreterObjectSP os_plugin_object_sp,
+                           lldb::tid_t tid,
+                           lldb::addr_t context);
+    
+    virtual size_t
     CalculateNumChildren (const lldb::ScriptInterpreterObjectSP& implementor);
     
     virtual lldb::ValueObjectSP
@@ -87,6 +109,9 @@ public:
     
     virtual bool
     UpdateSynthProviderInstance (const lldb::ScriptInterpreterObjectSP& implementor);
+    
+    virtual bool
+    MightHaveChildrenSynthProviderInstance (const lldb::ScriptInterpreterObjectSP& implementor);
     
     virtual bool
     RunScriptBasedCommand(const char* impl_function,
@@ -135,16 +160,29 @@ public:
                         lldb::ScriptInterpreterObjectSP& callee_wrapper_sp,
                         std::string& retval);
     
-    virtual std::string
-    GetDocumentationForItem (const char* item);
+    virtual bool
+    GetDocumentationForItem (const char* item, std::string& dest);
+    
+    virtual bool
+    CheckObjectExists (const char* name)
+    {
+        if (!name || !name[0])
+            return false;
+        std::string temp;
+        return GetDocumentationForItem (name,temp);
+    }
     
     virtual bool
     LoadScriptingModule (const char* filename,
                          bool can_reload,
+                         bool init_session,
                          lldb_private::Error& error);
     
     virtual lldb::ScriptInterpreterObjectSP
     MakeScriptObject (void* object);
+    
+    virtual std::unique_ptr<ScriptInterpreterLocker>
+    AcquireInterpreterLock ();
     
     void
     CollectDataForBreakpointCommandCallback (BreakpointOptions *bp_options,
@@ -181,8 +219,8 @@ public:
 
 protected:
 
-    void
-    EnterSession ();
+    bool
+    EnterSession (bool init_lldb_globals);
     
     void
     LeaveSession ();
@@ -220,6 +258,12 @@ private:
             Py_XINCREF(m_object);
         }
         
+        operator bool ()
+        {
+            return m_object && m_object != Py_None;
+        }
+        
+        
         virtual
         ~ScriptInterpreterPythonObject()
         {
@@ -230,14 +274,15 @@ private:
             DISALLOW_COPY_AND_ASSIGN (ScriptInterpreterPythonObject);
     };
     
-	class Locker
+	class Locker : public ScriptInterpreterLocker
 	{
 	public:
         
         enum OnEntry
         {
             AcquireLock         = 0x0001,
-            InitSession         = 0x0002
+            InitSession         = 0x0002,
+            InitGlobals         = 0x0004
         };
         
         enum OnLeave
@@ -253,34 +298,28 @@ private:
                 FILE* wait_msg_handle = NULL);
         
     	~Locker ();
-    
-        static bool
-        CurrentThreadHasPythonLock ();
-        
+
 	private:
         
         bool
         DoAcquireLock ();
         
         bool
-        DoInitSession ();
+        DoInitSession (bool init_lldb_globals);
         
         bool
         DoFreeLock ();
         
         bool
         DoTearDownSession ();
-        
-        static bool
-        TryGetPythonLock (uint32_t seconds_to_wait);
-        
+
         static void
         ReleasePythonLock ();
         
-    	bool                     m_need_session;
-    	bool                     m_release_lock;
+    	bool                     m_teardown_session;
     	ScriptInterpreterPython *m_python_interpreter;
     	FILE*                    m_tmp_fh;
+        PyGILState_STATE         m_GILState;
 	};
     
     class PythonInputReaderManager
@@ -321,8 +360,10 @@ private:
                          size_t bytes_len);
 
 
+    lldb_utility::PseudoTerminal m_embedded_thread_pty;
     lldb_utility::PseudoTerminal m_embedded_python_pty;
     lldb::InputReaderSP m_embedded_thread_input_reader_sp;
+    lldb::InputReaderSP m_embedded_python_input_reader_sp;
     FILE *m_dbg_stdout;
     PyObject *m_new_sysout;
     PyObject *m_old_sysout;
@@ -333,7 +374,7 @@ private:
     bool m_session_is_active;
     bool m_pty_slave_is_open;
     bool m_valid_session;
-                         
+    PyThreadState *m_command_thread_state;
 };
 } // namespace lldb_private
 

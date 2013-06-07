@@ -43,18 +43,26 @@ public:
     virtual lldb::user_id_t
     OpenFile (const lldb_private::FileSpec& file_spec,
               uint32_t flags,
-              mode_t mode);
+              mode_t mode,
+              lldb_private::Error &error);
     
     virtual bool
-    CloseFile (lldb::user_id_t fd);
+    CloseFile (lldb::user_id_t fd,
+               lldb_private::Error &error);
     
-    virtual uint32_t
-    ReadFile (lldb::user_id_t fd, uint64_t offset,
-              void *data_ptr, size_t len);
+    virtual uint64_t
+    ReadFile (lldb::user_id_t fd,
+              uint64_t offset,
+              void *dst,
+              uint64_t dst_len,
+              lldb_private::Error &error);
     
-    virtual uint32_t
-    WriteFile (lldb::user_id_t fd, uint64_t offset,
-               void* data, size_t len);
+    virtual uint64_t
+    WriteFile (lldb::user_id_t fd,
+               uint64_t offset,
+               const void* src,
+               uint64_t src_len,
+               lldb_private::Error &error);
     
     virtual lldb::user_id_t
     GetFileSize (const lldb_private::FileSpec& file_spec);
@@ -78,6 +86,10 @@ public:
     virtual bool
     GetFileExists (const lldb_private::FileSpec& file_spec);
     
+    virtual uint32_t
+    GetFilePermissions (const lldb_private::FileSpec &file_spec,
+                        lldb_private::Error &error);
+
     virtual std::string
     GetPlatformSpecificConnectionInformation();
     

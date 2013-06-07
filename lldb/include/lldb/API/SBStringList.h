@@ -50,6 +50,7 @@ public:
 
 protected:
     friend class SBCommandInterpreter;
+    friend class SBDebugger;
 
     SBStringList (const lldb_private::StringList *lldb_strings);
 
@@ -61,7 +62,7 @@ protected:
 
 private:
 
-    std::auto_ptr<lldb_private::StringList> m_opaque_ap;
+    std::unique_ptr<lldb_private::StringList> m_opaque_ap;
 
 };
 

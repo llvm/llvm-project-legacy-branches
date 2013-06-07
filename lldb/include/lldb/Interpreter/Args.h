@@ -30,7 +30,7 @@ namespace lldb_private {
 typedef std::pair<int, std::string> OptionArgValue;
 typedef std::pair<std::string, OptionArgValue> OptionArgPair;
 typedef std::vector<OptionArgPair> OptionArgVector;
-typedef STD_SHARED_PTR(OptionArgVector) OptionArgVectorSP;
+typedef std::shared_ptr<OptionArgVector> OptionArgVectorSP;
 
 struct OptionArgElement
 {
@@ -268,7 +268,7 @@ public:
     //  FIXME: Handle the quote character somehow.
     //------------------------------------------------------------------
     void
-    SetArguments (int argc, const char **argv);
+    SetArguments (size_t argc, const char **argv);
 
     void
     SetArguments (const char **argv);
@@ -342,6 +342,12 @@ public:
     void
     Clear ();
 
+    static const char *
+    StripSpaces (std::string &s,
+                 bool leading = true,
+                 bool trailing = true,
+                 bool return_null_if_empty = true);
+
     static int32_t
     StringToSInt32 (const char *s, int32_t fail_value = 0, int base = 0, bool *success_ptr = NULL);
 
@@ -382,12 +388,15 @@ public:
     }
 
     static lldb::addr_t
-    StringToAddress (const char *s, lldb::addr_t fail_value = LLDB_INVALID_ADDRESS, bool *success_ptr = NULL);
+    StringToAddress (const ExecutionContext *exe_ctx,
+                     const char *s,
+                     lldb::addr_t fail_value,
+                     Error *error);
 
     static bool
     StringToBoolean (const char *s, bool fail_value, bool *success_ptr);
     
-    static int32_t
+    static int64_t
     StringToOptionEnum (const char *s, OptionEnumValueElement *enum_values, int32_t fail_value, Error &error);
 
     static lldb::ScriptLanguage
@@ -396,13 +405,39 @@ public:
     static Error
     StringToFormat (const char *s,
                     lldb::Format &format,
-                    uint32_t *byte_size_ptr); // If non-NULL, then a byte size can precede the format character
+                    size_t *byte_size_ptr); // If non-NULL, then a byte size can precede the format character
 
+    static lldb::Encoding
+    StringToEncoding (const char *s,
+                      lldb::Encoding fail_value = lldb::eEncodingInvalid);
+
+    static uint32_t
+    StringToGenericRegister (const char *s);
+    
     static const char *
     StringToVersion (const char *s, uint32_t &major, uint32_t &minor, uint32_t &update);
 
     static const char *
     GetShellSafeArgument (const char *unsafe_arg, std::string &safe_arg);
+
+    // EncodeEscapeSequences will change the textual representation of common
+    // escape sequences like "\n" (two characters) into a single '\n'. It does
+    // this for all of the supported escaped sequences and for the \0ooo (octal)
+    // and \xXX (hex). The resulting "dst" string will contain the character
+    // versions of all supported escape sequences. The common supported escape
+    // sequences are: "\a", "\b", "\f", "\n", "\r", "\t", "\v", "\'", "\"", "\\".
+
+    static void
+    EncodeEscapeSequences (const char *src, std::string &dst);
+
+    // ExpandEscapeSequences will change a string of possibly non-printable
+    // characters and expand them into text. So '\n' will turn into two chracters
+    // like "\n" which is suitable for human reading. When a character is not
+    // printable and isn't one of the common in escape sequences listed in the
+    // help for EncodeEscapeSequences, then it will be encoded as octal. Printable
+    // characters are left alone.
+    static void
+    ExpandEscapedCharacters (const char *src, std::string &dst);
 
     // This one isn't really relevant to Arguments per se, but we're using the Args as a
     // general strings container, so...

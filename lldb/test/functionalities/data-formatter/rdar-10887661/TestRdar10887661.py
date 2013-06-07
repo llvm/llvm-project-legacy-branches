@@ -6,13 +6,13 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class Rdar10887661TestCase(TestBase):
 
     mydir = os.path.join("functionalities", "data-formatter", "rdar-10887661")
 
     # rdar://problem/10887661
-    @unittest2.expectedFailure
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
     def test_with_dsym_and_run_command(self):
@@ -21,7 +21,6 @@ class Rdar10887661TestCase(TestBase):
         self.capping_test_commands()
 
     # rdar://problem/10887661
-    @unittest2.expectedFailure
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Check for an issue where capping does not work because the Target pointer appears to be changing behind our backs."""
@@ -38,10 +37,7 @@ class Rdar10887661TestCase(TestBase):
         """Check for an issue where capping does not work because the Target pointer appears to be changing behind our backs."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 

@@ -38,6 +38,8 @@
 using namespace lldb;
 using namespace lldb_private;
 
+#define PO_FUNCTION_TIMEOUT_USEC 15*1000*1000
+
 bool
 AppleObjCRuntime::GetObjectDescription (Stream &str, ValueObject &valobj)
 {
@@ -134,17 +136,19 @@ AppleObjCRuntime::GetObjectDescription (Stream &strm, Value &value, ExecutionCon
     lldb::addr_t wrapper_struct_addr = LLDB_INVALID_ADDRESS;
     func.InsertFunction(exe_ctx, wrapper_struct_addr, error_stream);
 
-    bool unwind_on_error = true;
-    bool try_all_threads = true;
-    bool stop_others = true;
+    const bool unwind_on_error = true;
+    const bool try_all_threads = true;
+    const bool stop_others = true;
+    const bool ignore_breakpoints = true;
     
     ExecutionResults results = func.ExecuteFunction (exe_ctx, 
                                                      &wrapper_struct_addr, 
                                                      error_stream, 
                                                      stop_others, 
-                                                     0 /* no timeout */,
+                                                     PO_FUNCTION_TIMEOUT_USEC /* 15 secs timeout */,
                                                      try_all_threads, 
-                                                     unwind_on_error, 
+                                                     unwind_on_error,
+                                                     ignore_breakpoints,
                                                      ret);
     if (results != eExecutionCompleted)
     {
@@ -168,12 +172,36 @@ AppleObjCRuntime::GetObjectDescription (Stream &strm, Value &value, ExecutionCon
     return cstr_len > 0;
 }
 
+lldb::ModuleSP
+AppleObjCRuntime::GetObjCModule ()
+{
+    ModuleSP module_sp (m_objc_module_wp.lock());
+    if (module_sp)
+        return module_sp;
+
+    Process *process = GetProcess();
+    if (process)
+    {
+        const ModuleList& modules = process->GetTarget().GetImages();
+        for (uint32_t idx = 0; idx < modules.GetSize(); idx++)
+        {
+            module_sp = modules.GetModuleAtIndex(idx);
+            if (AppleObjCRuntime::AppleIsModuleObjCLibrary(module_sp))
+            {
+                m_objc_module_wp = module_sp;
+                return module_sp;
+            }
+        }
+    }
+    return ModuleSP();
+}
+
 Address *
 AppleObjCRuntime::GetPrintForDebuggerAddr()
 {
     if (!m_PrintForDebugger_addr.get())
     {
-        ModuleList &modules = m_process->GetTarget().GetImages();
+        const ModuleList &modules = m_process->GetTarget().GetImages();
         
         SymbolContextList contexts;
         SymbolContext context;
@@ -211,15 +239,17 @@ AppleObjCRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
 bool
 AppleObjCRuntime::AppleIsModuleObjCLibrary (const ModuleSP &module_sp)
 {
-    const FileSpec &module_file_spec = module_sp->GetFileSpec();
-    static ConstString ObjCName ("libobjc.A.dylib");
-    
-    if (module_file_spec)
+    if (module_sp)
     {
-        if (module_file_spec.GetFilename() == ObjCName)
-            return true;
+        const FileSpec &module_file_spec = module_sp->GetFileSpec();
+        static ConstString ObjCName ("libobjc.A.dylib");
+        
+        if (module_file_spec)
+        {
+            if (module_file_spec.GetFilename() == ObjCName)
+                return true;
+        }
     }
-    
     return false;
 }
 
@@ -263,7 +293,7 @@ AppleObjCRuntime::GetObjCVersion (Process *process, ModuleSP &objc_module_sp)
         return eObjC_VersionUnknown;
         
     Target &target = process->GetTarget();
-    ModuleList &target_modules = target.GetImages();
+    const ModuleList &target_modules = target.GetImages();
     Mutex::Locker modules_locker(target_modules.GetMutex());
     
     size_t num_images = target_modules.GetSize();
@@ -305,11 +335,15 @@ AppleObjCRuntime::SetExceptionBreakpoints ()
     const bool is_internal = true;
     
     if (!m_objc_exception_bp_sp)
+    {
         m_objc_exception_bp_sp = LanguageRuntime::CreateExceptionBreakpoint (m_process->GetTarget(),
                                                                             GetLanguageType(),
                                                                             catch_bp, 
                                                                             throw_bp, 
                                                                             is_internal);
+        if (m_objc_exception_bp_sp)
+            m_objc_exception_bp_sp->SetBreakpointKind("ObjC exception");
+    }
     else
         m_objc_exception_bp_sp->SetEnabled(true);
 }
@@ -361,3 +395,21 @@ AppleObjCRuntime::CalculateHasNewLiteralsAndIndexing()
     else
         return false;
 }
+
+lldb::SearchFilterSP
+AppleObjCRuntime::CreateExceptionSearchFilter ()
+{
+    Target &target = m_process->GetTarget();
+    
+    if (target.GetArchitecture().GetTriple().getVendor() == llvm::Triple::Apple)
+    {
+        FileSpecList filter_modules;
+        filter_modules.Append(FileSpec("libobjc.A.dylib", false));
+        return target.GetSearchFilterForModuleList(&filter_modules);
+    }
+    else
+    {
+        return LanguageRuntime::CreateExceptionSearchFilter();
+    }
+}
+

@@ -36,6 +36,7 @@ class STLTestCase(TestBase):
         self.buildDsym()
         self.sbtype_template_apis()
 
+    @skipIfGcc # llvm.org/pr15036: crashes during DWARF parsing when built with GCC
     @python_api_test
     @dwarf_test
     def test_SBType_template_aspects_with_dwarf(self):
@@ -63,10 +64,7 @@ class STLTestCase(TestBase):
         # rdar://problem/8543077
         # test/stl: clang built binaries results in the breakpoint locations = 3,
         # is this a problem with clang generated debug info?
-        self.expect("breakpoint set -f %s -l %d" % (self.source, self.line),
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -113,7 +111,7 @@ class STLTestCase(TestBase):
         # Get Frame #0.
         self.assertTrue(process.GetState() == lldb.eStateStopped)
         thread = lldbutil.get_stopped_thread(process, lldb.eStopReasonBreakpoint)
-        self.assertTrue(thread != None, "There should be a thread stopped due to breakpoint condition")
+        self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint condition")
         frame0 = thread.GetFrameAtIndex(0)
 
         # Get the type for variable 'associative_array'.

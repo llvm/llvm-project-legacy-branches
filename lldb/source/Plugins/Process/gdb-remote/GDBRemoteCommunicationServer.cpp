@@ -21,6 +21,7 @@
 #include "lldb/Core/State.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Host/Endian.h"
+#include "lldb/Host/File.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/TimeValue.h"
 #include "lldb/Target/Process.h"
@@ -41,6 +42,8 @@ GDBRemoteCommunicationServer::GDBRemoteCommunicationServer(bool is_platform) :
     m_async_thread (LLDB_INVALID_HOST_THREAD),
     m_process_launch_info (),
     m_process_launch_error (),
+    m_spawned_pids (),
+    m_spawned_pids_mutex (Mutex::eMutexTypeRecursive),
     m_proc_infos (),
     m_proc_infos_index (0),
     m_lo_port_num (0),
@@ -62,7 +65,6 @@ GDBRemoteCommunicationServer::GDBRemoteCommunicationServer(bool is_platform) :
         hi_port_num = ::atoi(hi_port_c_str);
     if (lo_port_num && hi_port_num && lo_port_num < hi_port_num)
     {
-        printf("SetPortRange(%u, %u) called\n", lo_port_num, hi_port_num);
         SetPortRange(lo_port_num, hi_port_num);
     }
 }
@@ -80,7 +82,7 @@ GDBRemoteCommunicationServer::~GDBRemoteCommunicationServer()
 //{
 //    GDBRemoteCommunicationServer *server = (GDBRemoteCommunicationServer*) arg;
 //
-//    LogSP log;// (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
+//    Log *log;// (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
 //    if (log)
 //        log->Printf ("ProcessGDBRemote::%s (arg = %p, pid = %i) thread starting...", __FUNCTION__, arg, process->GetID());
 //
@@ -145,6 +147,9 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
             case StringExtractorGDBRemote::eServerPacketType_qLaunchGDBServer:
                 return Handle_qLaunchGDBServer (packet);
                 
+            case StringExtractorGDBRemote::eServerPacketType_qKillSpawnedProcess:
+                return Handle_qKillSpawnedProcess (packet);
+                
             case StringExtractorGDBRemote::eServerPacketType_qLaunchSuccess:
                 return Handle_qLaunchSuccess (packet);
                 
@@ -204,7 +209,10 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
 
             case StringExtractorGDBRemote::eServerPacketType_vFile_Size:
                 return Handle_vFile_Size (packet);
-                
+
+            case StringExtractorGDBRemote::eServerPacketType_vFile_Mode:
+                return Handle_vFile_Mode (packet);
+
             case StringExtractorGDBRemote::eServerPacketType_vFile_Exists:
                 return Handle_vFile_Exists (packet);
                 
@@ -333,7 +341,7 @@ GDBRemoteCommunicationServer::Handle_qHostInfo (StringExtractorGDBRemote &packet
 static void
 CreateProcessInfoResponse (const ProcessInstanceInfo &proc_info, StreamString &response)
 {
-    response.Printf ("pid:%llu;ppid:%llu;uid:%i;gid:%i;euid:%i;egid:%i;", 
+    response.Printf ("pid:%" PRIu64 ";ppid:%" PRIu64 ";uid:%i;gid:%i;euid:%i;egid:%i;",
                      proc_info.GetProcessID(),
                      proc_info.GetParentProcessID(),
                      proc_info.GetUserID(),
@@ -699,7 +707,7 @@ GDBRemoteCommunicationServer::Handle_qC (StringExtractorGDBRemote &packet)
 {
     lldb::pid_t pid = m_process_launch_info.GetProcessID();
     StreamString response;
-    response.Printf("QC%llx", pid);
+    response.Printf("QC%" PRIx64, pid);
     if (m_is_platform)
     {
         // If we launch a process and this GDB server is acting as a platform, 
@@ -719,6 +727,24 @@ GDBRemoteCommunicationServer::Handle_qC (StringExtractorGDBRemote &packet)
 }
 
 bool
+GDBRemoteCommunicationServer::DebugserverProcessReaped (lldb::pid_t pid)
+{
+    Mutex::Locker locker (m_spawned_pids_mutex);
+    return m_spawned_pids.erase(pid) > 0;
+}
+bool
+GDBRemoteCommunicationServer::ReapDebugserverProcess (void *callback_baton,
+                                                      lldb::pid_t pid,
+                                                      bool exited,
+                                                      int signal,    // Zero for no signal
+                                                      int status)    // Exit value of process if signal is zero
+{
+    GDBRemoteCommunicationServer *server = (GDBRemoteCommunicationServer *)callback_baton;
+    server->DebugserverProcessReaped (pid);
+    return true;
+}
+
+bool
 GDBRemoteCommunicationServer::Handle_qLaunchGDBServer (StringExtractorGDBRemote &packet)
 {
     // Spawn a local debugserver as a platform so we can then attach or launch
@@ -730,6 +756,7 @@ GDBRemoteCommunicationServer::Handle_qLaunchGDBServer (StringExtractorGDBRemote 
         ConnectionFileDescriptor file_conn;
         char connect_url[PATH_MAX];
         Error error;
+        std::string hostname;
         char unix_socket_name[PATH_MAX] = "/tmp/XXXXXX";
         if (::mktemp (unix_socket_name) == NULL)
         {
@@ -737,46 +764,86 @@ GDBRemoteCommunicationServer::Handle_qLaunchGDBServer (StringExtractorGDBRemote 
         }
         else
         {
+            packet.SetFilePos(::strlen ("qLaunchGDBServer:"));
+            std::string name;
+            std::string value;
+            uint16_t port = UINT16_MAX;
+            while (packet.GetNameColonValue(name, value))
+            {
+                if (name.compare ("host") == 0)
+                    hostname.swap(value);
+                else if (name.compare ("port") == 0)
+                    port = Args::StringToUInt32(value.c_str(), 0, 0);
+            }
+            if (port == UINT16_MAX)
+                port = GetAndUpdateNextPort();
+
             ::snprintf (connect_url, sizeof(connect_url), "unix-accept://%s", unix_socket_name);
             // Spawn a new thread to accept the port that gets bound after
             // binding to port 0 (zero).
-            lldb::thread_t accept_thread = Host::ThreadCreate (unix_socket_name,
-                                                               AcceptPortFromInferior,
-                                                               connect_url,
-                                                               &error);
+            lldb::thread_t accept_thread = NULL;
+            
+            if (port == 0)
+            {
+                accept_thread = Host::ThreadCreate (unix_socket_name,
+                                                    AcceptPortFromInferior,
+                                                    connect_url,
+                                                    &error);
+            }
             
             if (IS_VALID_LLDB_HOST_THREAD(accept_thread))
             {
                 // Spawn a debugserver and try to get the port it listens to.
                 ProcessLaunchInfo debugserver_launch_info;
-                char host_and_port[256];
-                const int host_and_port_len = ::snprintf (host_and_port,
-                                                          sizeof(host_and_port), 
-                                                          "localhost:%u", 
-                                                          GetAndUpdateNextPort());
-                assert (host_and_port_len < sizeof(host_and_port));
-                printf("Launching debugserver with: %s...\n", host_and_port);
-                error = StartDebugserverProcess (host_and_port,
+                StreamString host_and_port;
+                if (hostname.empty())
+                    hostname = "localhost";
+                host_and_port.Printf("%s:%u", hostname.c_str(), port);
+                const char *host_and_port_cstr = host_and_port.GetString().c_str();
+                printf("Launching debugserver with: %s...\n", host_and_port_cstr);
+                error = StartDebugserverProcess (host_and_port_cstr,
                                                  unix_socket_name, 
                                                  debugserver_launch_info);
                 
                 lldb::pid_t debugserver_pid = debugserver_launch_info.GetProcessID();
+                
+                if (debugserver_pid != LLDB_INVALID_PROCESS_ID)
+                {
+                    {
+                        Mutex::Locker locker (m_spawned_pids_mutex);
+                        m_spawned_pids.insert(debugserver_pid);
+                    }
+                    Host::StartMonitoringChildProcess (ReapDebugserverProcess, this, debugserver_pid, false);
+                }
+
                 if (error.Success())
                 {
                     bool success = false;
                     
-                    thread_result_t accept_thread_result = NULL;
-                    if (Host::ThreadJoin (accept_thread, &accept_thread_result, &error))
+                    if (accept_thread)
                     {
-                        if (accept_thread_result)
+                        thread_result_t accept_thread_result = NULL;
+                        if (Host::ThreadJoin (accept_thread, &accept_thread_result, &error))
                         {
-                            uint16_t port = (intptr_t)accept_thread_result;
-                            char response[256];
-                            const int response_len = ::snprintf (response, sizeof(response), "pid:%llu;port:%u;", debugserver_pid, port);
-                            assert (response_len < sizeof(response));
-                            //m_port_to_pid_map[port] = debugserver_launch_info.GetProcessID();
-                            success = SendPacketNoLock (response, response_len) > 0;
+                            if (accept_thread_result)
+                            {
+                                port = (intptr_t)accept_thread_result;
+                                char response[256];
+                                const int response_len = ::snprintf (response, sizeof(response), "pid:%" PRIu64 ";port:%u;", debugserver_pid, port);
+                                assert (response_len < sizeof(response));
+                                //m_port_to_pid_map[port] = debugserver_launch_info.GetProcessID();
+                                success = SendPacketNoLock (response, response_len) > 0;
+                            }
                         }
+                    }
+                    else
+                    {
+                        char response[256];
+                        const int response_len = ::snprintf (response, sizeof(response), "pid:%" PRIu64 ";port:%u;", debugserver_pid, port);
+                        assert (response_len < sizeof(response));
+                        //m_port_to_pid_map[port] = debugserver_launch_info.GetProcessID();
+                        success = SendPacketNoLock (response, response_len) > 0;
+                        
                     }
                     ::unlink (unix_socket_name);
                     
@@ -790,7 +857,60 @@ GDBRemoteCommunicationServer::Handle_qLaunchGDBServer (StringExtractorGDBRemote 
             }
         }
     }
-    return SendErrorResponse (13);
+    return SendErrorResponse (9);
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_qKillSpawnedProcess (StringExtractorGDBRemote &packet)
+{
+    // Spawn a local debugserver as a platform so we can then attach or launch
+    // a process...
+    
+    if (m_is_platform)
+    {
+        packet.SetFilePos(::strlen ("qKillSpawnedProcess:"));
+        
+        lldb::pid_t pid = packet.GetU64(LLDB_INVALID_PROCESS_ID);
+
+        // Scope for locker
+        {
+            Mutex::Locker locker (m_spawned_pids_mutex);
+            if (m_spawned_pids.find(pid) == m_spawned_pids.end())
+                return SendErrorResponse (10);
+        }
+        kill (pid, SIGTERM);
+        
+        for (size_t i=0; i<10; ++i)
+        {
+            // Scope for locker
+            {
+                Mutex::Locker locker (m_spawned_pids_mutex);
+                if (m_spawned_pids.find(pid) == m_spawned_pids.end())
+                    return true;
+            }
+            usleep (10000);
+        }
+
+        // Scope for locker
+        {
+            Mutex::Locker locker (m_spawned_pids_mutex);
+            if (m_spawned_pids.find(pid) == m_spawned_pids.end())
+                return true;
+        }
+        kill (pid, SIGKILL);
+        
+        for (size_t i=0; i<10; ++i)
+        {
+            // Scope for locker
+            {
+                Mutex::Locker locker (m_spawned_pids_mutex);
+                if (m_spawned_pids.find(pid) == m_spawned_pids.end())
+                    return true;
+            }
+            usleep (10000);
+        }
+    }
+    return SendErrorResponse (10);
 }
 
 bool
@@ -814,7 +934,7 @@ GDBRemoteCommunicationServer::Handle_QEnvironment  (StringExtractorGDBRemote &pa
         m_process_launch_info.GetEnvironmentEntries ().AppendArgument (packet.Peek());
         return SendOKResponse ();
     }
-    return SendErrorResponse (9);
+    return SendErrorResponse (11);
 }
 
 bool
@@ -829,7 +949,7 @@ GDBRemoteCommunicationServer::Handle_QLaunchArch (StringExtractorGDBRemote &pack
         m_process_launch_info.SetArchitecture(arch_spec);
         return SendOKResponse();
     }
-    return SendErrorResponse(9);
+    return SendErrorResponse(12);
 }
 
 bool
@@ -867,7 +987,7 @@ GDBRemoteCommunicationServer::Handle_QSetSTDIN (StringExtractorGDBRemote &packet
         m_process_launch_info.AppendFileAction(file_action);
         return SendOKResponse ();
     }
-    return SendErrorResponse (10);
+    return SendErrorResponse (13);
 }
 
 bool
@@ -884,7 +1004,7 @@ GDBRemoteCommunicationServer::Handle_QSetSTDOUT (StringExtractorGDBRemote &packe
         m_process_launch_info.AppendFileAction(file_action);
         return SendOKResponse ();
     }
-    return SendErrorResponse (11);
+    return SendErrorResponse (14);
 }
 
 bool
@@ -901,7 +1021,7 @@ GDBRemoteCommunicationServer::Handle_QSetSTDERR (StringExtractorGDBRemote &packe
         m_process_launch_info.AppendFileAction(file_action);
         return SendOKResponse ();
     }
-    return SendErrorResponse (12);
+    return SendErrorResponse (15);
 }
 
 bool
@@ -943,15 +1063,14 @@ GDBRemoteCommunicationServer::Handle_vFile_Open (StringExtractorGDBRemote &packe
     if (packet.GetChar() != ',')
         return false;
     mode_t mode = packet.GetHexMaxU32(false, UINT32_MAX);
-    lldb::user_id_t retcode = Host::OpenFile(FileSpec(path.c_str(), false), flags, mode);
+    Error error;
+    int fd = ::open (path.c_str(), flags, mode);
+    const int save_errno = fd == -1 ? errno : 0;
     StreamString response;
     response.PutChar('F');
-    response.PutHex64(retcode);
-    if (retcode == UINT64_MAX)
-    {
-        response.PutChar(',');
-        response.PutHex64(retcode); // TODO: replace with Host::GetSyswideErrorCode()
-    }
+    response.Printf("%i", fd);
+    if (save_errno)
+        response.Printf(",%i", save_errno);
     SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }
@@ -960,16 +1079,24 @@ bool
 GDBRemoteCommunicationServer::Handle_vFile_Close (StringExtractorGDBRemote &packet)
 {
     packet.SetFilePos(::strlen("vFile:close:"));
-    lldb::user_id_t fd = packet.GetHexMaxU64(false, UINT64_MAX);
-    uint32_t retcode = Host::CloseFile(fd);
+    int fd = packet.GetS32(-1);
+    Error error;
+    int err = -1;
+    int save_errno = 0;
+    if (fd >= 0)
+    {
+        err = close(fd);
+        save_errno = err == -1 ? errno : 0;
+    }
+    else
+    {
+        save_errno = EINVAL;
+    }
     StreamString response;
     response.PutChar('F');
-    response.PutHex32(retcode);
-    if (retcode == UINT32_MAX)
-    {
-        response.PutChar(',');
-        response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
-    }
+    response.Printf("%i", err);
+    if (save_errno)
+        response.Printf(",%i", save_errno);
     SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }
@@ -979,35 +1106,30 @@ GDBRemoteCommunicationServer::Handle_vFile_pRead (StringExtractorGDBRemote &pack
 {
     StreamGDBRemote response;
     packet.SetFilePos(::strlen("vFile:pread:"));
-    lldb::user_id_t fd = packet.GetHexMaxU64(false, UINT64_MAX);
+    int fd = packet.GetS32(-1);
     if (packet.GetChar() != ',')
         return false;
-    uint32_t count = packet.GetHexMaxU32(false, UINT32_MAX);
+    uint64_t count = packet.GetU64(UINT64_MAX);
     if (packet.GetChar() != ',')
         return false;
-    uint32_t offset = packet.GetHexMaxU32(false, UINT32_MAX);
-    if (count == UINT32_MAX) // protect yourself against allocating a 4GB buffer
+    uint64_t offset = packet.GetU64(UINT32_MAX);
+    if (count == UINT64_MAX)
     {
-        response.PutChar('F');
-        response.PutHex32(UINT32_MAX);
-        response.PutChar(',');
-        response.PutHex32(UINT32_MAX); // TODO: replace with Host::GetSyswideErrorCode()
+        response.Printf("F-1:%i", EINVAL);
         SendPacketNoLock(response.GetData(), response.GetSize());
         return true;
     }
     std::string buffer(count, 0);
-    uint32_t retcode = Host::ReadFile(fd, offset, &buffer[0], count);
+    const ssize_t bytes_read = ::pread (fd, &buffer[0], buffer.size(), offset);
+    const int save_errno = bytes_read == -1 ? errno : 0;
     response.PutChar('F');
-    response.PutHex32(retcode);
-    if (retcode == UINT32_MAX)
-    {
-        response.PutChar(',');
-        response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
-    }
+    response.Printf("%zi", bytes_read);
+    if (save_errno)
+        response.Printf(",%i", save_errno);
     else
     {
         response.PutChar(';');
-        response.PutEscapedBytes(&buffer[0], retcode);
+        response.PutEscapedBytes(&buffer[0], bytes_read);
     }
     SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
@@ -1017,23 +1139,30 @@ bool
 GDBRemoteCommunicationServer::Handle_vFile_pWrite (StringExtractorGDBRemote &packet)
 {
     packet.SetFilePos(::strlen("vFile:pwrite:"));
-    lldb::user_id_t fd = packet.GetHexMaxU64(false, UINT64_MAX);
+
+    StreamGDBRemote response;
+    response.PutChar('F');
+
+    int fd = packet.GetU32(UINT32_MAX);
     if (packet.GetChar() != ',')
         return false;
-    uint32_t offset = packet.GetHexMaxU32(false, UINT32_MAX);
+    off_t offset = packet.GetU64(UINT32_MAX);
     if (packet.GetChar() != ',')
         return false;
     std::string buffer;
-    packet.GetEscapedBinaryData(buffer);
-    uint32_t retcode = Host::WriteFile(fd, offset, &buffer[0], buffer.size());
-    StreamString response;
-    response.PutChar('F');
-    response.PutHex32(retcode);
-    if (retcode == UINT32_MAX)
+    if (packet.GetEscapedBinaryData(buffer))
     {
-        response.PutChar(',');
-        response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
+        const ssize_t bytes_written = ::pwrite (fd, buffer.data(), buffer.size(), offset);
+        const int save_errno = bytes_written == -1 ? errno : 0;
+        response.Printf("%zi", bytes_written);
+        if (save_errno)
+            response.Printf(",%i", save_errno);
     }
+    else
+    {
+        response.Printf ("-1,%i", EINVAL);
+    }
+
     SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }
@@ -1043,10 +1172,8 @@ GDBRemoteCommunicationServer::Handle_vFile_Size (StringExtractorGDBRemote &packe
 {
     packet.SetFilePos(::strlen("vFile:size:"));
     std::string path;
-    packet.GetHexByteStringTerminatedBy(path,',');
-    if (path.size() == 0)
-        return false;
-    if (packet.GetChar() != ',')
+    packet.GetHexByteString(path);
+    if (path.empty())
         return false;
     lldb::user_id_t retcode = Host::GetFileSize(FileSpec(path.c_str(), false));
     StreamString response;
@@ -1062,12 +1189,30 @@ GDBRemoteCommunicationServer::Handle_vFile_Size (StringExtractorGDBRemote &packe
 }
 
 bool
+GDBRemoteCommunicationServer::Handle_vFile_Mode (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen("vFile:mode:"));
+    std::string path;
+    packet.GetHexByteString(path);
+    if (path.empty())
+        return false;
+    Error error;
+    const uint32_t mode = File::GetPermissions(path.c_str(), error);
+    StreamString response;
+    response.Printf("F%u", mode);
+    if (mode == 0 || error.Fail())
+        response.Printf(",%i", (int)error.GetError());
+    SendPacketNoLock(response.GetData(), response.GetSize());
+    return true;
+}
+
+bool
 GDBRemoteCommunicationServer::Handle_vFile_Exists (StringExtractorGDBRemote &packet)
 {
     packet.SetFilePos(::strlen("vFile:exists:"));
     std::string path;
     packet.GetHexByteString(path);
-    if (path.size() == 0)
+    if (path.empty())
         return false;
     bool retcode = Host::GetFileExists(FileSpec(path.c_str(), false));
     StreamString response;

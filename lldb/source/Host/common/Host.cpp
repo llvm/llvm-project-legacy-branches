@@ -7,6 +7,38 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
+// C includes
+#include <dlfcn.h>
+#include <errno.h>
+#include <grp.h>
+#include <limits.h>
+#include <netdb.h>
+#include <pwd.h>
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#if defined (__APPLE__)
+
+#include <dispatch/dispatch.h>
+#include <libproc.h>
+#include <mach-o/dyld.h>
+#include <mach/mach_port.h>
+
+#elif defined (__linux__) || defined(__FreeBSD_kernel__)
+/*  Linux or the FreeBSD kernel with glibc (Debian KFreeBSD for example) */
+
+#include <sys/wait.h>
+
+#elif defined (__FreeBSD__)
+
+#include <sys/wait.h>
+#include <pthread_np.h>
+
+#endif
+
 #include "lldb/Host/Host.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/ConstString.h"
@@ -24,35 +56,11 @@
 
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MachO.h"
-
-#include <dlfcn.h>
-#include <errno.h>
-#include <grp.h>
-#include <limits.h>
-#include <netdb.h>
-#include <pwd.h>
-#include <sys/types.h>
+#include "llvm/ADT/Twine.h"
 
 
-#if defined (__APPLE__)
-
-#include <dispatch/dispatch.h>
-#include <libproc.h>
-#include <mach-o/dyld.h>
-#include <sys/sysctl.h>
 
 
-#elif defined (__linux__)
-
-#include <sys/wait.h>
-
-#elif defined (__FreeBSD__)
-
-#include <sys/wait.h>
-#include <sys/sysctl.h>
-#include <pthread_np.h>
-
-#endif
 
 using namespace lldb;
 using namespace lldb_private;
@@ -88,7 +96,7 @@ Host::StartMonitoringChildProcess
     info_ptr->monitor_signals = monitor_signals;
     
     char thread_name[256];
-    ::snprintf (thread_name, sizeof(thread_name), "<lldb.host.wait4(pid=%i)>", pid);
+    ::snprintf (thread_name, sizeof(thread_name), "<lldb.host.wait4(pid=%" PRIu64 ")>", pid);
     thread = ThreadCreate (thread_name,
                            MonitorChildProcessThreadFunction,
                            info_ptr,
@@ -128,7 +136,7 @@ private:
 static void *
 MonitorChildProcessThreadFunction (void *arg)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     const char *function = __FUNCTION__;
     if (log)
         log->Printf ("%s (arg = %p) thread starting...", function, arg);
@@ -143,16 +151,21 @@ MonitorChildProcessThreadFunction (void *arg)
     delete info;
 
     int status = -1;
-    const int options = 0;
+#if defined (__FreeBSD__)
+    #define __WALL 0
+#endif
+    const int options = __WALL;
+
     while (1)
     {
         log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
         if (log)
-            log->Printf("%s ::wait_pid (pid = %i, &status, options = %i)...", function, pid, options);
+            log->Printf("%s ::wait_pid (pid = %" PRIu64 ", &status, options = %i)...", function, pid, options);
 
         // Wait for all child processes
         ::pthread_testcancel ();
-        const lldb::pid_t wait_pid = ::waitpid (pid, &status, options);
+        // Get signals from all children with same process group of pid
+        const lldb::pid_t wait_pid = ::waitpid (-1*pid, &status, options);
         ::pthread_testcancel ();
 
         if (wait_pid == -1)
@@ -160,9 +173,13 @@ MonitorChildProcessThreadFunction (void *arg)
             if (errno == EINTR)
                 continue;
             else
+            {
+                if (log)
+                    log->Printf ("%s (arg = %p) thread exiting because waitpid failed (%s)...", __FUNCTION__, arg, strerror(errno));
                 break;
+            }
         }
-        else if (wait_pid == pid)
+        else if (wait_pid > 0)
         {
             bool exited = false;
             int signal = 0;
@@ -183,8 +200,10 @@ MonitorChildProcessThreadFunction (void *arg)
             {
                 signal = WTERMSIG(status);
                 status_cstr = "SIGNALED";
-                exited = true;
-                exit_status = -1;
+                if (wait_pid == pid) {
+                    exited = true;
+                    exit_status = -1;
+                }
             }
             else
             {
@@ -197,7 +216,7 @@ MonitorChildProcessThreadFunction (void *arg)
 
                 log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
                 if (log)
-                    log->Printf ("%s ::waitpid (pid = %i, &status, options = %i) => pid = %i, status = 0x%8.8x (%s), signal = %i, exit_state = %i",
+                    log->Printf ("%s ::waitpid (pid = %" PRIu64 ", &status, options = %i) => pid = %" PRIu64 ", status = 0x%8.8x (%s), signal = %i, exit_state = %i",
                                  function,
                                  wait_pid,
                                  options,
@@ -211,15 +230,23 @@ MonitorChildProcessThreadFunction (void *arg)
                 {
                     bool callback_return = false;
                     if (callback)
-                        callback_return = callback (callback_baton, pid, exited, signal, exit_status);
+                        callback_return = callback (callback_baton, wait_pid, exited, signal, exit_status);
                     
                     // If our process exited, then this thread should exit
-                    if (exited)
+                    if (exited && wait_pid == pid)
+                    {
+                        if (log)
+                            log->Printf ("%s (arg = %p) thread exiting because pid received exit signal...", __FUNCTION__, arg);
                         break;
+                    }
                     // If the callback returns true, it means this process should
                     // exit
                     if (callback_return)
+                    {
+                        if (log)
+                            log->Printf ("%s (arg = %p) thread exiting because callback returned true...", __FUNCTION__, arg);
                         break;
+                    }
                 }
             }
         }
@@ -331,6 +358,11 @@ Host::GetArchitecture (SystemDefaultArchitecture arch_kind)
         g_host_arch_32.Clear();
         g_host_arch_64.Clear();
 
+        // If the OS is Linux, "unknown" in the vendor slot isn't what we want
+        // for the default triple.  It's probably an artifact of config.guess.
+        if (triple.getOS() == llvm::Triple::Linux && triple.getVendor() == llvm::Triple::UnknownVendor)
+            triple.setVendorName("");
+
         switch (triple.getArch())
         {
         default:
@@ -339,9 +371,14 @@ Host::GetArchitecture (SystemDefaultArchitecture arch_kind)
             break;
 
         case llvm::Triple::x86_64:
+            g_host_arch_64.SetTriple(triple);
+            g_supports_64 = true;
+            g_host_arch_32.SetTriple(triple.get32BitArchVariant());
+            g_supports_32 = true;
+            break;
+
         case llvm::Triple::sparcv9:
         case llvm::Triple::ppc64:
-        case llvm::Triple::cellspu:
             g_host_arch_64.SetTriple(triple);
             g_supports_64 = true;
             break;
@@ -370,15 +407,9 @@ Host::GetVendorString()
     static ConstString g_vendor;
     if (!g_vendor)
     {
-#if defined (__APPLE__)
         const ArchSpec &host_arch = GetArchitecture (eSystemDefaultArchitecture);
         const llvm::StringRef &str_ref = host_arch.GetTriple().getVendorName();
         g_vendor.SetCStringWithLength(str_ref.data(), str_ref.size());
-#elif defined (__linux__)
-        g_vendor.SetCString("gnu");
-#elif defined (__FreeBSD__)
-        g_vendor.SetCString("freebsd");
-#endif
     }
     return g_vendor;
 }
@@ -389,15 +420,9 @@ Host::GetOSString()
     static ConstString g_os_string;
     if (!g_os_string)
     {
-#if defined (__APPLE__)
         const ArchSpec &host_arch = GetArchitecture (eSystemDefaultArchitecture);
         const llvm::StringRef &str_ref = host_arch.GetTriple().getOSName();
         g_os_string.SetCStringWithLength(str_ref.data(), str_ref.size());
-#elif defined (__linux__)
-        g_os_string.SetCString("linux");
-#elif defined (__FreeBSD__)
-        g_os_string.SetCString("freebsd");
-#endif
     }
     return g_os_string;
 }
@@ -424,7 +449,12 @@ lldb::tid_t
 Host::GetCurrentThreadID()
 {
 #if defined (__APPLE__)
-    return ::mach_thread_self();
+    // Calling "mach_port_deallocate()" bumps the reference count on the thread
+    // port, so we need to deallocate it. mach_task_self() doesn't bump the ref
+    // count.
+    thread_port_t thread_self = mach_thread_self();
+    mach_port_deallocate(mach_task_self(), thread_self);
+    return thread_self;
 #elif defined(__FreeBSD__)
     return lldb::tid_t(pthread_getthreadid_np());
 #else
@@ -494,7 +524,8 @@ Host::WillTerminate ()
 {
 }
 
-#if !defined (__APPLE__) && !defined (__FreeBSD__) // see macosx/Host.mm
+#if !defined (__APPLE__) && !defined (__FreeBSD__) && !defined (__linux__) // see macosx/Host.mm
+
 void
 Host::ThreadCreated (const char *thread_name)
 {
@@ -513,7 +544,7 @@ Host::GetEnvironment (StringList &env)
     return 0;
 }
 
-#endif
+#endif // #if !defined (__APPLE__) && !defined (__FreeBSD__) && !defined (__linux__)
 
 struct HostThreadCreateInfo
 {
@@ -537,7 +568,7 @@ ThreadCreateTrampoline (thread_arg_t arg)
     thread_func_t thread_fptr = info->thread_fptr;
     thread_arg_t thread_arg = info->thread_arg;
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
     if (log)
         log->Printf("thread created");
     
@@ -600,92 +631,44 @@ Host::ThreadJoin (lldb::thread_t thread, thread_result_t *thread_result_ptr, Err
     return err == 0;
 }
 
-// rdar://problem/8153284
-// Fixed a crasher where during shutdown, loggings attempted to access the
-// thread name but the static map instance had already been destructed.
-// So we are using a ThreadSafeSTLMap POINTER, initializing it with a
-// pthread_once action.  That map will get leaked.
-//
-// Another approach is to introduce a static guard object which monitors its
-// own destruction and raises a flag, but this incurs more overhead.
 
-static pthread_once_t g_thread_map_once = PTHREAD_ONCE_INIT;
-static ThreadSafeSTLMap<uint64_t, std::string> *g_thread_names_map_ptr;
-
-static void
-InitThreadNamesMap()
-{
-    g_thread_names_map_ptr = new ThreadSafeSTLMap<uint64_t, std::string>();
-}
-
-//------------------------------------------------------------------
-// Control access to a static file thread name map using a single
-// static function to avoid a static constructor.
-//------------------------------------------------------------------
-static const char *
-ThreadNameAccessor (bool get, lldb::pid_t pid, lldb::tid_t tid, const char *name)
-{
-    int success = ::pthread_once (&g_thread_map_once, InitThreadNamesMap);
-    if (success != 0)
-        return NULL;
-    
-    uint64_t pid_tid = ((uint64_t)pid << 32) | (uint64_t)tid;
-
-    if (get)
-    {
-        // See if the thread name exists in our thread name pool
-        std::string value;
-        bool found_it = g_thread_names_map_ptr->GetValueForKey (pid_tid, value);
-        if (found_it)
-            return value.c_str();
-        else
-            return NULL;
-    }
-    else if (name)
-    {
-        // Set the thread name
-        g_thread_names_map_ptr->SetValueForKey (pid_tid, std::string(name));
-    }
-    return NULL;
-}
-
-const char *
+std::string
 Host::GetThreadName (lldb::pid_t pid, lldb::tid_t tid)
 {
-    const char *name = ThreadNameAccessor (true, pid, tid, NULL);
-    if (name == NULL)
-    {
+    std::string thread_name;
 #if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
-        // We currently can only get the name of a thread in the current process.
-        if (pid == Host::GetCurrentProcessID())
+    // We currently can only get the name of a thread in the current process.
+    if (pid == Host::GetCurrentProcessID())
+    {
+        char pthread_name[1024];
+        if (::pthread_getname_np (::pthread_from_mach_thread_np (tid), pthread_name, sizeof(pthread_name)) == 0)
         {
-            char pthread_name[1024];
-            if (::pthread_getname_np (::pthread_from_mach_thread_np (tid), pthread_name, sizeof(pthread_name)) == 0)
+            if (pthread_name[0])
             {
-                if (pthread_name[0])
-                {
-                    // Set the thread in our string pool
-                    ThreadNameAccessor (false, pid, tid, pthread_name);
-                    // Get our copy of the thread name string
-                    name = ThreadNameAccessor (true, pid, tid, NULL);
-                }
-            }
-            
-            if (name == NULL)
-            {
-                dispatch_queue_t current_queue = ::dispatch_get_current_queue ();
-                if (current_queue != NULL)
-                    name = dispatch_queue_get_label (current_queue);
+                thread_name = pthread_name;
             }
         }
-#endif
+        else
+        {
+            dispatch_queue_t current_queue = ::dispatch_get_current_queue ();
+            if (current_queue != NULL)
+            {
+                const char *queue_name = dispatch_queue_get_label (current_queue);
+                if (queue_name && queue_name[0])
+                {
+                    thread_name = queue_name;
+                }
+            }
+        }
     }
-    return name;
+#endif
+    return thread_name;
 }
 
-void
+bool
 Host::SetThreadName (lldb::pid_t pid, lldb::tid_t tid, const char *name)
 {
+#if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
     lldb::pid_t curr_pid = Host::GetCurrentProcessID();
     lldb::tid_t curr_tid = Host::GetCurrentThreadID();
     if (pid == LLDB_INVALID_PROCESS_ID)
@@ -694,14 +677,39 @@ Host::SetThreadName (lldb::pid_t pid, lldb::tid_t tid, const char *name)
     if (tid == LLDB_INVALID_THREAD_ID)
         tid = curr_tid;
 
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
     // Set the pthread name if possible
     if (pid == curr_pid && tid == curr_tid)
     {
-        ::pthread_setname_np (name);
+        if (::pthread_setname_np (name) == 0)
+            return true;
     }
+    return false;
+#elif defined (__linux__)
+    void *fn = dlsym (RTLD_DEFAULT, "pthread_setname_np");
+    if (fn)
+    {
+        int (*pthread_setname_np_func)(pthread_t thread, const char *name);
+        *reinterpret_cast<void **> (&pthread_setname_np_func) = fn;
+
+        lldb::pid_t curr_pid = Host::GetCurrentProcessID();
+        lldb::tid_t curr_tid = Host::GetCurrentThreadID();
+
+        if (pid == LLDB_INVALID_PROCESS_ID)
+            pid = curr_pid;
+
+        if (tid == LLDB_INVALID_THREAD_ID)
+            tid = curr_tid;
+
+        if (pid == curr_pid)
+        {
+            if (pthread_setname_np_func (tid, name) == 0)
+                return true;
+        }
+    }
+    return false;
+#else
+    return false;
 #endif
-    ThreadNameAccessor (false, pid, tid, name);
 }
 
 FileSpec
@@ -991,13 +999,6 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
 
     case ePathTypePythonDir:                
         {
-            // TODO: Anyone know how we can determine this for linux? Other systems?
-            // For linux and FreeBSD we are currently assuming the
-            // location of the lldb binary that contains this function is
-            // the directory that will contain a python directory which
-            // has our lldb module. This is how files get placed when
-            // compiling with Makefiles.
-
             static ConstString g_lldb_python_dir;
             if (!g_lldb_python_dir)
             {
@@ -1016,9 +1017,19 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                         ::strncpy (framework_pos, "/Resources/Python", PATH_MAX - (framework_pos - raw_path));
                     }
 #else
+                    llvm::Twine python_version_dir;
+                    python_version_dir = "/python"
+                                       + llvm::Twine(PY_MAJOR_VERSION)
+                                       + "."
+                                       + llvm::Twine(PY_MINOR_VERSION)
+                                       + "/site-packages";
+
                     // We may get our string truncated. Should we protect
                     // this with an assert?
-                    ::strncat(raw_path, "/python", sizeof(raw_path) - strlen(raw_path) - 1);
+
+                    ::strncat(raw_path, python_version_dir.str().c_str(),
+                              sizeof(raw_path) - strlen(raw_path) - 1);
+
 #endif
                     FileSpec::Resolve (raw_path, resolved_path, sizeof(resolved_path));
                     g_lldb_python_dir.SetCString(resolved_path);
@@ -1087,9 +1098,6 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
             // TODO: where would user LLDB plug-ins be located on linux? Other systems?
             return false;
         }
-    default:
-        assert (!"Unhandled PathType");
-        break;
     }
 
     return false;
@@ -1212,20 +1220,28 @@ Host::GetEffectiveGroupID ()
     return getegid();
 }
 
-#if !defined (__APPLE__) && !defined (__FreeBSD__)
+#if !defined (__APPLE__) && !defined(__linux__)
 uint32_t
 Host::FindProcesses (const ProcessInstanceInfoMatch &match_info, ProcessInstanceInfoList &process_infos)
 {
     process_infos.Clear();
     return process_infos.GetSize();
 }
-#endif
+#endif // #if !defined (__APPLE__) && !defined(__linux__)
 
-#if !defined (__APPLE__) && !defined (__FreeBSD__)
+#if !defined (__APPLE__) && !defined (__FreeBSD__) && !defined(__linux__)
 bool
 Host::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info)
 {
     process_info.Clear();
+    return false;
+}
+#endif
+
+#if !defined(__linux__)
+bool
+Host::FindProcessThreads (const lldb::pid_t pid, TidMap &tids_to_attach)
+{
     return false;
 }
 #endif
@@ -1242,7 +1258,7 @@ Host::GetDummyTarget (lldb_private::Debugger &debugger)
         if (!arch.IsValid())
             arch = Host::GetArchitecture ();
         Error err = debugger.GetTargetList().CreateTarget(debugger, 
-                                                          FileSpec(), 
+                                                          NULL,
                                                           arch.GetTriple().getTriple().c_str(),
                                                           false, 
                                                           NULL, 
@@ -1300,30 +1316,31 @@ Host::RunShellCommand (const char *command,
                        int *status_ptr,
                        int *signo_ptr,
                        std::string *command_output_ptr,
-                       uint32_t timeout_sec)
+                       uint32_t timeout_sec,
+                       const char *shell)
 {
     Error error;
     ProcessLaunchInfo launch_info;
-
-    const bool localhost = true;
-    const bool will_debug = false;
-    const bool first_arg_is_full_shell_command = true;
-
-#ifndef LLDB_DEFAULT_SHELL_COMMAND
-#define LLDB_DEFAULT_SHELL_COMMAND   "/bin/bash"
-#endif
-    const char* shell_cmd = ::getenv("SHELL");
-    if (shell_cmd == NULL)
-        shell_cmd = LLDB_DEFAULT_SHELL_COMMAND;
-
-    launch_info.SetShell(shell_cmd);
-    launch_info.GetArguments().AppendArgument(command);
-
-    if (!launch_info.ConvertArgumentsForLaunchingInShell (error,
-                                                     localhost,
-                                                     will_debug,
-                                                          first_arg_is_full_shell_command))
-        return error;
+    if (shell && shell[0])
+    {
+        // Run the command in a shell
+        launch_info.SetShell(shell);
+        launch_info.GetArguments().AppendArgument(command);
+        const bool localhost = true;
+        const bool will_debug = false;
+        const bool first_arg_is_full_shell_command = true;
+        launch_info.ConvertArgumentsForLaunchingInShell (error,
+                                                         localhost,
+                                                         will_debug,
+                                                         first_arg_is_full_shell_command);
+    }
+    else
+    {
+        // No shell, just run it
+        Args args (command);
+        const bool first_arg_is_executable = true;
+        launch_info.SetArguments(args, first_arg_is_executable);
+    }
     
     if (working_dir)
         launch_info.SetWorkingDirectory(working_dir);
@@ -1347,7 +1364,7 @@ Host::RunShellCommand (const char *command,
     }
     
     // The process monitor callback will delete the 'shell_info_ptr' below...
-    std::auto_ptr<ShellInfo> shell_info_ap (new ShellInfo());
+    std::unique_ptr<ShellInfo> shell_info_ap (new ShellInfo());
     
     const bool monitor_signals = false;
     launch_info.SetMonitorProcessCallback(MonitorShellCommand, shell_info_ap.get(), monitor_signals);
@@ -1362,7 +1379,7 @@ Host::RunShellCommand (const char *command,
     {
         // The process successfully launched, so we can defer ownership of
         // "shell_info" to the MonitorShellCommand callback function that will
-        // get called when the process dies. We release the std::auto_ptr as it
+        // get called when the process dies. We release the unique pointer as it
         // doesn't need to delete the ShellInfo anymore.
         ShellInfo *shell_info = shell_info_ap.release();
         TimeValue timeout_time(TimeValue::Now());
@@ -1420,6 +1437,52 @@ Host::RunShellCommand (const char *command,
 }
 
 
+uint32_t
+Host::GetNumberCPUS ()
+{
+    static uint32_t g_num_cores = UINT32_MAX;
+    if (g_num_cores == UINT32_MAX)
+    {
+#if defined(__APPLE__) or defined (__linux__) or defined (__FreeBSD__)
+
+        g_num_cores = ::sysconf(_SC_NPROCESSORS_ONLN);
+        
+#elif defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
+        
+        // Header file for this might need to be included at the top of this file
+        SYSTEM_INFO system_info;
+        ::GetSystemInfo (&system_info);
+        g_num_cores = system_info.dwNumberOfProcessors;
+        
+#else
+        
+        // Assume POSIX support if a host specific case has not been supplied above
+        g_num_cores = 0;
+        int num_cores = 0;
+        size_t num_cores_len = sizeof(num_cores);
+        int mib[] = { CTL_HW, HW_AVAILCPU };
+        
+        /* get the number of CPUs from the system */
+        if (sysctl(mib, sizeof(mib)/sizeof(int), &num_cores, &num_cores_len, NULL, 0) == 0 && (num_cores > 0))
+        {
+            g_num_cores = num_cores;
+        }
+        else
+        {
+            mib[1] = HW_NCPU;
+            num_cores_len = sizeof(num_cores);
+            if (sysctl(mib, sizeof(mib)/sizeof(int), &num_cores, &num_cores_len, NULL, 0) == 0 && (num_cores > 0))
+            {
+                if (num_cores > 0)
+                    g_num_cores = num_cores;
+            }
+        }
+#endif
+    }
+    return g_num_cores;
+}
+
+
 
 #if !defined (__APPLE__)
 bool
@@ -1461,80 +1524,108 @@ FDToFileMap& GetFDToFileMap()
 lldb::user_id_t
 Host::OpenFile (const FileSpec& file_spec,
                 uint32_t flags,
-                mode_t mode)
+                mode_t mode,
+                Error &error)
 {
-    std::string path;
-    if (file_spec.GetPath(path) == 0)
+    std::string path (file_spec.GetPath());
+    if (path.empty())
+    {
+        error.SetErrorString("empty path");
         return UINT64_MAX;
-    FileSP file_sp(new File(path.c_str(),flags,mode));
+    }
+    FileSP file_sp(new File());
+    error = file_sp->Open(path.c_str(),flags,mode);
     if (file_sp->IsValid() == false)
         return UINT64_MAX;
-    uint32_t fd = file_sp->GetDescriptor();
+    lldb::user_id_t fd = file_sp->GetDescriptor();
     GetFDToFileMap()[fd] = file_sp;
     return fd;
 }
 
 bool
-Host::CloseFile (lldb::user_id_t fd)
+Host::CloseFile (lldb::user_id_t fd, Error &error)
 {
     if (fd == UINT64_MAX)
+    {
+        error.SetErrorString ("invalid file descriptor");
         return false;
-    FDToFileMap::iterator i = GetFDToFileMap().find(fd),
-    end = GetFDToFileMap().end();
-    if (i == end)
+    }
+    FDToFileMap& file_map = GetFDToFileMap();
+    FDToFileMap::iterator pos = file_map.find(fd);
+    if (pos == file_map.end())
+    {
+        error.SetErrorStringWithFormat ("invalid host file descriptor %lli", fd);
         return false;
-    FileSP file_sp = i->second;
-    Error err;
-    if (file_sp)
-        err = file_sp->Close();
-    GetFDToFileMap().erase(i);
-    return err.Success();
+    }
+    FileSP file_sp = pos->second;
+    if (!file_sp)
+    {
+        error.SetErrorString ("invalid host backing file");
+        return false;
+    }
+    error = file_sp->Close();
+    file_map.erase(pos);
+    return error.Success();
 }
 
-uint32_t
-Host::WriteFile (lldb::user_id_t fd, uint64_t offset, void* data, size_t data_len)
+uint64_t
+Host::WriteFile (lldb::user_id_t fd, uint64_t offset, const void* src, uint64_t src_len, Error &error)
 {
     if (fd == UINT64_MAX)
-        return UINT32_MAX;
-    FDToFileMap::iterator i = GetFDToFileMap().find(fd),
-    end = GetFDToFileMap().end();
-    if (i == end)
-        return UINT32_MAX;
-    FileSP file_sp = i->second;
-    off_t offset_ = offset;
-    Error err = file_sp->SeekFromStart(offset_);
-    if (err.Fail())
-        return UINT32_MAX;
+    {
+        error.SetErrorString ("invalid file descriptor");
+        return UINT64_MAX;
+    }
+    FDToFileMap& file_map = GetFDToFileMap();
+    FDToFileMap::iterator pos = file_map.find(fd);
+    if (pos == file_map.end())
+    {
+        error.SetErrorStringWithFormat("invalid host file descriptor %lli", fd);
+        return false;
+    }
+    FileSP file_sp = pos->second;
     if (!file_sp)
-        return UINT32_MAX;
-    size_t data_len_ = data_len;
-    err = file_sp->Write(data,data_len_);
-    if (err.Fail())
-        return UINT32_MAX;
-    return data_len_;
+    {
+        error.SetErrorString ("invalid host backing file");
+        return UINT64_MAX;
+    }
+    if (file_sp->SeekFromStart(offset, &error) != offset || error.Fail())
+        return UINT64_MAX;
+    size_t bytes_written = src_len;
+    error = file_sp->Write(src, bytes_written);
+    if (error.Fail())
+        return UINT64_MAX;
+    return bytes_written;
 }
 
-uint32_t
-Host::ReadFile (lldb::user_id_t fd, uint64_t offset, void* data_ptr, size_t len_wanted)
+uint64_t
+Host::ReadFile (lldb::user_id_t fd, uint64_t offset, void* dst, uint64_t dst_len, Error &error)
 {
     if (fd == UINT64_MAX)
-        return UINT32_MAX;
-    FDToFileMap::iterator i = GetFDToFileMap().find(fd),
-    end = GetFDToFileMap().end();
-    if (i == end)
-        return UINT32_MAX;
-    FileSP file_sp = i->second;
-    off_t offset_ = offset;
-    Error err = file_sp->SeekFromStart(offset_);
-    if (err.Fail())
-        return UINT32_MAX;
+    {
+        error.SetErrorString ("invalid file descriptor");
+        return UINT64_MAX;
+    }
+    FDToFileMap& file_map = GetFDToFileMap();
+    FDToFileMap::iterator pos = file_map.find(fd);
+    if (pos == file_map.end())
+    {
+        error.SetErrorStringWithFormat ("invalid host file descriptor %lli", fd);
+        return false;
+    }
+    FileSP file_sp = pos->second;
     if (!file_sp)
-        return UINT32_MAX;
-    size_t len_wanted_ = len_wanted;
-    err = file_sp->Read(data_ptr,len_wanted_);
-    if (err.Fail())
-        return UINT32_MAX;
-    return len_wanted_;
+    {
+        error.SetErrorString ("invalid host backing file");
+        return UINT64_MAX;
+    }
+    if (file_sp->SeekFromStart(offset, &error) != offset || error.Fail())
+        return UINT64_MAX;
+    size_t bytes_read = dst_len;
+    error = file_sp->Read(dst ,bytes_read);
+    if (error.Fail())
+        return UINT64_MAX;
+    return bytes_read;
 }
 
 lldb::user_id_t
@@ -1555,11 +1646,9 @@ Host::CalculateMD5 (const FileSpec& file_spec,
                     uint64_t &high)
 {
 #if defined (__APPLE__)
-    std::string hash_string;
-    file_spec.GetPath(hash_string);
     StreamString md5_cmd_line;
-    md5_cmd_line.Printf("md5 -q %s",hash_string.c_str());
-    hash_string.clear();
+    md5_cmd_line.Printf("md5 -q '%s'", file_spec.GetPath().c_str());
+    std::string hash_string;
     Error err = Host::RunShellCommand(md5_cmd_line.GetData(), NULL, NULL, NULL, &hash_string, 60);
     if (err.Fail())
         return false;

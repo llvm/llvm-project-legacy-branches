@@ -24,6 +24,7 @@ USEDLIBS = lldbAPI.a \
 	lldbBreakpoint.a \
 	lldbCommands.a \
 	lldbCore.a \
+	lldbDataFormatters.a \
 	lldbExpression.a \
 	lldbHostCommon.a \
 	lldbInitAndLog.a \
@@ -40,6 +41,7 @@ USEDLIBS = lldbAPI.a \
 	lldbPluginObjectContainerBSDArchive.a \
 	lldbPluginObjectFileELF.a \
 	lldbPluginObjectFilePECOFF.a \
+	lldbPluginOperatingSystemPython.a \
 	lldbPluginPlatformGDBServer.a \
 	lldbPluginProcessGDBRemote.a \
 	lldbPluginSymbolFileDWARF.a \
@@ -57,9 +59,7 @@ USEDLIBS = lldbAPI.a \
 	clangFrontend.a \
 	clangDriver.a \
 	clangEdit.a \
-	clangIndex.a \
 	clangLex.a \
-	clangRewrite.a \
 	clangParse.a \
 	clangSema.a \
 	clangSerialization.a \
@@ -69,10 +69,18 @@ USEDLIBS = lldbAPI.a \
 	lldbPluginPlatformFreeBSD.a \
 	lldbPluginPlatformPOSIX.a
 
+# Because GCC requires RTTI enabled for lldbCore (see source/Core/Makefile) it is
+# necessary to also link the clang rewriter libraries so vtable references can
+# be resolved correctly, if we are building with GCC.
+ifeq (g++,$(shell basename $(CXX) | colrm 4))
+  USEDLIBS += clangRewriteCore.a \
+              clangRewriteFrontend.a
+endif
+
 include $(LLDB_LEVEL)/../../Makefile.config
 
 LINK_COMPONENTS := $(TARGETS_TO_BUILD) asmparser bitreader bitwriter codegen \
-                   instrumentation ipo selectiondag jit mc mcjit linker
+                   instrumentation ipo irreader selectiondag jit mc mcjit linker
 
 ifeq ($(HOST_OS),Darwin)
   USEDLIBS += lldbHostMacOSX.a \
@@ -80,16 +88,16 @@ ifeq ($(HOST_OS),Darwin)
               lldbPluginDynamicLoaderDarwinKernel.a \
               lldbPluginObjectContainerUniversalMachO.a \
               lldbPluginObjectFileMachO.a \
-              lldbPluginOperatingSystemDarwinKernel.a \
               lldbPluginSymbolVendorMacOSX.a \
               lldbPluginProcessDarwin.a \
               lldbPluginProcessMachCore.a
 endif
 
 ifeq ($(HOST_OS),Linux)
-  USEDLIBS += lldbPluginProcessPOSIX.a \
+  USEDLIBS += lldbHostLinux.a \
               lldbPluginProcessLinux.a \
-              lldbHostLinux.a
+              lldbPluginProcessPOSIX.a \
+              lldbPluginDynamicLoaderMacOSX.a
 endif
 
 ifeq ($(HOST_OS),FreeBSD)
@@ -113,6 +121,7 @@ ifeq ($(HOST_OS),Darwin)
 	LLVMLibsOptions += -framework Foundation -framework CoreFoundation
 	LLVMLibsOptions += -framework CoreServices -framework Carbon -framework Security
 	LLVMLibsOptions += -framework DebugSymbols $(PYTHON_BUILD_FLAGS) -lobjc
+	LLVMLibsOptions += -lxml2
 	ifneq ($(EXPORTED_SYMBOL_FILE),)
 		LLVMLibsOptions += -Wl,-exported_symbols_list -Wl,"$(EXPORTED_SYMBOL_FILE)"
 	endif
@@ -124,7 +133,7 @@ ifeq ($(HOST_OS),Darwin)
     endif
 endif
 
-ifeq ($(HOST_OS),Linux)
+ifeq ($(HOST_OS), $(filter $(HOST_OS), Linux GNU))
     # Include everything from the .a's into the shared library.
     ProjLibsOptions := -Wl,--whole-archive $(ProjLibsOptions) \
                        -Wl,--no-whole-archive
@@ -132,6 +141,7 @@ ifeq ($(HOST_OS),Linux)
     LLVMLibsOptions += -Wl,--no-undefined
     # Link in python
     LLVMLibsOptions += $(PYTHON_BUILD_FLAGS) -lrt
+    LLVMLibsOptions += -Wl,--soname,lib$(LIBRARYNAME)$(SHLIBEXT)
 endif
 
 ifeq ($(HOST_OS),FreeBSD)

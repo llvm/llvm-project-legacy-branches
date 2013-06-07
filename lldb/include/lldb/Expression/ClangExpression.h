@@ -14,7 +14,6 @@
 // C++ Includes
 #include <string>
 #include <map>
-#include <memory>
 #include <vector>
 
 // Other libraries and framework includes
@@ -47,8 +46,7 @@ public:
     };
     
     ClangExpression () :
-        m_jit_process_sp(),
-        m_jit_alloc (LLDB_INVALID_ADDRESS),
+        m_jit_process_wp(),
         m_jit_start_addr (LLDB_INVALID_ADDRESS),
         m_jit_end_addr (LLDB_INVALID_ADDRESS)
     {
@@ -59,7 +57,6 @@ public:
     //------------------------------------------------------------------
     virtual ~ClangExpression ()
     {
-        DeallocateJITFunction ();
     }
     
     //------------------------------------------------------------------
@@ -93,13 +90,6 @@ public:
     //------------------------------------------------------------------
     virtual ClangExpressionDeclMap *
     DeclMap () = 0;
-    
-    //------------------------------------------------------------------
-    /// Return the object that the parser should use when registering
-    /// local variables.  May be NULL if the Expression doesn't care.
-    //------------------------------------------------------------------
-    virtual ClangExpressionVariableList *
-    LocalVariables () = 0;
     
     //------------------------------------------------------------------
     /// Return the object that the parser should allow to access ASTs.
@@ -140,20 +130,6 @@ public:
     virtual bool
     NeedsVariableResolution () = 0;
 
-    void
-    DeallocateJITFunction ()
-    {
-        if (m_jit_process_sp && m_jit_alloc != LLDB_INVALID_ADDRESS)
-        {
-            m_jit_process_sp->DeallocateMemory (m_jit_alloc);
-            // If this process is ever used for anything else, we can not clear it 
-            // here. For now it is only used in order to deallocate any code if
-            // m_jit_alloc is a valid address.
-            m_jit_process_sp.reset(); 
-            m_jit_alloc = LLDB_INVALID_ADDRESS;
-        }
-    }
-
     //------------------------------------------------------------------
     /// Return the address of the function's JIT-compiled code, or
     /// LLDB_INVALID_ADDRESS if the function is not JIT compiled
@@ -166,8 +142,7 @@ public:
 
 protected:
 
-    lldb::ProcessSP m_jit_process_sp;
-    lldb::addr_t    m_jit_alloc;            ///< The address of the block containing JITted code.  LLDB_INVALID_ADDRESS if invalid.
+    lldb::ProcessWP m_jit_process_wp;
     lldb::addr_t    m_jit_start_addr;       ///< The address of the JITted function within the JIT allocation.  LLDB_INVALID_ADDRESS if invalid.
     lldb::addr_t    m_jit_end_addr;         ///< The address of the JITted function within the JIT allocation.  LLDB_INVALID_ADDRESS if invalid.
 

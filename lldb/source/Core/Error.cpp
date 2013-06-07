@@ -20,7 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#if defined (__arm__)
+#if defined (__arm__) && defined (__APPLE__)
 #include <SpringBoardServices/SpringBoardServer.h>
 #endif
 
@@ -356,7 +356,7 @@ Error::SetErrorStringWithVarArg (const char *format, va_list args)
         // allocated buffer above
         va_list copy_args;
         va_copy (copy_args, args);
-        size_t length = ::vsnprintf (buf.data(), buf.size(), format, args);
+        unsigned length = ::vsnprintf (buf.data(), buf.size(), format, args);
         if (length >= buf.size())
         {
             // The error formatted string didn't fit into our buffer, resize it

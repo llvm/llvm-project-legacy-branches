@@ -30,7 +30,8 @@ public:
         eBroadcastBitStateChanged   = (1 << 0),
         eBroadcastBitInterrupt      = (1 << 1),
         eBroadcastBitSTDOUT         = (1 << 2),
-        eBroadcastBitSTDERR         = (1 << 3)
+        eBroadcastBitSTDERR         = (1 << 3),
+        eBroadcastBitProfileData    = (1 << 4)
     };
 
     SBProcess ();
@@ -40,10 +41,19 @@ public:
     const lldb::SBProcess&
     operator = (const lldb::SBProcess& rhs);
 
+    SBProcess (const lldb::ProcessSP &process_sp);
+    
     ~SBProcess();
 
     static const char *
     GetBroadcasterClassName ();
+    
+    const char *
+    GetPluginName ();
+    
+    // DEPRECATED: use GetPluginName()
+    const char *
+    GetShortPluginName ();
     
     void
     Clear ();
@@ -66,6 +76,9 @@ public:
     size_t
     GetSTDERR (char *dst, size_t dst_len) const;
 
+    size_t
+    GetAsyncProfileData(char *dst, size_t dst_len) const;
+    
     void
     ReportEventState (const lldb::SBEvent &event, FILE *out) const;
 
@@ -110,11 +123,20 @@ public:
     lldb::SBThread
     GetSelectedThread () const;
 
+    //------------------------------------------------------------------
+    // Function for lazily creating a thread using the current OS
+    // plug-in. This function will be removed in the future when there
+    // are APIs to create SBThread objects through the interface and add
+    // them to the process through the SBProcess API.
+    //------------------------------------------------------------------
+    lldb::SBThread
+    CreateOSPluginThread (lldb::tid_t tid, lldb::addr_t context);
+
     bool
     SetSelectedThread (const lldb::SBThread &thread);
 
     bool
-    SetSelectedThreadByID (uint32_t tid);
+    SetSelectedThreadByID (lldb::tid_t tid);
     
     bool
     SetSelectedThreadByIndexID (uint32_t index_id);
@@ -132,8 +154,38 @@ public:
     const char *
     GetExitDescription ();
 
+    //------------------------------------------------------------------
+    /// Gets the process ID
+    ///
+    /// Returns the process identifier for the process as it is known
+    /// on the system on which the process is running. For unix systems
+    /// this is typically the same as if you called "getpid()" in the
+    /// process.
+    ///
+    /// @return
+    ///     Returns LLDB_INVALID_PROCESS_ID if this object does not
+    ///     contain a valid process object, or if the process has not
+    ///     been launched. Returns a valid process ID if the process is
+    ///     valid.
+    //------------------------------------------------------------------
     lldb::pid_t
     GetProcessID ();
+
+    //------------------------------------------------------------------
+    /// Gets the unique ID associated with this process object
+    ///
+    /// Unique IDs start at 1 and increment up with each new process
+    /// instance. Since starting a process on a system might always
+    /// create a process with the same process ID, there needs to be a
+    /// way to tell two process instances apart.
+    ///
+    /// @return
+    ///     Returns a non-zero integer ID if this object contains a
+    ///     valid process object, zero if this object does not contain
+    ///     a valid process object.
+    //------------------------------------------------------------------
+    uint32_t
+    GetUniqueID();
 
     uint32_t
     GetAddressByteSize() const;
@@ -154,10 +206,16 @@ public:
     Detach ();
 
     lldb::SBError
+    Detach (bool keep_stopped);
+
+    lldb::SBError
     Signal (int signal);
 
     void
     SendAsyncInterrupt();
+    
+    uint32_t
+    GetStopID(bool include_expression_stops = false);
     
     size_t
     ReadMemory (addr_t addr, void *buf, size_t size, lldb::SBError &error);
@@ -180,6 +238,12 @@ public:
 
     static bool
     GetRestartedFromEvent (const lldb::SBEvent &event);
+    
+    static size_t
+    GetNumRestartedReasonsFromEvent (const lldb::SBEvent &event);
+    
+    static const char *
+    GetRestartedReasonAtIndexFromEvent (const lldb::SBEvent &event, size_t idx);
 
     static lldb::SBProcess
     GetProcessFromEvent (const lldb::SBEvent &event);
@@ -216,8 +280,6 @@ protected:
     friend class SBTarget;
     friend class SBThread;
     friend class SBValue;
-
-    SBProcess (const lldb::ProcessSP &process_sp);
 
     lldb::ProcessSP
     GetSP() const;

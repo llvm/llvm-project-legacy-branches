@@ -74,6 +74,9 @@ public:
     void
     AppendMessage (const char *message);
 
+    void
+    AppendWarning (const char *message);
+    
     bool
     GetDescription (lldb::SBStream &description);
     
@@ -88,6 +91,12 @@ public:
     
     size_t
     Printf(const char* format, ...)  __attribute__ ((format (printf, 2, 3)));
+    
+    const char *
+    GetOutput (bool only_if_no_immediate);
+    
+    const char *
+    GetError (bool only_if_no_immediate);
     
 protected:
     friend class SBCommandInterpreter;
@@ -109,7 +118,7 @@ protected:
     SetLLDBObjectPtr (lldb_private::CommandReturnObject *ptr);
 
  private:
-    std::auto_ptr<lldb_private::CommandReturnObject> m_opaque_ap;
+    std::unique_ptr<lldb_private::CommandReturnObject> m_opaque_ap;
 };
 
 } // namespace lldb

@@ -14,6 +14,8 @@
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/SearchFilter.h"
+#include "lldb/Core/Module.h"
+#include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Target/Target.h"
 
 using namespace lldb;
@@ -78,16 +80,6 @@ SearchFilter::ModulePasses (const FileSpec &spec)
 
 bool
 SearchFilter::ModulePasses (const ModuleSP &module_sp)
-{
-    return true;
-}
-
-bool
-SearchFilter::SymbolContextPasses
-(
-    const SymbolContext &context,
-    lldb::SymbolContextItem scope
-)
 {
     return true;
 }
@@ -202,7 +194,7 @@ SearchFilter::DoModuleIteration (const SymbolContext &context, Searcher &searche
         }
         else
         {
-            ModuleList &target_images = m_target_sp->GetImages();
+            const ModuleList &target_images = m_target_sp->GetImages();
             Mutex::Locker modules_locker(target_images.GetMutex());
             
             size_t n_modules = target_images.GetSize();
@@ -243,8 +235,8 @@ SearchFilter::DoCUIteration (const ModuleSP &module_sp, const SymbolContext &con
     Searcher::CallbackReturn shouldContinue;
     if (context.comp_unit == NULL)
     {
-        uint32_t num_comp_units = module_sp->GetNumCompileUnits();
-        for (uint32_t i = 0; i < num_comp_units; i++)
+        const size_t num_comp_units = module_sp->GetNumCompileUnits();
+        for (size_t i = 0; i < num_comp_units; i++)
         {
             CompUnitSP cu_sp (module_sp->GetCompileUnitAtIndex (i));
             if (cu_sp)
@@ -368,26 +360,9 @@ SearchFilterByModule::ModulePasses (const ModuleSP &module_sp)
 bool
 SearchFilterByModule::ModulePasses (const FileSpec &spec)
 {
-    if (FileSpec::Compare(spec, m_module_spec, false) == 0)
-        return true;
-    else
-        return false;
-}
-
-bool
-SearchFilterByModule::SymbolContextPasses
-(
- const SymbolContext &context,
- lldb::SymbolContextItem scope
- )
-{
-    if (!(scope & eSymbolContextModule))
-        return false;
-
-    if (context.module_sp && FileSpec::Compare (context.module_sp->GetFileSpec(), m_module_spec, false) == 0)
-        return true;
-    else
-        return false;
+    // Do a full match only if "spec" has a directory
+    const bool full_match = spec.GetDirectory();
+    return FileSpec::Equal(spec, m_module_spec, full_match);
 }
 
 bool
@@ -427,14 +402,15 @@ SearchFilterByModule::Search (Searcher &searcher)
     // filespec that passes.  Otherwise, we need to go through all modules and
     // find the ones that match the file name.
 
-    ModuleList &target_modules = m_target_sp->GetImages();
+    const ModuleList &target_modules = m_target_sp->GetImages();
     Mutex::Locker modules_locker (target_modules.GetMutex());
     
     const size_t num_modules = target_modules.GetSize ();
     for (size_t i = 0; i < num_modules; i++)
     {
         Module* module = target_modules.GetModulePointerAtIndexUnlocked(i);
-        if (FileSpec::Compare (m_module_spec, module->GetFileSpec(), false) == 0)
+        const bool full_match = m_module_spec.GetDirectory();
+        if (FileSpec::Equal (m_module_spec, module->GetFileSpec(), full_match))
         {
             SymbolContext matchingContext(m_target_sp, module->shared_from_this());
             Searcher::CallbackReturn shouldContinue;
@@ -541,22 +517,6 @@ SearchFilterByModuleList::ModulePasses (const FileSpec &spec)
 }
 
 bool
-SearchFilterByModuleList::SymbolContextPasses
-(
- const SymbolContext &context,
- lldb::SymbolContextItem scope
- )
-{
-    if (!(scope & eSymbolContextModule))
-        return false;
-
-    if (context.module_sp && m_module_spec_list.FindFileIndex(0, context.module_sp->GetFileSpec(), true) != UINT32_MAX)
-        return true;
-    else
-        return false;
-}
-
-bool
 SearchFilterByModuleList::AddressPasses (Address &address)
 {
     // FIXME: Not yet implemented
@@ -593,7 +553,7 @@ SearchFilterByModuleList::Search (Searcher &searcher)
     // filespec that passes.  Otherwise, we need to go through all modules and
     // find the ones that match the file name.
 
-    ModuleList &target_modules = m_target_sp->GetImages();
+    const ModuleList &target_modules = m_target_sp->GetImages();
     Mutex::Locker modules_locker (target_modules.GetMutex());
     
     const size_t num_modules = target_modules.GetSize ();
@@ -615,7 +575,7 @@ SearchFilterByModuleList::Search (Searcher &searcher)
 void
 SearchFilterByModuleList::GetDescription (Stream *s)
 {
-    uint32_t num_modules = m_module_spec_list.GetSize();
+    size_t num_modules = m_module_spec_list.GetSize();
     if (num_modules == 1)
     {
         s->Printf (", module = ");
@@ -632,8 +592,8 @@ SearchFilterByModuleList::GetDescription (Stream *s)
     }
     else
     {
-        s->Printf (", modules(%u) = ", num_modules);
-        for (uint32_t i = 0; i < num_modules; i++)
+        s->Printf (", modules(%zu) = ", num_modules);
+        for (size_t i = 0; i < num_modules; i++)
         {
             if (s->GetVerbose())
             {
@@ -713,25 +673,8 @@ SearchFilterByModuleListAndCU::~SearchFilterByModuleListAndCU()
 }
 
 bool
-SearchFilterByModuleListAndCU::SymbolContextPasses
-(
- const SymbolContext &context,
- lldb::SymbolContextItem scope
- )
-{
-    if (!SearchFilterByModuleList::SymbolContextPasses(context, scope))
-        return false;
-    if (!(scope & eSymbolContextCompUnit))
-        return false;
-    if (context.comp_unit && m_cu_spec_list.FindFileIndex(0, static_cast<FileSpec>(context.comp_unit), false) == UINT32_MAX)
-        return false;
-    return true;
-}
-
-bool
 SearchFilterByModuleListAndCU::AddressPasses (Address &address)
 {
-    // FIXME: Not yet implemented
     return true;
 }
 
@@ -745,7 +688,7 @@ SearchFilterByModuleListAndCU::CompUnitPasses (FileSpec &fileSpec)
 bool
 SearchFilterByModuleListAndCU::CompUnitPasses (CompileUnit &compUnit)
 {
-    return m_cu_spec_list.FindFileIndex(0, static_cast<FileSpec>(compUnit), false) != UINT32_MAX;
+    return m_cu_spec_list.FindFileIndex(0, compUnit, false) != UINT32_MAX;
 }
 
 void
@@ -766,7 +709,7 @@ SearchFilterByModuleListAndCU::Search (Searcher &searcher)
     // find the ones that match the file name.
 
     ModuleList matching_modules;
-    ModuleList &target_images = m_target_sp->GetImages();
+    const ModuleList &target_images = m_target_sp->GetImages();
     Mutex::Locker modules_locker(target_images.GetMutex());
     
     const size_t num_modules = target_images.GetSize ();
@@ -810,7 +753,7 @@ SearchFilterByModuleListAndCU::Search (Searcher &searcher)
 void
 SearchFilterByModuleListAndCU::GetDescription (Stream *s)
 {
-    uint32_t num_modules = m_module_spec_list.GetSize();
+    size_t num_modules = m_module_spec_list.GetSize();
     if (num_modules == 1)
     {
         s->Printf (", module = ");
@@ -827,8 +770,8 @@ SearchFilterByModuleListAndCU::GetDescription (Stream *s)
     }
     else if (num_modules > 0)
     {
-        s->Printf (", modules(%d) = ", num_modules);
-        for (uint32_t i = 0; i < num_modules; i++)
+        s->Printf (", modules(%zd) = ", num_modules);
+        for (size_t i = 0; i < num_modules; i++)
         {
             if (s->GetVerbose())
             {

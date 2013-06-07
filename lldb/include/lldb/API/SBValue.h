@@ -14,11 +14,15 @@
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBType.h"
 
+class ValueImpl;
+class ValueLocker;
 
 namespace lldb {
 
 class SBValue
 {
+friend class ValueLocker;
+
 public:
     SBValue ();
 
@@ -95,8 +99,23 @@ public:
     lldb::SBValue
     GetNonSyntheticValue ();
     
+    lldb::DynamicValueType
+    GetPreferDynamicValue ();
+    
+    void
+    SetPreferDynamicValue (lldb::DynamicValueType use_dynamic);
+    
     bool
-    IsDynamic();
+    GetPreferSyntheticValue ();
+    
+    void
+    SetPreferSyntheticValue (bool use_synthetic);
+    
+    bool
+    IsDynamic ();
+    
+    bool
+    IsSynthetic ();
 
     const char *
     GetLocation ();
@@ -135,6 +154,9 @@ public:
     
     lldb::SBValue
     CreateValueFromExpression (const char *name, const char* expression);
+    
+    lldb::SBValue
+    CreateValueFromExpression (const char *name, const char* expression, SBExpressionOptions &options);
     
     lldb::SBValue
     CreateValueFromAddress (const char* name, 
@@ -269,6 +291,31 @@ public:
     lldb::SBData
     GetData ();
     
+    bool
+    SetData (lldb::SBData &data, lldb::SBError& error);
+    
+    lldb::SBDeclaration
+    GetDeclaration ();
+    
+    //------------------------------------------------------------------
+    /// Find out if a SBValue might have children.
+    ///
+    /// This call is much more efficient than GetNumChildren() as it
+    /// doesn't need to complete the underlying type. This is designed
+    /// to be used in a UI environment in order to detect if the
+    /// disclosure triangle should be displayed or not.
+    ///
+    /// This function returns true for class, union, structure,
+    /// pointers, references, arrays and more. Again, it does so without
+    /// doing any expensive type completion.
+    ///
+    /// @return
+    ///     Returns \b true if the SBValue might have children, or \b
+    ///     false otherwise.
+    //------------------------------------------------------------------
+    bool
+    MightHaveChildren ();
+
     uint32_t
     GetNumChildren ();
 
@@ -370,32 +417,70 @@ public:
     lldb::SBWatchpoint
     WatchPointee (bool resolve_location, bool read, bool write, SBError &error);
 
-    // this must be defined in the .h file because synthetic children as implemented in the core
-    // currently rely on being able to extract the SharedPointer out of an SBValue. if the implementation
-    // is deferred to the .cpp file instead of being inlined here, the platform will fail to link
-    // correctly. however, this is temporary till a better general solution is found. FIXME
-    lldb::ValueObjectSP&
-    get_sp()
-    {
-        return m_opaque_sp;
-    }
-
-protected:
-    friend class SBValueList;
-    friend class SBFrame;
-
+    //------------------------------------------------------------------
+    /// Same as the protected version of GetSP that takes a locker, except that we make the
+    /// locker locally in the function.  Since the Target API mutex is recursive, and the
+    /// StopLocker is a read lock, you can call this function even if you are already
+    /// holding the two above-mentioned locks.
+    ///
+    /// @return
+    ///     A ValueObjectSP of the best kind (static, dynamic or synthetic) we
+    ///     can cons up, in accordance with the SBValue's settings.
+    //------------------------------------------------------------------
     lldb::ValueObjectSP
     GetSP () const;
+
+protected:
+    friend class SBBlock;
+    friend class SBFrame;
+    friend class SBTarget;
+    friend class SBThread;
+    friend class SBValueList;
+
+    //------------------------------------------------------------------
+    /// Get the appropriate ValueObjectSP from this SBValue, consulting the
+    /// use_dynamic and use_synthetic options passed in to SetSP when the
+    /// SBValue's contents were set.  Since this often requires examining memory,
+    /// and maybe even running code, it needs to acquire the Target API and Process StopLock.
+    /// Those are held in an opaque class ValueLocker which is currently local to SBValue.cpp.
+    /// So you don't have to get these yourself just default construct a ValueLocker, and pass it into this.
+    /// If we need to make a ValueLocker and use it in some other .cpp file, we'll have to move it to
+    /// ValueObject.h/cpp or somewhere else convenient.  We haven't needed to so far.
+    ///
+    /// @param[in] value_locker
+    ///     An object that will hold the Target API, and Process RunLocks, and
+    ///     auto-destroy them when it goes out of scope.  Currently this is only useful in
+    ///     SBValue.cpp.
+    ///
+    /// @return
+    ///     A ValueObjectSP of the best kind (static, dynamic or synthetic) we
+    ///     can cons up, in accordance with the SBValue's settings.
+    //------------------------------------------------------------------
+    lldb::ValueObjectSP
+    GetSP (ValueLocker &value_locker) const;
     
-    // anyone who needs to set the value of the SP on this SBValue should rely on SetSP() exclusively
-    // since this function contains logic to "do the right thing" with regard to providing to the user
-    // a synthetic value when possible - in the future the same should automatically occur with
-    // dynamic values
+    // these calls do the right thing WRT adjusting their settings according to the target's preferences
     void
     SetSP (const lldb::ValueObjectSP &sp);
+
+    void
+    SetSP (const lldb::ValueObjectSP &sp, bool use_synthetic);
+    
+    void
+    SetSP (const lldb::ValueObjectSP &sp, lldb::DynamicValueType use_dynamic);
+
+    void
+    SetSP (const lldb::ValueObjectSP &sp, lldb::DynamicValueType use_dynamic, bool use_synthetic);
+    
+    void
+    SetSP (const lldb::ValueObjectSP &sp, lldb::DynamicValueType use_dynamic, bool use_synthetic, const char *name);
     
 private:
-    lldb::ValueObjectSP m_opaque_sp;
+    typedef std::shared_ptr<ValueImpl> ValueImplSP;
+    ValueImplSP m_opaque_sp;
+    
+    void
+    SetSP (ValueImplSP impl_sp);
 };
 
 } // namespace lldb

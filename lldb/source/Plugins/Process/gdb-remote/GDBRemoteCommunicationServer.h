@@ -13,8 +13,10 @@
 // C Includes
 // C++ Includes
 #include <vector>
+#include <set>
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Host/Mutex.h"
 #include "lldb/Target/Process.h"
 #include "GDBRemoteCommunication.h"
 
@@ -83,6 +85,8 @@ protected:
     lldb::thread_t m_async_thread;
     lldb_private::ProcessLaunchInfo m_process_launch_info;
     lldb_private::Error m_process_launch_error;
+    std::set<lldb::pid_t> m_spawned_pids;
+    lldb_private::Mutex m_spawned_pids_mutex;
     lldb_private::ProcessInstanceInfoList m_proc_infos;
     uint32_t m_proc_infos_index;
     uint16_t m_lo_port_num;
@@ -90,6 +94,7 @@ protected:
     //PortToPIDMap m_port_to_pid_map;
     uint16_t m_next_port;
     bool m_use_port_range;
+    
 
     size_t
     SendUnimplementedResponse (const char *packet);
@@ -111,6 +116,9 @@ protected:
     
     bool
     Handle_qLaunchGDBServer (StringExtractorGDBRemote &packet);
+    
+    bool
+    Handle_qKillSpawnedProcess (StringExtractorGDBRemote &packet);
 
     bool
     Handle_qPlatform_IO_MkDir (StringExtractorGDBRemote &packet);
@@ -174,6 +182,9 @@ protected:
 
     bool
     Handle_vFile_Size (StringExtractorGDBRemote &packet);
+    
+    bool
+    Handle_vFile_Mode (StringExtractorGDBRemote &packet);
 
     bool
     Handle_vFile_Exists (StringExtractorGDBRemote &packet);
@@ -188,6 +199,16 @@ protected:
     Handle_qPlatform_RunCommand (StringExtractorGDBRemote &packet);
 
 private:
+    bool
+    DebugserverProcessReaped (lldb::pid_t pid);
+    
+    static bool
+    ReapDebugserverProcess (void *callback_baton,
+                            lldb::pid_t pid,
+                            bool exited,
+                            int signal,
+                            int status);
+
     //------------------------------------------------------------------
     // For GDBRemoteCommunicationServer only
     //------------------------------------------------------------------

@@ -123,8 +123,12 @@ StringExtractorGDBRemote::GetServerPacketType () const
             if (PACKET_MATCHES ("qHostInfo"))                   return eServerPacketType_qHostInfo;
             break;
 
+        case 'K':
+            if (PACKET_STARTS_WITH ("qKillSpawnedProcess"))     return eServerPacketType_qKillSpawnedProcess;
+            break;
+        
         case 'L':
-            if (PACKET_MATCHES ("qLaunchGDBServer"))            return eServerPacketType_qLaunchGDBServer;
+            if (PACKET_STARTS_WITH ("qLaunchGDBServer"))        return eServerPacketType_qLaunchGDBServer;
             if (PACKET_MATCHES ("qLaunchSuccess"))              return eServerPacketType_qLaunchSuccess;
             break;
             
@@ -154,6 +158,7 @@ StringExtractorGDBRemote::GetServerPacketType () const
                 else if (PACKET_STARTS_WITH("vFile:size"))           return eServerPacketType_vFile_Size;
                 else if (PACKET_STARTS_WITH("vFile:exists"))         return eServerPacketType_vFile_Exists;
                 else if (PACKET_STARTS_WITH("vFile:stat"))           return eServerPacketType_vFile_Stat;
+                else if (PACKET_STARTS_WITH("vFile:mode"))           return eServerPacketType_vFile_Mode;
                 else if (PACKET_STARTS_WITH("vFile:MD5"))            return eServerPacketType_vFile_MD5;
 
             }

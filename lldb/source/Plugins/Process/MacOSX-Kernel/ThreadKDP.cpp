@@ -28,6 +28,7 @@
 #include "RegisterContextKDP_arm.h"
 #include "RegisterContextKDP_i386.h"
 #include "RegisterContextKDP_x86_64.h"
+#include "Plugins/Process/Utility/StopInfoMachException.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -36,8 +37,8 @@ using namespace lldb_private;
 // Thread Registers
 //----------------------------------------------------------------------
 
-ThreadKDP::ThreadKDP (const lldb::ProcessSP &process_sp, lldb::tid_t tid) :
-    Thread(process_sp, tid),
+ThreadKDP::ThreadKDP (Process &process, lldb::tid_t tid) :
+    Thread(process, tid),
     m_thread_name (),
     m_dispatch_queue_name (),
     m_thread_dispatch_qaddr (LLDB_INVALID_ADDRESS)
@@ -65,37 +66,6 @@ ThreadKDP::GetQueueName ()
     return NULL;
 }
 
-bool
-ThreadKDP::WillResume (StateType resume_state)
-{
-    ClearStackFrames();
-    // Call the Thread::WillResume first. If we stop at a signal, the stop info
-    // class for signal will set the resume signal that we need below. The signal
-    // stuff obeys the Process::UnixSignal defaults. 
-    Thread::WillResume(resume_state);
-
-    lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP));
-    if (log)
-        log->Printf ("Resuming thread: %4.4llx with state: %s.", GetID(), StateAsCString(resume_state));
-
-//    ProcessKDP &process = GetKDPProcess();
-//    switch (resume_state)
-//    {
-//    case eStateSuspended:
-//    case eStateStopped:
-//        // Don't append anything for threads that should stay stopped.
-//        break;
-//
-//    case eStateRunning:
-//    case eStateStepping:
-//        break;
-//
-//    default:
-//        break;
-//    }
-    return true;
-}
-
 void
 ThreadKDP::RefreshStateAfterStop()
 {
@@ -108,18 +78,10 @@ ThreadKDP::RefreshStateAfterStop()
     // register supply functions where they check the process stop ID and do
     // the right thing.
     const bool force = false;
-    GetRegisterContext()->InvalidateIfNeeded (force);
+    lldb::RegisterContextSP reg_ctx_sp (GetRegisterContext());
+    if (reg_ctx_sp)
+        reg_ctx_sp->InvalidateIfNeeded (force);
 }
-
-void
-ThreadKDP::ClearStackFrames ()
-{
-    Unwind *unwinder = GetUnwinder ();
-    if (unwinder)
-        unwinder->Clear();
-    Thread::ClearStackFrames();
-}
-
 
 bool
 ThreadKDP::ThreadIDIsValid (lldb::tid_t thread)
@@ -177,40 +139,69 @@ ThreadKDP::CreateRegisterContextForFrame (StackFrame *frame)
             }
         }
     }
-    else if (m_unwinder_ap.get())
-        reg_ctx_sp = m_unwinder_ap->CreateRegisterContextForFrame (frame);
+    else
+    {
+        Unwind *unwinder = GetUnwinder ();
+        if (unwinder)
+            reg_ctx_sp = unwinder->CreateRegisterContextForFrame (frame);
+    }
     return reg_ctx_sp;
 }
 
-lldb::StopInfoSP
-ThreadKDP::GetPrivateStopReason ()
+bool
+ThreadKDP::CalculateStopInfo ()
 {
     ProcessSP process_sp (GetProcess());
     if (process_sp)
     {
-        const uint32_t process_stop_id = process_sp->GetStopID();
-        if (m_thread_stop_reason_stop_id != process_stop_id ||
-            (m_actual_stop_info_sp && !m_actual_stop_info_sp->IsValid()))
+        if (m_cached_stop_info_sp)
         {
-            // TODO: can we query the initial state of the thread here?
-            // For now I am just going to pretend that a SIGSTOP happened.
-
-            SetStopInfo(StopInfo::CreateStopReasonWithSignal (*this, SIGSTOP));
-
-            // If GetKDPProcess().SetThreadStopInfo() doesn't find a stop reason
-            // for this thread, then m_actual_stop_info_sp will not ever contain
-            // a valid stop reason and the "m_actual_stop_info_sp->IsValid() == false"
-            // check will never be able to tell us if we have the correct stop info
-            // for this thread and we will continually send qThreadStopInfo packets
-            // down to the remote KDP server, so we need to keep our own notion
-            // of the stop ID that m_actual_stop_info_sp is valid for (even if it
-            // contains nothing). We use m_thread_stop_reason_stop_id for this below.
-    //        m_thread_stop_reason_stop_id = process_stop_id;
-    //        m_actual_stop_info_sp.reset();
-
+            SetStopInfo (m_cached_stop_info_sp);
         }
+        else
+        {
+            SetStopInfo(StopInfo::CreateStopReasonWithSignal (*this, SIGSTOP));
+        }
+        return true;
     }
-    return m_actual_stop_info_sp;
+    return false;
 }
 
+void
+ThreadKDP::SetStopInfoFrom_KDP_EXCEPTION (const DataExtractor &exc_reply_packet)
+{
+    lldb::offset_t offset = 0;
+    uint8_t reply_command = exc_reply_packet.GetU8(&offset);
+    if (reply_command == CommunicationKDP::KDP_EXCEPTION)
+    {
+        offset = 8;
+        const uint32_t count = exc_reply_packet.GetU32 (&offset);
+        if (count >= 1)
+        {
+            //const uint32_t cpu = exc_reply_packet.GetU32 (&offset);
+            offset += 4; // Skip the useless CPU field
+            const uint32_t exc_type = exc_reply_packet.GetU32 (&offset);
+            const uint32_t exc_code = exc_reply_packet.GetU32 (&offset);
+            const uint32_t exc_subcode = exc_reply_packet.GetU32 (&offset);
+            // We have to make a copy of the stop info because the thread list
+            // will iterate through the threads and clear all stop infos..
+            
+            // Let the StopInfoMachException::CreateStopReasonWithMachException()
+            // function update the PC if needed as we might hit a software breakpoint
+            // and need to decrement the PC (i386 and x86_64 need this) and KDP
+            // doesn't do this for us.
+            const bool pc_already_adjusted = false;
+            const bool adjust_pc_if_needed = true;
+
+            m_cached_stop_info_sp = StopInfoMachException::CreateStopReasonWithMachException (*this,
+                                                                                              exc_type,
+                                                                                              2,
+                                                                                              exc_code,
+                                                                                              exc_subcode,
+                                                                                              0,
+                                                                                              pc_already_adjusted,
+                                                                                              adjust_pc_if_needed);            
+        }
+    }
+}
 

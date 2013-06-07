@@ -58,6 +58,7 @@ private:
     friend class SBAttachInfo;
     friend class SBBlock;
     friend class SBCompileUnit;
+    friend class SBDeclaration;
     friend class SBFileSpecList;
     friend class SBHostOS;
     friend class SBLaunchInfo;
@@ -83,7 +84,7 @@ private:
     const lldb_private::FileSpec &
     ref() const;
 
-    std::auto_ptr <lldb_private::FileSpec> m_opaque_ap;
+    std::unique_ptr<lldb_private::FileSpec> m_opaque_ap;
 };
 
 

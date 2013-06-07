@@ -16,6 +16,7 @@
 
 #include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Host/File.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/Host.h"
 
@@ -89,54 +90,62 @@ PlatformPOSIX::MakeDirectory (const std::string &path,
 
 lldb::user_id_t
 PlatformPOSIX::OpenFile (const FileSpec& file_spec,
-                          uint32_t flags,
-                          mode_t mode)
+                         uint32_t flags,
+                         mode_t mode,
+                         Error &error)
 {
     if (IsHost())
     {
-        return Host::OpenFile(file_spec, flags, mode);
+        return Host::OpenFile(file_spec, flags, mode, error);
     }
     if (IsRemote() && m_remote_platform_sp)
-        return m_remote_platform_sp->OpenFile(file_spec, flags, mode);
-    return Platform::OpenFile(file_spec, flags, mode);
+        return m_remote_platform_sp->OpenFile(file_spec, flags, mode, error);
+    return Platform::OpenFile(file_spec, flags, mode, error);
 }
 
 bool
-PlatformPOSIX::CloseFile (lldb::user_id_t fd)
+PlatformPOSIX::CloseFile (lldb::user_id_t fd, Error &error)
 {
     if (IsHost())
     {
-        return Host::CloseFile(fd);
+        return Host::CloseFile(fd, error);
     }
     if (IsRemote() && m_remote_platform_sp)
-        return m_remote_platform_sp->CloseFile(fd);
-    return Platform::CloseFile(fd);
+        return m_remote_platform_sp->CloseFile(fd, error);
+    return Platform::CloseFile(fd, error);
 }
 
-uint32_t
-PlatformPOSIX::ReadFile (lldb::user_id_t fd, uint64_t offset,
-                          void *data_ptr, size_t len)
+uint64_t
+PlatformPOSIX::ReadFile (lldb::user_id_t fd,
+                         uint64_t offset,
+                         void *dst,
+                         uint64_t dst_len,
+                         Error &error)
 {
     if (IsHost())
     {
-        return Host::ReadFile(fd, offset, data_ptr, len);
+        return Host::ReadFile(fd, offset, dst, dst_len, error);
     }
     if (IsRemote() && m_remote_platform_sp)
-        return m_remote_platform_sp->ReadFile(fd, offset, data_ptr, len);
-    return Platform::ReadFile(fd, offset, data_ptr, len);
+        return m_remote_platform_sp->ReadFile(fd, offset, dst, dst_len, error);
+    return Platform::ReadFile(fd, offset, dst, dst_len, error);
 }
 
-uint32_t
-PlatformPOSIX::WriteFile (lldb::user_id_t fd, uint64_t offset,
-                           void* data, size_t len)
+uint64_t
+PlatformPOSIX::WriteFile (lldb::user_id_t fd,
+                          uint64_t offset,
+                          const void* src,
+                          uint64_t src_len,
+                          Error &error)
 {
     if (IsHost())
     {
-        return Host::WriteFile(fd, offset, data, len);
+        return Host::WriteFile(fd, offset, src, src_len, error);
     }
     if (IsRemote() && m_remote_platform_sp)
-        return m_remote_platform_sp->WriteFile(fd, offset, data, len);
-    return Platform::WriteFile(fd, offset, data, len);
+        return m_remote_platform_sp->WriteFile(fd, offset, src, src_len, error);
+
+    return Platform::WriteFile(fd, offset, src, src_len, error);
 }
 
 static uint32_t
@@ -174,18 +183,17 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
                          uint32_t uid,
                          uint32_t gid)
 {
-#define PUTFILE_CHUNK_SIZE 1024
     if (IsHost())
     {
         if (FileSpec::Equal(source, destination, true))
             return Error();
         // cp src dst
         // chown uid:gid dst
-        std::string src_path;
-        if (source.GetPath(src_path) == 0)
+        std::string src_path (source.GetPath());
+        if (src_path.empty())
             return Error("unable to get file path for source");
-        std::string dst_path;
-        if (destination.GetPath(dst_path) == 0)
+        std::string dst_path (destination.GetPath());
+        if (dst_path.empty())
             return Error("unable to get file path for destination");
         StreamString command;
         command.Printf("cp %s %s", src_path.c_str(), dst_path.c_str());
@@ -204,15 +212,15 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
             return Error("unable to perform chown");
         return Error();
     }
-    if (IsRemote() && m_remote_platform_sp)
+    else if (IsRemote() && m_remote_platform_sp)
     {
         if (GetSupportsRSync())
         {
-            std::string src_path;
-            if (source.GetPath(src_path) == 0)
+            std::string src_path (source.GetPath());
+            if (src_path.empty())
                 return Error("unable to get file path for source");
-            std::string dst_path;
-            if (destination.GetPath(dst_path) == 0)
+            std::string dst_path (destination.GetPath());
+            if (dst_path.empty())
                 return Error("unable to get file path for destination");
             StreamString command;
             if (GetIgnoresRemoteHostname())
@@ -245,8 +253,9 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
                                   60);
             if (retcode == 0)
             {
-                if (chown_file(this,dst_path.c_str(),uid,gid) != 0)
-                    return Error("unable to perform chown");
+                // Don't chown a local file for a remote system
+//                if (chown_file(this,dst_path.c_str(),uid,gid) != 0)
+//                    return Error("unable to perform chown");
                 return Error();
             }
             // if we are still here rsync has failed - let's try the slow way before giving up
@@ -259,33 +268,38 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
         File source_file(source, File::eOpenOptionRead, File::ePermissionsUserRW);
         if (!source_file.IsValid())
             return Error("unable to open source file");
-        lldb::user_id_t dest_file = OpenFile(destination, File::eOpenOptionCanCreate | File::eOpenOptionWrite | File::eOpenOptionTruncate,
-                                             File::ePermissionsUserRWX | File::ePermissionsGroupRX | File::ePermissionsWorldRX);
+        Error error;
+        lldb::user_id_t dest_file = OpenFile (destination,
+                                              File::eOpenOptionCanCreate | File::eOpenOptionWrite | File::eOpenOptionTruncate,
+                                              File::ePermissionsUserRWX | File::ePermissionsGroupRX | File::ePermissionsWorldRX,
+                                              error);
+        printf ("dest_file = %lli\n", dest_file);
+        if (error.Fail())
+            return error;
         if (dest_file == UINT64_MAX)
             return Error("unable to open target file");
-        lldb::DataBufferSP buffer_sp(new DataBufferHeap(PUTFILE_CHUNK_SIZE, 0));
-        Error err;
+        lldb::DataBufferSP buffer_sp(new DataBufferHeap(1024, 0));
         uint64_t offset = 0;
-        while (err.Success())
+        while (error.Success())
         {
-            size_t read_data = PUTFILE_CHUNK_SIZE;
-            err = source_file.Read(buffer_sp->GetBytes(), read_data);
-            if (read_data)
+            size_t bytes_read = buffer_sp->GetByteSize();
+            error = source_file.Read(buffer_sp->GetBytes(), bytes_read);
+            if (bytes_read)
             {
-                WriteFile(dest_file, offset, buffer_sp->GetBytes(), read_data);
-                offset += read_data;
+                WriteFile(dest_file, offset, buffer_sp->GetBytes(), bytes_read, error);
+                offset += bytes_read;
             }
             else
                 break;
         }
-        CloseFile(dest_file);
+        CloseFile(dest_file, error);
         if (uid == UINT32_MAX && gid == UINT32_MAX)
-            return Error();
-        std::string dst_path;
-        destination.GetPath(dst_path);
-        if (chown_file(this,dst_path.c_str(),uid,gid) != 0)
-            return Error("unable to perform chown");
-        return Error();
+            return error;
+        // This is remopve, don't chown a local file...
+//        std::string dst_path (destination.GetPath());
+//        if (chown_file(this,dst_path.c_str(),uid,gid) != 0)
+//            return Error("unable to perform chown");
+        return error;
     }
     return Platform::PutFile(source,destination,uid,gid);
 }
@@ -314,17 +328,31 @@ PlatformPOSIX::GetFileExists (const FileSpec& file_spec)
     return Platform::GetFileExists(file_spec);
 }
 
+uint32_t
+PlatformPOSIX::GetFilePermissions (const lldb_private::FileSpec &file_spec,
+                                   lldb_private::Error &error)
+{
+    if (IsHost())
+    {
+        return File::GetPermissions(file_spec.GetPath().c_str(), error);
+    }
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->GetFilePermissions(file_spec, error);
+    return Platform::GetFilePermissions(file_spec, error);
+    
+}
+
+
 lldb_private::Error
 PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path */,
                          const lldb_private::FileSpec& destination /* local file path */)
 {
-#define GETFILE_CHUNK_SIZE 1024
-    // Check the args, first. 
-    std::string src_path;
-    if (source.GetPath(src_path) == 0)
+    // Check the args, first.
+    std::string src_path (source.GetPath());
+    if (src_path.empty())
         return Error("unable to get file path for source");
-    std::string dst_path;
-    if (destination.GetPath(dst_path) == 0)
+    std::string dst_path (destination.GetPath());
+    if (dst_path.empty())
         return Error("unable to get file path for destination");
     if (IsHost())
     {
@@ -386,41 +414,71 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
         // close src
         // close dst
         printf("[GetFile] Using block by block transfer....\n");
-        user_id_t fd_src = OpenFile(source, File::eOpenOptionRead, File::ePermissionsDefault);
-        user_id_t fd_dst = Host::OpenFile(destination,
-                                          File::eOpenOptionCanCreate|File::eOpenOptionWrite,
-                                          File::ePermissionsDefault);
+        Error error;
+        user_id_t fd_src = OpenFile (source,
+                                     File::eOpenOptionRead,
+                                     File::ePermissionsDefault,
+                                     error);
+
         if (fd_src == UINT64_MAX)
             return Error("unable to open source file");
+
+        uint32_t permissions = GetFilePermissions(source, error);
+        
+        if (permissions == 0)
+            permissions = File::ePermissionsDefault;
+
+        user_id_t fd_dst = Host::OpenFile(destination,
+                                          File::eOpenOptionCanCreate | File::eOpenOptionWrite | File::eOpenOptionTruncate,
+                                          permissions,
+                                          error);
+
         if (fd_dst == UINT64_MAX)
-            return Error("unable to open destination file");
-
-        lldb::DataBufferSP buffer_sp(new DataBufferHeap(GETFILE_CHUNK_SIZE, 0));
-        uint8_t *cursor = buffer_sp->GetBytes();
-        Error err;
-        uint64_t offset = 0;
-        while (err.Success())
         {
-            user_id_t n_read = ReadFile(fd_src, offset, cursor, GETFILE_CHUNK_SIZE);
-            if (n_read == UINT32_MAX)
-                return Error("error during read operation");
-            // Break out of the loop once we reach end of file.
-            if (n_read == 0)
-                break;
+            if (error.Success())
+                error.SetErrorString("unable to open destination file");
+        }
 
-            if (!Host::WriteFile(fd_dst, offset, cursor, n_read))
-                return Error("unable to write to destination file");
-
-            offset += n_read;
-            cursor += n_read;
-
+        if (error.Success())
+        {
+            lldb::DataBufferSP buffer_sp(new DataBufferHeap(1024, 0));
+            uint64_t offset = 0;
+            error.Clear();
+            while (error.Success())
+            {
+                const uint64_t n_read = ReadFile (fd_src,
+                                                  offset,
+                                                  buffer_sp->GetBytes(),
+                                                  buffer_sp->GetByteSize(),
+                                                  error);
+                if (error.Fail())
+                    break;
+                if (n_read == 0)
+                    break;
+                if (Host::WriteFile(fd_dst,
+                                    offset,
+                                    buffer_sp->GetBytes(),
+                                    n_read,
+                                    error) != n_read)
+                {
+                    if (!error.Fail())
+                        error.SetErrorString("unable to write to destination file");
+                        break;
+                }
+                offset += n_read;
+            }
         }
         // Ignore the close error of src.
-        CloseFile(fd_src);
+        if (fd_src != UINT64_MAX)
+            CloseFile(fd_src, error);
         // And close the dst file descriptot.
-        if (!Host::CloseFile(fd_dst))
-            return Error("unable to close destination file");
-        return Error();
+        if (fd_dst != UINT64_MAX && !Host::CloseFile(fd_dst, error))
+        {
+            if (!error.Fail())
+                error.SetErrorString("unable to close destination file");
+
+        }
+        return error;
     }
     return Platform::GetFile(source,destination);
 }

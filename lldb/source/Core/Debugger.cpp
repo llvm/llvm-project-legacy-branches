@@ -7,6 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
+#include "lldb/API/SBDebugger.h"
+
 #include "lldb/Core/Debugger.h"
 
 #include <map>
@@ -16,9 +20,9 @@
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/ConnectionFileDescriptor.h"
-#include "lldb/Core/DataVisualization.h"
-#include "lldb/Core/FormatManager.h"
 #include "lldb/Core/InputReader.h"
+#include "lldb/Core/Module.h"
+#include "lldb/Core/PluginManager.h"
 #include "lldb/Core/RegisterValue.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/StreamAsynchronousIO.h"
@@ -27,13 +31,23 @@
 #include "lldb/Core/Timer.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectVariable.h"
+#include "lldb/DataFormatters/DataVisualization.h"
+#include "lldb/DataFormatters/FormatManager.h"
+#include "lldb/Host/DynamicLibrary.h"
 #include "lldb/Host/Terminal.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Interpreter/OptionValueSInt64.h"
+#include "lldb/Interpreter/OptionValueString.h"
+#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/Function.h"
+#include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/TargetList.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/StopInfo.h"
+#include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/AnsiTerminal.h"
 
@@ -64,123 +78,283 @@ GetDebuggerList()
     return g_list;
 }
 
-
-static const ConstString &
-PromptVarName ()
-{
-    static ConstString g_const_string ("prompt");
-    return g_const_string;
-}
-
-static const ConstString &
-GetNotifyVoidName ()
-{
-    static ConstString g_const_string ("notify-void");
-    return g_const_string;
-}
-
-static const ConstString &
-GetFrameFormatName ()
-{
-    static ConstString g_const_string ("frame-format");
-    return g_const_string;
-}
-
-static const ConstString &
-GetThreadFormatName ()
-{
-    static ConstString g_const_string ("thread-format");
-    return g_const_string;
-}
-
-static const ConstString &
-ScriptLangVarName ()
-{
-    static ConstString g_const_string ("script-lang");
-    return g_const_string;
-}
-
-static const ConstString &
-TermWidthVarName ()
-{
-    static ConstString g_const_string ("term-width");
-    return g_const_string;
-}
-
-static const ConstString &
-UseExternalEditorVarName ()
-{
-    static ConstString g_const_string ("use-external-editor");
-    return g_const_string;
-}
-
-static const ConstString &
-AutoConfirmName ()
-{
-    static ConstString g_const_string ("auto-confirm");
-    return g_const_string;
-}
-
-static const ConstString &
-StopSourceContextBeforeName ()
-{
-    static ConstString g_const_string ("stop-line-count-before");
-    return g_const_string;
-}
-
-static const ConstString &
-StopSourceContextAfterName ()
-{
-    static ConstString g_const_string ("stop-line-count-after");
-    return g_const_string;
-}
-
-static const ConstString &
-StopDisassemblyCountName ()
-{
-    static ConstString g_const_string ("stop-disassembly-count");
-    return g_const_string;
-}
-
-static const ConstString &
-StopDisassemblyDisplayName ()
-{
-    static ConstString g_const_string ("stop-disassembly-display");
-    return g_const_string;
-}
-
 OptionEnumValueElement
-DebuggerInstanceSettings::g_show_disassembly_enum_values[] =
+g_show_disassembly_enum_values[] =
 {
-    { eStopDisassemblyTypeNever,    "never",     "Never show disassembly when displaying a stop context."},
-    { eStopDisassemblyTypeNoSource, "no-source", "Show disassembly when there is no source information, or the source file is missing when displaying a stop context."},
-    { eStopDisassemblyTypeAlways,   "always",    "Always show disassembly when displaying a stop context."},
+    { Debugger::eStopDisassemblyTypeNever,    "never",     "Never show disassembly when displaying a stop context."},
+    { Debugger::eStopDisassemblyTypeNoSource, "no-source", "Show disassembly when there is no source information, or the source file is missing when displaying a stop context."},
+    { Debugger::eStopDisassemblyTypeAlways,   "always",    "Always show disassembly when displaying a stop context."},
     { 0, NULL, NULL }
 };
 
+OptionEnumValueElement
+g_language_enumerators[] =
+{
+    { eScriptLanguageNone,      "none",     "Disable scripting languages."},
+    { eScriptLanguagePython,    "python",   "Select python as the default scripting language."},
+    { eScriptLanguageDefault,   "default",  "Select the lldb default as the default scripting language."},
+    { 0, NULL, NULL }
+};
 
+#define MODULE_WITH_FUNC "{ ${module.file.basename}{`${function.name-with-args}${function.pc-offset}}}"
+#define FILE_AND_LINE "{ at ${line.file.basename}:${line.number}}"
+
+#define DEFAULT_THREAD_FORMAT "thread #${thread.index}: tid = ${thread.id}"\
+    "{, ${frame.pc}}"\
+    MODULE_WITH_FUNC\
+    FILE_AND_LINE\
+    "{, name = '${thread.name}}"\
+    "{, queue = '${thread.queue}}"\
+    "{, stop reason = ${thread.stop-reason}}"\
+    "{\\nReturn value: ${thread.return-value}}"\
+    "\\n"
+
+#define DEFAULT_FRAME_FORMAT "frame #${frame.index}: ${frame.pc}"\
+    MODULE_WITH_FUNC\
+    FILE_AND_LINE\
+    "\\n"
+
+
+
+static PropertyDefinition
+g_properties[] =
+{
+{   "auto-confirm",             OptionValue::eTypeBoolean, true, false, NULL, NULL, "If true all confirmation prompts will receive their default reply." },
+{   "frame-format",             OptionValue::eTypeString , true, 0    , DEFAULT_FRAME_FORMAT, NULL, "The default frame format string to use when displaying stack frame information for threads." },
+{   "notify-void",              OptionValue::eTypeBoolean, true, false, NULL, NULL, "Notify the user explicitly if an expression returns void (default: false)." },
+{   "prompt",                   OptionValue::eTypeString , true, OptionValueString::eOptionEncodeCharacterEscapeSequences, "(lldb) ", NULL, "The debugger command line prompt displayed for the user." },
+{   "script-lang",              OptionValue::eTypeEnum   , true, eScriptLanguagePython, NULL, g_language_enumerators, "The script language to be used for evaluating user-written scripts." },
+{   "stop-disassembly-count",   OptionValue::eTypeSInt64 , true, 4    , NULL, NULL, "The number of disassembly lines to show when displaying a stopped context." },
+{   "stop-disassembly-display", OptionValue::eTypeEnum   , true, Debugger::eStopDisassemblyTypeNoSource, NULL, g_show_disassembly_enum_values, "Control when to display disassembly when displaying a stopped context." },
+{   "stop-line-count-after",    OptionValue::eTypeSInt64 , true, 3    , NULL, NULL, "The number of sources lines to display that come after the current source line when displaying a stopped context." },
+{   "stop-line-count-before",   OptionValue::eTypeSInt64 , true, 3    , NULL, NULL, "The number of sources lines to display that come before the current source line when displaying a stopped context." },
+{   "term-width",               OptionValue::eTypeSInt64 , true, 80   , NULL, NULL, "The maximum number of columns to use for displaying text." },
+{   "thread-format",            OptionValue::eTypeString , true, 0    , DEFAULT_THREAD_FORMAT, NULL, "The default thread format string to use when displaying thread information." },
+{   "use-external-editor",      OptionValue::eTypeBoolean, true, false, NULL, NULL, "Whether to use an external editor or not." },
+{   "use-color",                OptionValue::eTypeBoolean, true, true , NULL, NULL, "Whether to use Ansi color codes or not." },
+
+    {   NULL,                       OptionValue::eTypeInvalid, true, 0    , NULL, NULL, NULL }
+};
+
+enum
+{
+    ePropertyAutoConfirm = 0,
+    ePropertyFrameFormat,
+    ePropertyNotiftVoid,
+    ePropertyPrompt,
+    ePropertyScriptLanguage,
+    ePropertyStopDisassemblyCount,
+    ePropertyStopDisassemblyDisplay,
+    ePropertyStopLineCountAfter,
+    ePropertyStopLineCountBefore,
+    ePropertyTerminalWidth,
+    ePropertyThreadFormat,
+    ePropertyUseExternalEditor,
+    ePropertyUseColor,
+};
+
+//
+//const char *
+//Debugger::GetFrameFormat() const
+//{
+//    return m_properties_sp->GetFrameFormat();
+//}
+//const char *
+//Debugger::GetThreadFormat() const
+//{
+//    return m_properties_sp->GetThreadFormat();
+//}
+//
+
+
+Error
+Debugger::SetPropertyValue (const ExecutionContext *exe_ctx,
+                            VarSetOperationType op,
+                            const char *property_path,
+                            const char *value)
+{
+    bool is_load_script = strcmp(property_path,"target.load-script-from-symbol-file") == 0;
+    TargetSP target_sp;
+    LoadScriptFromSymFile load_script_old_value;
+    if (is_load_script && exe_ctx->GetTargetSP())
+    {
+        target_sp = exe_ctx->GetTargetSP();
+        load_script_old_value = target_sp->TargetProperties::GetLoadScriptFromSymbolFile();
+    }
+    Error error (Properties::SetPropertyValue (exe_ctx, op, property_path, value));
+    if (error.Success())
+    {
+        // FIXME it would be nice to have "on-change" callbacks for properties
+        if (strcmp(property_path, g_properties[ePropertyPrompt].name) == 0)
+        {
+            const char *new_prompt = GetPrompt();
+            std::string str = lldb_utility::ansi::FormatAnsiTerminalCodes (new_prompt, GetUseColor());
+            if (str.length())
+                new_prompt = str.c_str();
+            EventSP prompt_change_event_sp (new Event(CommandInterpreter::eBroadcastBitResetPrompt, new EventDataBytes (new_prompt)));
+            GetCommandInterpreter().BroadcastEvent (prompt_change_event_sp);
+        }
+        else if (strcmp(property_path, g_properties[ePropertyUseColor].name) == 0)
+        {
+			// use-color changed. Ping the prompt so it can reset the ansi terminal codes.
+            SetPrompt (GetPrompt());
+        }
+        else if (is_load_script && target_sp && load_script_old_value == eLoadScriptFromSymFileWarn)
+        {
+            if (target_sp->TargetProperties::GetLoadScriptFromSymbolFile() == eLoadScriptFromSymFileTrue)
+            {
+                std::list<Error> errors;
+                StreamString feedback_stream;
+                if (!target_sp->LoadScriptingResources(errors,&feedback_stream))
+                {
+                    for (auto error : errors)
+                    {
+                        GetErrorStream().Printf("%s\n",error.AsCString());
+                    }
+                    if (feedback_stream.GetSize())
+                        GetErrorStream().Printf("%s",feedback_stream.GetData());
+                }
+            }
+        }
+    }
+    return error;
+}
+
+bool
+Debugger::GetAutoConfirm () const
+{
+    const uint32_t idx = ePropertyAutoConfirm;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+
+const char *
+Debugger::GetFrameFormat() const
+{
+    const uint32_t idx = ePropertyFrameFormat;
+    return m_collection_sp->GetPropertyAtIndexAsString (NULL, idx, g_properties[idx].default_cstr_value);
+}
+
+bool
+Debugger::GetNotifyVoid () const
+{
+    const uint32_t idx = ePropertyNotiftVoid;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+
+const char *
+Debugger::GetPrompt() const
+{
+    const uint32_t idx = ePropertyPrompt;
+    return m_collection_sp->GetPropertyAtIndexAsString (NULL, idx, g_properties[idx].default_cstr_value);
+}
+
+void
+Debugger::SetPrompt(const char *p)
+{
+    const uint32_t idx = ePropertyPrompt;
+    m_collection_sp->SetPropertyAtIndexAsString (NULL, idx, p);
+    const char *new_prompt = GetPrompt();
+    std::string str = lldb_utility::ansi::FormatAnsiTerminalCodes (new_prompt, GetUseColor());
+    if (str.length())
+        new_prompt = str.c_str();
+    EventSP prompt_change_event_sp (new Event(CommandInterpreter::eBroadcastBitResetPrompt, new EventDataBytes (new_prompt)));;
+    GetCommandInterpreter().BroadcastEvent (prompt_change_event_sp);
+}
+
+const char *
+Debugger::GetThreadFormat() const
+{
+    const uint32_t idx = ePropertyThreadFormat;
+    return m_collection_sp->GetPropertyAtIndexAsString (NULL, idx, g_properties[idx].default_cstr_value);
+}
+
+lldb::ScriptLanguage
+Debugger::GetScriptLanguage() const
+{
+    const uint32_t idx = ePropertyScriptLanguage;
+    return (lldb::ScriptLanguage)m_collection_sp->GetPropertyAtIndexAsEnumeration (NULL, idx, g_properties[idx].default_uint_value);
+}
+
+bool
+Debugger::SetScriptLanguage (lldb::ScriptLanguage script_lang)
+{
+    const uint32_t idx = ePropertyScriptLanguage;
+    return m_collection_sp->SetPropertyAtIndexAsEnumeration (NULL, idx, script_lang);
+}
+
+uint32_t
+Debugger::GetTerminalWidth () const
+{
+    const uint32_t idx = ePropertyTerminalWidth;
+    return m_collection_sp->GetPropertyAtIndexAsSInt64 (NULL, idx, g_properties[idx].default_uint_value);
+}
+
+bool
+Debugger::SetTerminalWidth (uint32_t term_width)
+{
+    const uint32_t idx = ePropertyTerminalWidth;
+    return m_collection_sp->SetPropertyAtIndexAsSInt64 (NULL, idx, term_width);
+}
+
+bool
+Debugger::GetUseExternalEditor () const
+{
+    const uint32_t idx = ePropertyUseExternalEditor;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+
+bool
+Debugger::SetUseExternalEditor (bool b)
+{
+    const uint32_t idx = ePropertyUseExternalEditor;
+    return m_collection_sp->SetPropertyAtIndexAsBoolean (NULL, idx, b);
+}
+
+bool
+Debugger::GetUseColor () const
+{
+    const uint32_t idx = ePropertyUseColor;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+
+bool
+Debugger::SetUseColor (bool b)
+{
+    const uint32_t idx = ePropertyUseColor;
+    bool ret = m_collection_sp->SetPropertyAtIndexAsBoolean (NULL, idx, b);
+    SetPrompt (GetPrompt());
+    return ret;
+}
+
+uint32_t
+Debugger::GetStopSourceLineCount (bool before) const
+{
+    const uint32_t idx = before ? ePropertyStopLineCountBefore : ePropertyStopLineCountAfter;
+    return m_collection_sp->GetPropertyAtIndexAsSInt64 (NULL, idx, g_properties[idx].default_uint_value);
+}
+
+Debugger::StopDisassemblyType
+Debugger::GetStopDisassemblyDisplay () const
+{
+    const uint32_t idx = ePropertyStopDisassemblyDisplay;
+    return (Debugger::StopDisassemblyType)m_collection_sp->GetPropertyAtIndexAsEnumeration (NULL, idx, g_properties[idx].default_uint_value);
+}
+
+uint32_t
+Debugger::GetDisassemblyLineCount () const
+{
+    const uint32_t idx = ePropertyStopDisassemblyCount;
+    return m_collection_sp->GetPropertyAtIndexAsSInt64 (NULL, idx, g_properties[idx].default_uint_value);
+}
 
 #pragma mark Debugger
 
-UserSettingsControllerSP &
-Debugger::GetSettingsController ()
-{
-    static UserSettingsControllerSP g_settings_controller_sp;
-    if (!g_settings_controller_sp)
-    {
-        g_settings_controller_sp.reset (new Debugger::SettingsController);
-    
-        // The first shared pointer to Debugger::SettingsController in
-        // g_settings_controller_sp must be fully created above so that 
-        // the DebuggerInstanceSettings can use a weak_ptr to refer back 
-        // to the master setttings controller
-        InstanceSettingsSP default_instance_settings_sp (new DebuggerInstanceSettings (g_settings_controller_sp, 
-                                                                                       false, 
-                                                                                       InstanceSettings::GetDefaultName().AsCString()));
-        g_settings_controller_sp->SetDefaultInstanceSettings (default_instance_settings_sp);
-    }
-    return g_settings_controller_sp;
-}
+//const DebuggerPropertiesSP &
+//Debugger::GetSettings() const
+//{
+//    return m_properties_sp;
+//}
+//
 
 int
 Debugger::TestDebuggerRefCount ()
@@ -216,33 +390,131 @@ Debugger::Terminate ()
 void
 Debugger::SettingsInitialize ()
 {
-    static bool g_initialized = false;
-    
-    if (!g_initialized)
-    {
-        g_initialized = true;
-        UserSettingsController::InitializeSettingsController (GetSettingsController(),
-                                                              SettingsController::global_settings_table,
-                                                              SettingsController::instance_settings_table);
-        // Now call SettingsInitialize for each settings 'child' of Debugger
-        Target::SettingsInitialize ();
-    }
+    Target::SettingsInitialize ();
 }
 
 void
 Debugger::SettingsTerminate ()
 {
-
-    // Must call SettingsTerminate() for each settings 'child' of Debugger, before terminating the Debugger's 
-    // Settings.
-
     Target::SettingsTerminate ();
+}
 
-    // Now terminate the Debugger Settings.
+bool
+Debugger::LoadPlugin (const FileSpec& spec, Error& error)
+{
+    lldb::DynamicLibrarySP dynlib_sp(new lldb_private::DynamicLibrary(spec));
+    if (!dynlib_sp || dynlib_sp->IsValid() == false)
+    {
+        if (spec.Exists())
+            error.SetErrorString("this file does not represent a loadable dylib");
+        else
+            error.SetErrorString("no such file");
+        return false;
+    }
+    lldb::DebuggerSP debugger_sp(shared_from_this());
+    lldb::SBDebugger debugger_sb(debugger_sp);
+    // TODO: mangle this differently for your system - on OSX, the first underscore needs to be removed and the second one stays
+    LLDBCommandPluginInit init_func = dynlib_sp->GetSymbol<LLDBCommandPluginInit>("_ZN4lldb16PluginInitializeENS_10SBDebuggerE");
+    if (!init_func)
+    {
+        error.SetErrorString("cannot find the initialization function lldb::PluginInitialize(lldb::SBDebugger)");
+        return false;
+    }
+    if (init_func(debugger_sb))
+    {
+        m_loaded_plugins.push_back(dynlib_sp);
+        return true;
+    }
+    error.SetErrorString("dylib refused to be loaded");
+    return false;
+}
 
-    UserSettingsControllerSP &usc = GetSettingsController();
-    UserSettingsController::FinalizeSettingsController (usc);
-    usc.reset();
+static FileSpec::EnumerateDirectoryResult
+LoadPluginCallback
+(
+ void *baton,
+ FileSpec::FileType file_type,
+ const FileSpec &file_spec
+ )
+{
+    Error error;
+    
+    static ConstString g_dylibext("dylib");
+    
+    if (!baton)
+        return FileSpec::eEnumerateDirectoryResultQuit;
+    
+    Debugger *debugger = (Debugger*)baton;
+    
+    // If we have a regular file, a symbolic link or unknown file type, try
+    // and process the file. We must handle unknown as sometimes the directory
+    // enumeration might be enumerating a file system that doesn't have correct
+    // file type information.
+    if (file_type == FileSpec::eFileTypeRegular         ||
+        file_type == FileSpec::eFileTypeSymbolicLink    ||
+        file_type == FileSpec::eFileTypeUnknown          )
+    {
+        FileSpec plugin_file_spec (file_spec);
+        plugin_file_spec.ResolvePath ();
+        
+        if (plugin_file_spec.GetFileNameExtension() != g_dylibext)
+            return FileSpec::eEnumerateDirectoryResultNext;
+
+        Error plugin_load_error;
+        debugger->LoadPlugin (plugin_file_spec, plugin_load_error);
+        
+        return FileSpec::eEnumerateDirectoryResultNext;
+    }
+    
+    else if (file_type == FileSpec::eFileTypeUnknown     ||
+        file_type == FileSpec::eFileTypeDirectory   ||
+        file_type == FileSpec::eFileTypeSymbolicLink )
+    {
+        // Try and recurse into anything that a directory or symbolic link.
+        // We must also do this for unknown as sometimes the directory enumeration
+        // might be enurating a file system that doesn't have correct file type
+        // information.
+        return FileSpec::eEnumerateDirectoryResultEnter;
+    }
+    
+    return FileSpec::eEnumerateDirectoryResultNext;
+}
+
+void
+Debugger::InstanceInitialize ()
+{
+    FileSpec dir_spec;
+    const bool find_directories = true;
+    const bool find_files = true;
+    const bool find_other = true;
+    char dir_path[PATH_MAX];
+    if (Host::GetLLDBPath (ePathTypeLLDBSystemPlugins, dir_spec))
+    {
+        if (dir_spec.Exists() && dir_spec.GetPath(dir_path, sizeof(dir_path)))
+        {
+            FileSpec::EnumerateDirectory (dir_path,
+                                          find_directories,
+                                          find_files,
+                                          find_other,
+                                          LoadPluginCallback,
+                                          this);
+        }
+    }
+    
+    if (Host::GetLLDBPath (ePathTypeLLDBUserPlugins, dir_spec))
+    {
+        if (dir_spec.Exists() && dir_spec.GetPath(dir_path, sizeof(dir_path)))
+        {
+            FileSpec::EnumerateDirectory (dir_path,
+                                          find_directories,
+                                          find_files,
+                                          find_other,
+                                          LoadPluginCallback,
+                                          this);
+        }
+    }
+    
+    PluginManager::DebuggerInitialize (*this);
 }
 
 DebuggerSP
@@ -254,6 +526,7 @@ Debugger::CreateInstance (lldb::LogOutputCallback log_callback, void *baton)
         Mutex::Locker locker (GetDebuggerListMutex ());
         GetDebuggerList().push_back(debugger_sp);
     }
+    debugger_sp->InstanceInitialize ();
     return debugger_sp;
 }
 
@@ -285,7 +558,6 @@ DebuggerSP
 Debugger::FindDebuggerWithInstanceName (const ConstString &instance_name)
 {
     DebuggerSP debugger_sp;
-   
     if (g_shared_debugger_refcount > 0)
     {
         Mutex::Locker locker (GetDebuggerListMutex ());
@@ -342,23 +614,27 @@ Debugger::FindTargetWithProcess (Process *process)
     return target_sp;
 }
 
-
 Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
     UserID (g_unique_id++),
-    DebuggerInstanceSettings (GetSettingsController()),
+    Properties(OptionValuePropertiesSP(new OptionValueProperties())), 
     m_input_comm("debugger.input"),
     m_input_file (),
     m_output_file (),
     m_error_file (),
+    m_terminal_state (),
     m_target_list (*this),
     m_platform_list (),
     m_listener ("lldb.Debugger"),
-    m_source_manager(*this),
+    m_source_manager_ap(),
     m_source_file_cache(),
     m_command_interpreter_ap (new CommandInterpreter (*this, eScriptLanguageDefault, false)),
     m_input_reader_stack (),
-    m_input_reader_data ()
+    m_input_reader_data (),
+    m_instance_name()
 {
+    char instance_cstr[256];
+    snprintf(instance_cstr, sizeof(instance_cstr), "debugger_%d", (int)GetID());
+    m_instance_name.SetCString(instance_cstr);
     if (log_callback)
         m_log_callback_stream_sp.reset (new StreamCallback (log_callback, baton));
     m_command_interpreter_ap->Initialize ();
@@ -366,6 +642,27 @@ Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
     PlatformSP default_platform_sp (Platform::GetDefaultPlatform());
     assert (default_platform_sp.get());
     m_platform_list.Append (default_platform_sp, true);
+    
+    m_collection_sp->Initialize (g_properties);
+    m_collection_sp->AppendProperty (ConstString("target"),
+                                     ConstString("Settings specify to debugging targets."),
+                                     true,
+                                     Target::GetGlobalProperties()->GetValueProperties());
+    if (m_command_interpreter_ap.get())
+    {
+        m_collection_sp->AppendProperty (ConstString("interpreter"),
+                                         ConstString("Settings specify to the debugger's command interpreter."),
+                                         true,
+                                         m_command_interpreter_ap->GetValueProperties());
+    }
+    OptionValueSInt64 *term_width = m_collection_sp->GetPropertyAtIndexAsOptionValueSInt64 (NULL, ePropertyTerminalWidth);
+    term_width->SetMinimumValue(10);
+    term_width->SetMaximumValue(1024);
+
+    // Turn off use-color if this is a dumb terminal.
+    const char *term = getenv ("TERM");
+    if (term && !strcmp (term, "dumb"))
+        SetUseColor (false);
 }
 
 Debugger::~Debugger ()
@@ -386,10 +683,7 @@ Debugger::Clear()
         {
             ProcessSP process_sp (target_sp->GetProcessSP());
             if (process_sp)
-            {
-                if (process_sp->GetShouldDetach())
-                    process_sp->Detach();
-            }
+                process_sp->Finalize();
             target_sp->Destroy();
         }
     }
@@ -397,6 +691,7 @@ Debugger::Clear()
     
     // Close the input file _before_ we close the input read communications class
     // as it does NOT own the input file, our m_input_file does.
+    m_terminal_state.Clear();
     GetInputFile().Close ();
     // Now that we have closed m_input_file, we can now tell our input communication
     // class to close down. Its read thread should quickly exit after we close
@@ -444,7 +739,10 @@ Debugger::SetInputFileHandle (FILE *fh, bool tranfer_ownership)
     // want to objects trying to own and close a file descriptor.
     m_input_comm.SetConnection (new ConnectionFileDescriptor (in_file.GetDescriptor(), false));
     m_input_comm.SetReadThreadBytesReceivedCallback (Debugger::DispatchInputCallback, this);
-
+    
+    // Save away the terminal state if that is relevant, so that we can restore it in RestoreInputState.
+    SaveInputTerminalState ();
+    
     Error error;
     if (m_input_comm.StartReadThread (&error) == false)
     {
@@ -463,7 +761,12 @@ Debugger::SetOutputFileHandle (FILE *fh, bool tranfer_ownership)
     if (out_file.IsValid() == false)
         out_file.SetStream (stdout, false);
     
-    GetCommandInterpreter().GetScriptInterpreter()->ResetOutputFileHandle (fh);
+    // do not create the ScriptInterpreter just for setting the output file handle
+    // as the constructor will know how to do the right thing on its own
+    const bool can_create = false;
+    ScriptInterpreter* script_interpreter = GetCommandInterpreter().GetScriptInterpreter(can_create);
+    if (script_interpreter)
+        script_interpreter->ResetOutputFileHandle (fh);
 }
 
 void
@@ -473,6 +776,20 @@ Debugger::SetErrorFileHandle (FILE *fh, bool tranfer_ownership)
     err_file.SetStream (fh, tranfer_ownership);
     if (err_file.IsValid() == false)
         err_file.SetStream (stderr, false);
+}
+
+void
+Debugger::SaveInputTerminalState ()
+{
+    File &in_file = GetInputFile();
+    if (in_file.GetDescriptor() != File::kInvalidDescriptor)
+        m_terminal_state.Save(in_file.GetDescriptor(), true);
+}
+
+void
+Debugger::RestoreInputTerminalState ()
+{
+    m_terminal_state.Restore();
 }
 
 ExecutionContext
@@ -755,7 +1072,7 @@ Debugger::GetAsyncErrorStream ()
                                                CommandInterpreter::eBroadcastBitAsynchronousErrorData));
 }    
 
-uint32_t
+size_t
 Debugger::GetNumDebuggers()
 {
     if (g_shared_debugger_refcount > 0)
@@ -767,7 +1084,7 @@ Debugger::GetNumDebuggers()
 }
 
 lldb::DebuggerSP
-Debugger::GetDebuggerAtIndex (uint32_t index)
+Debugger::GetDebuggerAtIndex (size_t index)
 {
     DebuggerSP debugger_sp;
     
@@ -856,14 +1173,12 @@ TestPromptFormats (StackFrame *frame)
     SymbolContext sc (frame->GetSymbolContext(eSymbolContextEverything));
     ExecutionContext exe_ctx;
     frame->CalculateExecutionContext(exe_ctx);
-    const char *end = NULL;
-    if (Debugger::FormatPrompt (prompt_format, &sc, &exe_ctx, &sc.line_entry.range.GetBaseAddress(), s, &end))
+    if (Debugger::FormatPrompt (prompt_format, &sc, &exe_ctx, &sc.line_entry.range.GetBaseAddress(), s))
     {
         printf("%s\n", s.GetData());
     }
     else
     {
-        printf ("error: at '%s'\n", end);
         printf ("what we got: %s\n", s.GetData());
     }
 }
@@ -876,57 +1191,63 @@ ScanFormatDescriptor (const char* var_name_begin,
                       Format* custom_format,
                       ValueObject::ValueObjectRepresentationStyle* val_obj_display)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     *percent_position = ::strchr(var_name_begin,'%');
     if (!*percent_position || *percent_position > var_name_end)
     {
         if (log)
-            log->Printf("no format descriptor in string, skipping");
+            log->Printf("[ScanFormatDescriptor] no format descriptor in string, skipping");
         *var_name_final = var_name_end;
     }
     else
     {
         *var_name_final = *percent_position;
-        char* format_name = new char[var_name_end-*var_name_final]; format_name[var_name_end-*var_name_final-1] = '\0';
-        memcpy(format_name, *var_name_final+1, var_name_end-*var_name_final-1);
+        std::string format_name(*var_name_final+1, var_name_end-*var_name_final-1);
         if (log)
-            log->Printf("parsing %s as a format descriptor", format_name);
-        if ( !FormatManager::GetFormatFromCString(format_name,
+            log->Printf("ScanFormatDescriptor] parsing %s as a format descriptor", format_name.c_str());
+        if ( !FormatManager::GetFormatFromCString(format_name.c_str(),
                                                   true,
                                                   *custom_format) )
         {
             if (log)
-                log->Printf("%s is an unknown format", format_name);
-            // if this is an @ sign, print ObjC description
-            if (*format_name == '@')
-                *val_obj_display = ValueObject::eValueObjectRepresentationStyleLanguageSpecific;
-            // if this is a V, print the value using the default format
-            else if (*format_name == 'V')
-                *val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
-            // if this is an L, print the location of the value
-            else if (*format_name == 'L')
-                *val_obj_display = ValueObject::eValueObjectRepresentationStyleLocation;
-            // if this is an S, print the summary after all
-            else if (*format_name == 'S')
-                *val_obj_display = ValueObject::eValueObjectRepresentationStyleSummary;
-            else if (*format_name == '#')
-                *val_obj_display = ValueObject::eValueObjectRepresentationStyleChildrenCount;
-            else if (*format_name == 'T')
-                *val_obj_display = ValueObject::eValueObjectRepresentationStyleType;
-            else if (log)
-                log->Printf("%s is an error, leaving the previous value alone", format_name);
+                log->Printf("ScanFormatDescriptor] %s is an unknown format", format_name.c_str());
+            
+            switch (format_name.front())
+            {
+                case '@':             // if this is an @ sign, print ObjC description
+                    *val_obj_display = ValueObject::eValueObjectRepresentationStyleLanguageSpecific;
+                    break;
+                case 'V': // if this is a V, print the value using the default format
+                    *val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
+                    break;
+                case 'L': // if this is an L, print the location of the value
+                    *val_obj_display = ValueObject::eValueObjectRepresentationStyleLocation;
+                    break;
+                case 'S': // if this is an S, print the summary after all
+                    *val_obj_display = ValueObject::eValueObjectRepresentationStyleSummary;
+                    break;
+                case '#': // if this is a '#', print the number of children
+                    *val_obj_display = ValueObject::eValueObjectRepresentationStyleChildrenCount;
+                    break;
+                case 'T': // if this is a 'T', print the type
+                    *val_obj_display = ValueObject::eValueObjectRepresentationStyleType;
+                    break;
+                default:
+                    if (log)
+                        log->Printf("ScanFormatDescriptor] %s is an error, leaving the previous value alone", format_name.c_str());
+                    break;
+            }
         }
         // a good custom format tells us to print the value using it
         else
         {
             if (log)
-                log->Printf("will display value for this VO");
+                log->Printf("ScanFormatDescriptor] will display value for this VO");
             *val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
         }
-        delete format_name;
     }
     if (log)
-        log->Printf("final format description outcome: custom_format = %d, val_obj_display = %d",
+        log->Printf("ScanFormatDescriptor] final format description outcome: custom_format = %d, val_obj_display = %d",
                     *custom_format,
                     *val_obj_display);
     return true;
@@ -943,7 +1264,7 @@ ScanBracketedRange (const char* var_name_begin,
                     int64_t* index_lower,
                     int64_t* index_higher)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     *open_bracket_position = ::strchr(var_name_begin,'[');
     if (*open_bracket_position && *open_bracket_position < var_name_final)
     {
@@ -955,7 +1276,7 @@ ScanBracketedRange (const char* var_name_begin,
         if (*close_bracket_position - *open_bracket_position == 1)
         {
             if (log)
-                log->Printf("[] detected.. going from 0 to end of data");
+                log->Printf("[ScanBracketedRange] '[]' detected.. going from 0 to end of data");
             *index_lower = 0;
         }
         else if (*separator_position == NULL || *separator_position > var_name_end)
@@ -964,7 +1285,7 @@ ScanBracketedRange (const char* var_name_begin,
             *index_lower = ::strtoul (*open_bracket_position+1, &end, 0);
             *index_higher = *index_lower;
             if (log)
-                log->Printf("[%lld] detected, high index is same", *index_lower);
+                log->Printf("[ScanBracketedRange] [%" PRId64 "] detected, high index is same", *index_lower);
         }
         else if (*close_bracket_position && *close_bracket_position < var_name_end)
         {
@@ -972,46 +1293,46 @@ ScanBracketedRange (const char* var_name_begin,
             *index_lower = ::strtoul (*open_bracket_position+1, &end, 0);
             *index_higher = ::strtoul (*separator_position+1, &end, 0);
             if (log)
-                log->Printf("[%lld-%lld] detected", *index_lower, *index_higher);
+                log->Printf("[ScanBracketedRange] [%" PRId64 "-%" PRId64 "] detected", *index_lower, *index_higher);
         }
         else
         {
             if (log)
-                log->Printf("expression is erroneous, cannot extract indices out of it");
+                log->Printf("[ScanBracketedRange] expression is erroneous, cannot extract indices out of it");
             return false;
         }
         if (*index_lower > *index_higher && *index_higher > 0)
         {
             if (log)
-                log->Printf("swapping indices");
-            int temp = *index_lower;
+                log->Printf("[ScanBracketedRange] swapping indices");
+            int64_t temp = *index_lower;
             *index_lower = *index_higher;
             *index_higher = temp;
         }
     }
     else if (log)
-            log->Printf("no bracketed range, skipping entirely");
+            log->Printf("[ScanBracketedRange] no bracketed range, skipping entirely");
     return true;
 }
 
 static ValueObjectSP
 ExpandIndexedExpression (ValueObject* valobj,
-                         uint32_t index,
+                         size_t index,
                          StackFrame* frame,
                          bool deref_pointer)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     const char* ptr_deref_format = "[%d]";
-    std::auto_ptr<char> ptr_deref_buffer(new char[10]);
-    ::sprintf(ptr_deref_buffer.get(), ptr_deref_format, index);
+    std::string ptr_deref_buffer(10,0);
+    ::sprintf(&ptr_deref_buffer[0], ptr_deref_format, index);
     if (log)
-        log->Printf("name to deref: %s",ptr_deref_buffer.get());
+        log->Printf("[ExpandIndexedExpression] name to deref: %s",ptr_deref_buffer.c_str());
     const char* first_unparsed;
     ValueObject::GetValueForExpressionPathOptions options;
     ValueObject::ExpressionPathEndResultType final_value_type;
     ValueObject::ExpressionPathScanEndReason reason_to_stop;
     ValueObject::ExpressionPathAftermath what_next = (deref_pointer ? ValueObject::eExpressionPathAftermathDereference : ValueObject::eExpressionPathAftermathNothing);
-    ValueObjectSP item = valobj->GetValueForExpressionPath (ptr_deref_buffer.get(),
+    ValueObjectSP item = valobj->GetValueForExpressionPath (ptr_deref_buffer.c_str(),
                                                           &first_unparsed,
                                                           &reason_to_stop,
                                                           &final_value_type,
@@ -1020,22 +1341,22 @@ ExpandIndexedExpression (ValueObject* valobj,
     if (!item)
     {
         if (log)
-            log->Printf("ERROR: unparsed portion = %s, why stopping = %d,"
+            log->Printf("[ExpandIndexedExpression] ERROR: unparsed portion = %s, why stopping = %d,"
                " final_value_type %d",
                first_unparsed, reason_to_stop, final_value_type);
     }
     else
     {
         if (log)
-            log->Printf("ALL RIGHT: unparsed portion = %s, why stopping = %d,"
+            log->Printf("[ExpandIndexedExpression] ALL RIGHT: unparsed portion = %s, why stopping = %d,"
                " final_value_type %d",
                first_unparsed, reason_to_stop, final_value_type);
     }
     return item;
 }
 
-bool
-Debugger::FormatPrompt 
+static bool
+FormatPromptRecurse
 (
     const char *format,
     const SymbolContext *sc,
@@ -1049,7 +1370,8 @@ Debugger::FormatPrompt
     ValueObject* realvalobj = NULL; // makes it super-easy to parse pointers
     bool success = true;
     const char *p;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+
     for (p = format; *p != '\0'; ++p)
     {
         if (realvalobj)
@@ -1083,8 +1405,8 @@ Debugger::FormatPrompt
             StreamString sub_strm;
 
             ++p;  // Skip the '{'
-            
-            if (FormatPrompt (p, sc, exe_ctx, addr, sub_strm, &p, valobj))
+
+            if (FormatPromptRecurse (p, sc, exe_ctx, addr, sub_strm, &p, valobj))
             {
                 // The stream had all it needed
                 s.Write(sub_strm.GetData(), sub_strm.GetSize());
@@ -1140,7 +1462,7 @@ Debugger::FormatPrompt
                                     break;
                                 
                                 if (log)
-                                    log->Printf("initial string: %s",var_name_begin);
+                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
                                 
                                 // check for *var and *svar
                                 if (*var_name_begin == '*')
@@ -1150,7 +1472,7 @@ Debugger::FormatPrompt
                                 }
                                 
                                 if (log)
-                                    log->Printf("initial string: %s",var_name_begin);
+                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
                                 
                                 if (*var_name_begin == 's')
                                 {
@@ -1162,14 +1484,14 @@ Debugger::FormatPrompt
                                 }
                                 
                                 if (log)
-                                    log->Printf("initial string: %s",var_name_begin);
+                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
                                 
                                 // should be a 'v' by now
                                 if (*var_name_begin != 'v')
                                     break;
                                 
                                 if (log)
-                                    log->Printf("initial string: %s",var_name_begin);
+                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
                                                                 
                                 ValueObject::ExpressionPathAftermath what_next = (do_deref_pointer ?
                                                                                   ValueObject::eExpressionPathAftermathDereference : ValueObject::eExpressionPathAftermathNothing);
@@ -1237,15 +1559,14 @@ Debugger::FormatPrompt
                                                         &index_higher);
                                                                     
                                     Error error;
-                                                                        
-                                    std::auto_ptr<char> expr_path(new char[var_name_final-var_name_begin-1]);
-                                    ::memset(expr_path.get(), 0, var_name_final-var_name_begin-1);
-                                    memcpy(expr_path.get(), var_name_begin+3,var_name_final-var_name_begin-3);
-                                                                        
-                                    if (log)
-                                        log->Printf("symbol to expand: %s",expr_path.get());
                                     
-                                    target = valobj->GetValueForExpressionPath(expr_path.get(),
+                                    std::string expr_path(var_name_final-var_name_begin-1,0);
+                                    memcpy(&expr_path[0], var_name_begin+3,var_name_final-var_name_begin-3);
+
+                                    if (log)
+                                        log->Printf("[Debugger::FormatPrompt] symbol to expand: %s",expr_path.c_str());
+                                    
+                                    target = valobj->GetValueForExpressionPath(expr_path.c_str(),
                                                                              &first_unparsed,
                                                                              &reason_to_stop,
                                                                              &final_value_type,
@@ -1255,7 +1576,7 @@ Debugger::FormatPrompt
                                     if (!target)
                                     {
                                         if (log)
-                                            log->Printf("ERROR: unparsed portion = %s, why stopping = %d,"
+                                            log->Printf("[Debugger::FormatPrompt] ERROR: unparsed portion = %s, why stopping = %d,"
                                                " final_value_type %d",
                                                first_unparsed, reason_to_stop, final_value_type);
                                         break;
@@ -1263,7 +1584,7 @@ Debugger::FormatPrompt
                                     else
                                     {
                                         if (log)
-                                            log->Printf("ALL RIGHT: unparsed portion = %s, why stopping = %d,"
+                                            log->Printf("[Debugger::FormatPrompt] ALL RIGHT: unparsed portion = %s, why stopping = %d,"
                                                " final_value_type %d",
                                                first_unparsed, reason_to_stop, final_value_type);
                                     }
@@ -1286,7 +1607,7 @@ Debugger::FormatPrompt
                                     if (error.Fail())
                                     {
                                         if (log)
-                                            log->Printf("ERROR: %s\n", error.AsCString("unknown")); \
+                                            log->Printf("[Debugger::FormatPrompt] ERROR: %s\n", error.AsCString("unknown")); \
                                         break;
                                     }
                                     do_deref_pointer = false;
@@ -1307,7 +1628,7 @@ Debugger::FormatPrompt
                                 }
                                 
                                 // TODO use flags for these
-                                bool is_array = ClangASTContext::IsArrayType(target->GetClangType());
+                                bool is_array = ClangASTContext::IsArrayType(target->GetClangType(), NULL, NULL, NULL);
                                 bool is_pointer = ClangASTContext::IsPointerType(target->GetClangType());
                                 bool is_aggregate = ClangASTContext::IsAggregateType(target->GetClangType());
                                 
@@ -1315,22 +1636,19 @@ Debugger::FormatPrompt
                                 {
                                     StreamString str_temp;
                                     if (log)
-                                        log->Printf("I am into array || pointer && !range");
+                                        log->Printf("[Debugger::FormatPrompt] I am into array || pointer && !range");
                                     
-                                    if (target->HasSpecialPrintableRepresentation(val_obj_display,
-                                                                                  custom_format))
+                                    if (target->HasSpecialPrintableRepresentation(val_obj_display, custom_format))
                                     {
                                         // try to use the special cases
                                         var_success = target->DumpPrintableRepresentation(str_temp,
                                                                                           val_obj_display,
                                                                                           custom_format);
                                         if (log)
-                                            log->Printf("special cases did%s match", var_success ? "" : "n't");
+                                            log->Printf("[Debugger::FormatPrompt] special cases did%s match", var_success ? "" : "n't");
                                         
                                         // should not happen
-                                        if (!var_success)
-                                            s << "<invalid usage of pointer value as object>";
-                                        else
+                                        if (var_success)
                                             s << str_temp.GetData();
                                         var_success = true;
                                         break;
@@ -1347,10 +1665,6 @@ Debugger::FormatPrompt
                                                                                  val_obj_display,
                                                                                  custom_format,
                                                                                  ValueObject::ePrintableRepresentationSpecialCasesDisable);
-                                        }
-                                        else
-                                        {
-                                            s << "<invalid usage of pointer value as object>";
                                         }
                                         var_success = true;
                                         break;
@@ -1377,17 +1691,17 @@ Debugger::FormatPrompt
                                 if (!is_array_range)
                                 {
                                     if (log)
-                                        log->Printf("dumping ordinary printable output");
+                                        log->Printf("[Debugger::FormatPrompt] dumping ordinary printable output");
                                     var_success = target->DumpPrintableRepresentation(s,val_obj_display, custom_format);
                                 }
                                 else
                                 {   
                                     if (log)
-                                        log->Printf("checking if I can handle as array");
+                                        log->Printf("[Debugger::FormatPrompt] checking if I can handle as array");
                                     if (!is_array && !is_pointer)
                                         break;
                                     if (log)
-                                        log->Printf("handle as array");
+                                        log->Printf("[Debugger::FormatPrompt] handle as array");
                                     const char* special_directions = NULL;
                                     StreamString special_directions_writer;
                                     if (close_bracket_position && (var_name_end-close_bracket_position > 1))
@@ -1419,18 +1733,18 @@ Debugger::FormatPrompt
                                         if (!item)
                                         {
                                             if (log)
-                                                log->Printf("ERROR in getting child item at index %lld", index_lower);
+                                                log->Printf("[Debugger::FormatPrompt] ERROR in getting child item at index %" PRId64, index_lower);
                                         }
                                         else
                                         {
                                             if (log)
-                                                log->Printf("special_directions for child item: %s",special_directions);
+                                                log->Printf("[Debugger::FormatPrompt] special_directions for child item: %s",special_directions);
                                         }
 
                                         if (!special_directions)
                                             var_success &= item->DumpPrintableRepresentation(s,val_obj_display, custom_format);
                                         else
-                                            var_success &= FormatPrompt(special_directions, sc, exe_ctx, addr, s, NULL, item);
+                                            var_success &= FormatPromptRecurse(special_directions, sc, exe_ctx, addr, s, NULL, item);
                                         
                                         if (--max_num_children == 0)
                                         {
@@ -1454,214 +1768,6 @@ Debugger::FormatPrompt
                                     format_addr = *addr;
                                 }
                             }
-                            else if (::strncmp (var_name_begin, "ansi.", strlen("ansi.")) == 0)
-                            {
-                                var_success = true;
-                                var_name_begin += strlen("ansi."); // Skip the "ansi."
-                                if (::strncmp (var_name_begin, "fg.", strlen("fg.")) == 0)
-                                {
-                                    var_name_begin += strlen("fg."); // Skip the "fg."
-                                    if (::strncmp (var_name_begin, "black}", strlen("black}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_fg_black,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "red}", strlen("red}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_fg_red,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "green}", strlen("green}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_fg_green,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "yellow}", strlen("yellow}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_fg_yellow,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "blue}", strlen("blue}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_fg_blue,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "purple}", strlen("purple}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_fg_purple,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "cyan}", strlen("cyan}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_fg_cyan,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "white}", strlen("white}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_fg_white,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else
-                                    {
-                                        var_success = false;
-                                    }
-                                }
-                                else if (::strncmp (var_name_begin, "bg.", strlen("bg.")) == 0)
-                                {
-                                    var_name_begin += strlen("bg."); // Skip the "bg."
-                                    if (::strncmp (var_name_begin, "black}", strlen("black}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_bg_black,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "red}", strlen("red}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_bg_red,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "green}", strlen("green}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_bg_green,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "yellow}", strlen("yellow}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_bg_yellow,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "blue}", strlen("blue}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_bg_blue,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "purple}", strlen("purple}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_bg_purple,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "cyan}", strlen("cyan}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_bg_cyan,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else if (::strncmp (var_name_begin, "white}", strlen("white}")) == 0)
-                                    {
-                                        s.Printf ("%s%s%s", 
-                                                  lldb_utility::ansi::k_escape_start, 
-                                                  lldb_utility::ansi::k_bg_white,
-                                                  lldb_utility::ansi::k_escape_end);
-                                    }
-                                    else
-                                    {
-                                        var_success = false;
-                                    }
-                                }
-                                else if (::strncmp (var_name_begin, "normal}", strlen ("normal}")) == 0)
-                                {
-                                    s.Printf ("%s%s%s", 
-                                              lldb_utility::ansi::k_escape_start, 
-                                              lldb_utility::ansi::k_ctrl_normal,
-                                              lldb_utility::ansi::k_escape_end);
-                                }
-                                else if (::strncmp (var_name_begin, "bold}", strlen("bold}")) == 0)
-                                {
-                                    s.Printf ("%s%s%s", 
-                                              lldb_utility::ansi::k_escape_start, 
-                                              lldb_utility::ansi::k_ctrl_bold,
-                                              lldb_utility::ansi::k_escape_end);
-                                }
-                                else if (::strncmp (var_name_begin, "faint}", strlen("faint}")) == 0)
-                                {
-                                    s.Printf ("%s%s%s", 
-                                              lldb_utility::ansi::k_escape_start, 
-                                              lldb_utility::ansi::k_ctrl_faint,
-                                              lldb_utility::ansi::k_escape_end);
-                                }
-                                else if (::strncmp (var_name_begin, "italic}", strlen("italic}")) == 0)
-                                {
-                                    s.Printf ("%s%s%s", 
-                                              lldb_utility::ansi::k_escape_start, 
-                                              lldb_utility::ansi::k_ctrl_italic,
-                                              lldb_utility::ansi::k_escape_end);
-                                }
-                                else if (::strncmp (var_name_begin, "underline}", strlen("underline}")) == 0)
-                                {
-                                    s.Printf ("%s%s%s", 
-                                              lldb_utility::ansi::k_escape_start, 
-                                              lldb_utility::ansi::k_ctrl_underline,
-                                              lldb_utility::ansi::k_escape_end);
-                                }
-                                else if (::strncmp (var_name_begin, "slow-blink}", strlen("slow-blink}")) == 0)
-                                {
-                                    s.Printf ("%s%s%s", 
-                                              lldb_utility::ansi::k_escape_start, 
-                                              lldb_utility::ansi::k_ctrl_slow_blink,
-                                              lldb_utility::ansi::k_escape_end);
-                                }
-                                else if (::strncmp (var_name_begin, "fast-blink}", strlen("fast-blink}")) == 0)
-                                {
-                                    s.Printf ("%s%s%s", 
-                                              lldb_utility::ansi::k_escape_start, 
-                                              lldb_utility::ansi::k_ctrl_fast_blink,
-                                              lldb_utility::ansi::k_escape_end);
-                                }
-                                else if (::strncmp (var_name_begin, "negative}", strlen("negative}")) == 0)
-                                {
-                                    s.Printf ("%s%s%s", 
-                                              lldb_utility::ansi::k_escape_start, 
-                                              lldb_utility::ansi::k_ctrl_negative,
-                                              lldb_utility::ansi::k_escape_end);
-                                }
-                                else if (::strncmp (var_name_begin, "conceal}", strlen("conceal}")) == 0)
-                                {
-                                    s.Printf ("%s%s%s", 
-                                              lldb_utility::ansi::k_escape_start, 
-                                              lldb_utility::ansi::k_ctrl_conceal,
-                                              lldb_utility::ansi::k_escape_end);
-
-                                }
-                                else if (::strncmp (var_name_begin, "crossed-out}", strlen("crossed-out}")) == 0)
-                                {
-                                    s.Printf ("%s%s%s", 
-                                              lldb_utility::ansi::k_escape_start, 
-                                              lldb_utility::ansi::k_ctrl_crossed_out,
-                                              lldb_utility::ansi::k_escape_end);
-                                }
-                                else
-                                {
-                                    var_success = false;
-                                }
-                            }
                             break;
 
                         case 'p':
@@ -1675,7 +1781,7 @@ Debugger::FormatPrompt
                                         var_name_begin += ::strlen ("process.");
                                         if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
                                         {
-                                            s.Printf("%llu", process->GetID());
+                                            s.Printf("%" PRIu64, process->GetID());
                                             var_success = true;
                                         }
                                         else if ((::strncmp (var_name_begin, "name}", strlen("name}")) == 0) ||
@@ -1713,7 +1819,12 @@ Debugger::FormatPrompt
                                         var_name_begin += ::strlen ("thread.");
                                         if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
                                         {
-                                            s.Printf("0x%4.4llx", thread->GetID());
+                                            s.Printf("0x%4.4" PRIx64, thread->GetID());
+                                            var_success = true;
+                                        }
+                                        else if (::strncmp (var_name_begin, "protocol_id}", strlen("protocol_id}")) == 0)
+                                        {
+                                            s.Printf("0x%4.4" PRIx64, thread->GetProtocolID());
                                             var_success = true;
                                         }
                                         else if (::strncmp (var_name_begin, "index}", strlen("index}")) == 0)
@@ -1738,7 +1849,7 @@ Debugger::FormatPrompt
                                         else if (::strncmp (var_name_begin, "stop-reason}", strlen("stop-reason}")) == 0)
                                         {
                                             StopInfoSP stop_info_sp = thread->GetStopInfo ();
-                                            if (stop_info_sp)
+                                            if (stop_info_sp && stop_info_sp->IsValid())
                                             {
                                                 cstr = stop_info_sp->GetDescription();
                                                 if (cstr && cstr[0])
@@ -1751,13 +1862,12 @@ Debugger::FormatPrompt
                                         else if (::strncmp (var_name_begin, "return-value}", strlen("return-value}")) == 0)
                                         {
                                             StopInfoSP stop_info_sp = thread->GetStopInfo ();
-                                            if (stop_info_sp)
+                                            if (stop_info_sp && stop_info_sp->IsValid())
                                             {
                                                 ValueObjectSP return_valobj_sp = StopInfo::GetReturnValueObject (stop_info_sp);
                                                 if (return_valobj_sp)
                                                 {
-                                                    ValueObject::DumpValueObjectOptions dump_options;
-                                                    ValueObject::DumpValueObject (s, return_valobj_sp.get(), dump_options);
+                                                    ValueObject::DumpValueObject (s, return_valobj_sp.get());
                                                     var_success = true;
                                                 }
                                             }
@@ -1767,6 +1877,29 @@ Debugger::FormatPrompt
                             }
                             else if (::strncmp (var_name_begin, "target.", strlen("target.")) == 0)
                             {
+                                // TODO: hookup properties
+//                                if (!target_properties_sp)
+//                                {
+//                                    Target *target = Target::GetTargetFromContexts (exe_ctx, sc);
+//                                    if (target)
+//                                        target_properties_sp = target->GetProperties();
+//                                }
+//
+//                                if (target_properties_sp)
+//                                {
+//                                    var_name_begin += ::strlen ("target.");
+//                                    const char *end_property = strchr(var_name_begin, '}');
+//                                    if (end_property)
+//                                    {
+//                                        ConstString property_name(var_name_begin, end_property - var_name_begin);
+//                                        std::string property_value (target_properties_sp->GetPropertyValue(property_name));
+//                                        if (!property_value.empty())
+//                                        {
+//                                            s.PutCString (property_value.c_str());
+//                                            var_success = true;
+//                                        }
+//                                    }
+//                                }                                        
                                 Target *target = Target::GetTargetFromContexts (exe_ctx, sc);
                                 if (target)
                                 {
@@ -1780,7 +1913,7 @@ Debugger::FormatPrompt
                                             var_success = true;
                                         }
                                     }
-                                }                                        
+                                }
                             }
                             break;
                             
@@ -1898,7 +2031,7 @@ Debugger::FormatPrompt
                                     if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
                                     {
                                         if (sc->function)
-                                            s.Printf("function{0x%8.8llx}", sc->function->GetID());
+                                            s.Printf("function{0x%8.8" PRIx64 "}", sc->function->GetID());
                                         else
                                             s.Printf("symbol[%u]", sc->symbol->GetID());
 
@@ -1971,22 +2104,22 @@ Debugger::FormatPrompt
                                                 
                                                 VariableList args;
                                                 if (variable_list_sp)
-                                                {
-                                                    const size_t num_variables = variable_list_sp->GetSize();
-                                                    for (size_t var_idx = 0; var_idx < num_variables; ++var_idx)
-                                                    {
-                                                        VariableSP var_sp (variable_list_sp->GetVariableAtIndex(var_idx));
-                                                        if (var_sp->GetScope() == eValueTypeVariableArgument)
-                                                            args.AddVariable (var_sp);
-                                                    }
-
-                                                }
+                                                    variable_list_sp->AppendVariablesWithScope(eValueTypeVariableArgument, args);
                                                 if (args.GetSize() > 0)
                                                 {
                                                     const char *open_paren = strchr (cstr, '(');
                                                     const char *close_paren = NULL;
                                                     if (open_paren)
-                                                        close_paren = strchr (open_paren, ')');
+                                                    {
+                                                        if (strncmp(open_paren, "(anonymous namespace)", strlen("(anonymous namespace)")) == 0)
+                                                        {
+                                                            open_paren = strchr (open_paren + strlen("(anonymous namespace)"), '(');
+                                                            if (open_paren)
+                                                                close_paren = strchr (open_paren, ')');
+                                                        }
+                                                        else
+                                                            close_paren = strchr (open_paren, ')');
+                                                    }
                                                     
                                                     if (open_paren)
                                                         s.Write(cstr, open_paren - cstr + 1);
@@ -2002,12 +2135,17 @@ Debugger::FormatPrompt
                                                         ValueObjectSP var_value_sp (ValueObjectVariable::Create (exe_scope, var_sp));
                                                         const char *var_name = var_value_sp->GetName().GetCString();
                                                         const char *var_value = var_value_sp->GetValueAsCString();
+                                                        if (arg_idx > 0)
+                                                            s.PutCString (", ");
                                                         if (var_value_sp->GetError().Success())
                                                         {
-                                                            if (arg_idx > 0)
-                                                                s.PutCString (", ");
-                                                            s.Printf ("%s=%s", var_name, var_value);
+                                                            if (var_value)
+                                                                s.Printf ("%s=%s", var_name, var_value);
+                                                            else
+                                                                s.Printf ("%s=%s at %s", var_name, var_value_sp->GetTypeName().GetCString(), var_value_sp->GetLocationAsCString());
                                                         }
+                                                        else
+                                                            s.Printf ("%s=<unavailable>", var_name);
                                                     }
                                                     
                                                     if (close_paren)
@@ -2184,9 +2322,9 @@ Debugger::FormatPrompt
                                             addr_t func_file_addr = func_addr.GetFileAddress();
                                             addr_t addr_file_addr = format_addr.GetFileAddress();
                                             if (addr_file_addr > func_file_addr)
-                                                s.Printf(" + %llu", addr_file_addr - func_file_addr);
+                                                s.Printf(" + %" PRIu64, addr_file_addr - func_file_addr);
                                             else if (addr_file_addr < func_file_addr)
-                                                s.Printf(" - %llu", func_file_addr - addr_file_addr);
+                                                s.Printf(" - %" PRIu64, func_file_addr - addr_file_addr);
                                             var_success = true;
                                         }
                                         else
@@ -2197,9 +2335,9 @@ Debugger::FormatPrompt
                                                 addr_t func_load_addr = func_addr.GetLoadAddress (target);
                                                 addr_t addr_load_addr = format_addr.GetLoadAddress (target);
                                                 if (addr_load_addr > func_load_addr)
-                                                    s.Printf(" + %llu", addr_load_addr - func_load_addr);
+                                                    s.Printf(" + %" PRIu64, addr_load_addr - func_load_addr);
                                                 else if (addr_load_addr < func_load_addr)
-                                                    s.Printf(" - %llu", func_load_addr - addr_load_addr);
+                                                    s.Printf(" - %" PRIu64, func_load_addr - addr_load_addr);
                                                 var_success = true;
                                             }
                                         }
@@ -2219,7 +2357,7 @@ Debugger::FormatPrompt
                                         int addr_width = target->GetArchitecture().GetAddressByteSize() * 2;
                                         if (addr_width == 0)
                                             addr_width = 16;
-                                        s.Printf("0x%*.*llx", addr_width, addr_width, vaddr);
+                                        s.Printf("0x%*.*" PRIx64, addr_width, addr_width, vaddr);
                                         var_success = true;
                                     }
                                 }
@@ -2272,8 +2410,7 @@ Debugger::FormatPrompt
                     unsigned long octal_value = ::strtoul (oct_str, NULL, 8);
                     if (octal_value <= UINT8_MAX)
                     {
-                        char octal_char = octal_value;
-                        s.Write (&octal_char, 1);
+                        s.PutChar((char)octal_value);
                     }
                 }
                 break;
@@ -2296,7 +2433,7 @@ Debugger::FormatPrompt
 
                     unsigned long hex_value = strtoul (hex_str, NULL, 16);                    
                     if (hex_value <= UINT8_MAX)
-                        s.PutChar (hex_value);
+                        s.PutChar ((char)hex_value);
                 }
                 else
                 {
@@ -2317,6 +2454,24 @@ Debugger::FormatPrompt
     if (end) 
         *end = p;
     return success;
+}
+
+bool
+Debugger::FormatPrompt
+(
+    const char *format,
+    const SymbolContext *sc,
+    const ExecutionContext *exe_ctx,
+    const Address *addr,
+    Stream &s,
+    ValueObject* valobj
+)
+{
+    bool use_color = exe_ctx ? exe_ctx->GetTargetRef().GetDebugger().GetUseColor() : true;
+    std::string format_str = lldb_utility::ansi::FormatAnsiTerminalCodes (format, use_color);
+    if (format_str.length())
+        format = format_str.c_str();
+    return FormatPromptRecurse (format, sc, exe_ctx, addr, s, NULL, valobj);
 }
 
 void
@@ -2347,20 +2502,20 @@ Debugger::EnableLog (const char *channel, const char **categories, const char *l
     else
     {
         LogStreamMap::iterator pos = m_log_streams.find(log_file);
-        if (pos == m_log_streams.end())
+        if (pos != m_log_streams.end())
+            log_stream_sp = pos->second.lock();
+        if (!log_stream_sp)
         {
             log_stream_sp.reset (new StreamFile (log_file));
             m_log_streams[log_file] = log_stream_sp;
         }
-        else
-            log_stream_sp = pos->second;
     }
     assert (log_stream_sp.get());
     
     if (log_options == 0)
         log_options = LLDB_LOG_OPTION_PREPEND_THREAD_NAME | LLDB_LOG_OPTION_THREADSAFE;
         
-    if (Log::GetLogChannelCallbacks (channel, log_callbacks))
+    if (Log::GetLogChannelCallbacks (ConstString(channel), log_callbacks))
     {
         log_callbacks.enable (log_stream_sp, log_options, categories, &error_stream);
         return true;
@@ -2389,465 +2544,12 @@ Debugger::EnableLog (const char *channel, const char **categories, const char *l
     return false;
 }
 
-#pragma mark Debugger::SettingsController
-
-//--------------------------------------------------
-// class Debugger::SettingsController
-//--------------------------------------------------
-
-Debugger::SettingsController::SettingsController () :
-    UserSettingsController ("", UserSettingsControllerSP())
+SourceManager &
+Debugger::GetSourceManager ()
 {
-}
-
-Debugger::SettingsController::~SettingsController ()
-{
+    if (m_source_manager_ap.get() == NULL)
+        m_source_manager_ap.reset (new SourceManager (shared_from_this()));
+    return *m_source_manager_ap;
 }
 
 
-InstanceSettingsSP
-Debugger::SettingsController::CreateInstanceSettings (const char *instance_name)
-{
-    InstanceSettingsSP new_settings_sp (new DebuggerInstanceSettings (GetSettingsController(),
-                                                                      false, 
-                                                                      instance_name));
-    return new_settings_sp;
-}
-
-#pragma mark DebuggerInstanceSettings
-//--------------------------------------------------
-//  class DebuggerInstanceSettings
-//--------------------------------------------------
-
-DebuggerInstanceSettings::DebuggerInstanceSettings 
-(
-    const UserSettingsControllerSP &m_owner_sp, 
-    bool live_instance,
-    const char *name
-) :
-    InstanceSettings (m_owner_sp, name ? name : InstanceSettings::InvalidName().AsCString(), live_instance),
-    m_term_width (80),
-    m_stop_source_before_count (3),
-    m_stop_source_after_count (3),
-    m_stop_disassembly_count (4),
-    m_stop_disassembly_display (eStopDisassemblyTypeNoSource),
-    m_prompt (),
-    m_notify_void (false),
-    m_frame_format (),
-    m_thread_format (),    
-    m_script_lang (),
-    m_use_external_editor (false),
-    m_auto_confirm_on (false)
-{
-    // CopyInstanceSettings is a pure virtual function in InstanceSettings; it therefore cannot be called
-    // until the vtables for DebuggerInstanceSettings are properly set up, i.e. AFTER all the initializers.
-    // For this reason it has to be called here, rather than in the initializer or in the parent constructor.
-    // The same is true of CreateInstanceName().
-
-    if (GetInstanceName() == InstanceSettings::InvalidName())
-    {
-        ChangeInstanceName (std::string (CreateInstanceName().AsCString()));
-        m_owner_sp->RegisterInstanceSettings (this);
-    }
-
-    if (live_instance)
-    {
-        const InstanceSettingsSP &pending_settings = m_owner_sp->FindPendingSettings (m_instance_name);
-        CopyInstanceSettings (pending_settings, false);
-    }
-}
-
-DebuggerInstanceSettings::DebuggerInstanceSettings (const DebuggerInstanceSettings &rhs) :
-    InstanceSettings (Debugger::GetSettingsController(), CreateInstanceName ().AsCString()),
-    m_prompt (rhs.m_prompt),
-    m_notify_void (rhs.m_notify_void),
-    m_frame_format (rhs.m_frame_format),
-    m_thread_format (rhs.m_thread_format),
-    m_script_lang (rhs.m_script_lang),
-    m_use_external_editor (rhs.m_use_external_editor),
-    m_auto_confirm_on(rhs.m_auto_confirm_on)
-{
-    UserSettingsControllerSP owner_sp (m_owner_wp.lock());
-    if (owner_sp)
-    {
-        CopyInstanceSettings (owner_sp->FindPendingSettings (m_instance_name), false);
-        owner_sp->RemovePendingSettings (m_instance_name);
-    }
-}
-
-DebuggerInstanceSettings::~DebuggerInstanceSettings ()
-{
-}
-
-DebuggerInstanceSettings&
-DebuggerInstanceSettings::operator= (const DebuggerInstanceSettings &rhs)
-{
-    if (this != &rhs)
-    {
-        m_term_width = rhs.m_term_width;
-        m_prompt = rhs.m_prompt;
-        m_notify_void = rhs.m_notify_void;
-        m_frame_format = rhs.m_frame_format;
-        m_thread_format = rhs.m_thread_format;
-        m_script_lang = rhs.m_script_lang;
-        m_use_external_editor = rhs.m_use_external_editor;
-        m_auto_confirm_on = rhs.m_auto_confirm_on;
-    }
-
-    return *this;
-}
-
-bool
-DebuggerInstanceSettings::ValidTermWidthValue (const char *value, Error err)
-{
-    bool valid = false;
-
-    // Verify we have a value string.
-    if (value == NULL || value[0] == '\0')
-    {
-        err.SetErrorString ("missing value, can't set terminal width without a value");
-    }
-    else
-    {
-        char *end = NULL;
-        const uint32_t width = ::strtoul (value, &end, 0);
-        
-        if (end && end[0] == '\0')
-        {
-            return ValidTermWidthValue (width, err);
-        }
-        else
-            err.SetErrorStringWithFormat ("'%s' is not a valid unsigned integer string", value);
-    }
-
-    return valid;
-}
-
-bool
-DebuggerInstanceSettings::ValidTermWidthValue (uint32_t value, Error err)
-{
-    if (value >= 10 && value <= 1024)
-        return true;
-    else
-    {
-        err.SetErrorString ("invalid term-width value; value must be between 10 and 1024");
-        return false;
-    }
-}
-
-void
-DebuggerInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var_name,
-                                                          const char *index_value,
-                                                          const char *value,
-                                                          const ConstString &instance_name,
-                                                          const SettingEntry &entry,
-                                                          VarSetOperationType op,
-                                                          Error &err,
-                                                          bool pending)
-{
-
-    if (var_name == TermWidthVarName())
-    {
-        if (ValidTermWidthValue (value, err))
-        {
-            m_term_width = ::strtoul (value, NULL, 0);
-        }
-    }
-    else if (var_name == PromptVarName())
-    {
-        UserSettingsController::UpdateStringVariable (op, m_prompt, value, err);
-        if (!pending)
-        {
-            // 'instance_name' is actually (probably) in the form '[<instance_name>]';  if so, we need to
-            // strip off the brackets before passing it to BroadcastPromptChange.
-
-            std::string tmp_instance_name (instance_name.AsCString());
-            if ((tmp_instance_name[0] == '[') 
-                && (tmp_instance_name[instance_name.GetLength() - 1] == ']'))
-                tmp_instance_name = tmp_instance_name.substr (1, instance_name.GetLength() - 2);
-            ConstString new_name (tmp_instance_name.c_str());
-
-            BroadcastPromptChange (new_name, m_prompt.c_str());
-        }
-    }
-    else if (var_name == GetNotifyVoidName())
-    {
-        UserSettingsController::UpdateBooleanVariable (op, m_notify_void, value, false, err);
-    }
-    else if (var_name == GetFrameFormatName())
-    {
-        UserSettingsController::UpdateStringVariable (op, m_frame_format, value, err);
-    }
-    else if (var_name == GetThreadFormatName())
-    {
-        UserSettingsController::UpdateStringVariable (op, m_thread_format, value, err);
-    }
-    else if (var_name == ScriptLangVarName())
-    {
-        bool success;
-        m_script_lang = Args::StringToScriptLanguage (value, eScriptLanguageDefault,
-                                                      &success);
-    }
-    else if (var_name == UseExternalEditorVarName ())
-    {
-        UserSettingsController::UpdateBooleanVariable (op, m_use_external_editor, value, false, err);
-    }
-    else if (var_name == AutoConfirmName ())
-    {
-        UserSettingsController::UpdateBooleanVariable (op, m_auto_confirm_on, value, false, err);
-    }
-    else if (var_name == StopSourceContextBeforeName ())
-    {
-        uint32_t new_value = Args::StringToUInt32(value, UINT32_MAX, 10, NULL);
-        if (new_value != UINT32_MAX)
-            m_stop_source_before_count = new_value;
-        else
-            err.SetErrorStringWithFormat("invalid unsigned string value '%s' for the '%s' setting", value, StopSourceContextBeforeName ().GetCString());
-    }
-    else if (var_name == StopSourceContextAfterName ())
-    {
-        uint32_t new_value = Args::StringToUInt32(value, UINT32_MAX, 10, NULL);
-        if (new_value != UINT32_MAX)
-            m_stop_source_after_count = new_value;
-        else
-            err.SetErrorStringWithFormat("invalid unsigned string value '%s' for the '%s' setting", value, StopSourceContextAfterName ().GetCString());
-    }
-    else if (var_name == StopDisassemblyCountName ())
-    {
-        uint32_t new_value = Args::StringToUInt32(value, UINT32_MAX, 10, NULL);
-        if (new_value != UINT32_MAX)
-            m_stop_disassembly_count = new_value;
-        else
-            err.SetErrorStringWithFormat("invalid unsigned string value '%s' for the '%s' setting", value, StopDisassemblyCountName ().GetCString());
-    }
-    else if (var_name == StopDisassemblyDisplayName ())
-    {
-        int new_value;
-        UserSettingsController::UpdateEnumVariable (g_show_disassembly_enum_values, &new_value, value, err);
-        if (err.Success())
-            m_stop_disassembly_display = (StopDisassemblyType)new_value;
-    }
-}
-
-bool
-DebuggerInstanceSettings::GetInstanceSettingsValue (const SettingEntry &entry,
-                                                    const ConstString &var_name,
-                                                    StringList &value,
-                                                    Error *err)
-{
-    if (var_name == PromptVarName())
-    {
-        value.AppendString (m_prompt.c_str(), m_prompt.size());
-    }
-    else if (var_name == GetNotifyVoidName())
-    {
-        value.AppendString (m_notify_void ? "true" : "false");
-    }
-    else if (var_name == ScriptLangVarName())
-    {
-        value.AppendString (ScriptInterpreter::LanguageToString (m_script_lang).c_str());
-    }
-    else if (var_name == TermWidthVarName())
-    {
-        StreamString width_str;
-        width_str.Printf ("%u", m_term_width);
-        value.AppendString (width_str.GetData());
-    }
-    else if (var_name == GetFrameFormatName ())
-    {
-        value.AppendString(m_frame_format.c_str(), m_frame_format.size());
-    }
-    else if (var_name == GetThreadFormatName ())
-    {
-        value.AppendString(m_thread_format.c_str(), m_thread_format.size());
-    }
-    else if (var_name == UseExternalEditorVarName())
-    {
-        if (m_use_external_editor)
-            value.AppendString ("true");
-        else
-            value.AppendString ("false");
-    }
-    else if (var_name == AutoConfirmName())
-    {
-        if (m_auto_confirm_on)
-            value.AppendString ("true");
-        else
-            value.AppendString ("false");
-    }
-    else if (var_name == StopSourceContextAfterName ())
-    {
-        StreamString strm;
-        strm.Printf ("%u", m_stop_source_after_count);
-        value.AppendString (strm.GetData());
-    }
-    else if (var_name == StopSourceContextBeforeName ())
-    {
-        StreamString strm;
-        strm.Printf ("%u", m_stop_source_before_count);
-        value.AppendString (strm.GetData());
-    }
-    else if (var_name == StopDisassemblyCountName ())
-    {
-        StreamString strm;
-        strm.Printf ("%u", m_stop_disassembly_count);
-        value.AppendString (strm.GetData());
-    }
-    else if (var_name == StopDisassemblyDisplayName ())
-    {
-        if (m_stop_disassembly_display >= eStopDisassemblyTypeNever && m_stop_disassembly_display <= eStopDisassemblyTypeAlways)
-            value.AppendString (g_show_disassembly_enum_values[m_stop_disassembly_display].string_value);
-        else
-            value.AppendString ("<invalid>");
-    }
-    else
-    {
-        if (err)
-            err->SetErrorStringWithFormat ("unrecognized variable name '%s'", var_name.AsCString());
-        return false;
-    }
-    return true;
-}
-
-void
-DebuggerInstanceSettings::CopyInstanceSettings (const InstanceSettingsSP &new_settings,
-                                                bool pending)
-{
-    if (new_settings.get() == NULL)
-        return;
-
-    DebuggerInstanceSettings *new_debugger_settings = (DebuggerInstanceSettings *) new_settings.get();
-
-    m_prompt = new_debugger_settings->m_prompt;
-    if (!pending)
-    {
-        // 'instance_name' is actually (probably) in the form '[<instance_name>]';  if so, we need to
-        // strip off the brackets before passing it to BroadcastPromptChange.
-
-        std::string tmp_instance_name (m_instance_name.AsCString());
-        if ((tmp_instance_name[0] == '[')
-            && (tmp_instance_name[m_instance_name.GetLength() - 1] == ']'))
-            tmp_instance_name = tmp_instance_name.substr (1, m_instance_name.GetLength() - 2);
-        ConstString new_name (tmp_instance_name.c_str());
-
-        BroadcastPromptChange (new_name, m_prompt.c_str());
-    }
-    m_notify_void = new_debugger_settings->m_notify_void;
-    m_frame_format = new_debugger_settings->m_frame_format;
-    m_thread_format = new_debugger_settings->m_thread_format;
-    m_term_width = new_debugger_settings->m_term_width;
-    m_script_lang = new_debugger_settings->m_script_lang;
-    m_use_external_editor = new_debugger_settings->m_use_external_editor;
-    m_auto_confirm_on = new_debugger_settings->m_auto_confirm_on;
-}
-
-
-bool
-DebuggerInstanceSettings::BroadcastPromptChange (const ConstString &instance_name, const char *new_prompt)
-{
-    std::string tmp_prompt;
-    
-    if (new_prompt != NULL)
-    {
-        tmp_prompt = new_prompt ;
-        int len = tmp_prompt.size();
-        if (len > 1
-            && (tmp_prompt[0] == '\'' || tmp_prompt[0] == '"')
-            && (tmp_prompt[len-1] == tmp_prompt[0]))
-        {
-            tmp_prompt = tmp_prompt.substr(1,len-2);
-        }
-        len = tmp_prompt.size();
-        if (tmp_prompt[len-1] != ' ')
-            tmp_prompt.append(" ");
-    }
-    EventSP new_event_sp;
-    new_event_sp.reset (new Event(CommandInterpreter::eBroadcastBitResetPrompt, 
-                                  new EventDataBytes (tmp_prompt.c_str())));
-
-    if (instance_name.GetLength() != 0)
-    {
-        // Set prompt for a particular instance.
-        Debugger *dbg = Debugger::FindDebuggerWithInstanceName (instance_name).get();
-        if (dbg != NULL)
-        {
-            dbg->GetCommandInterpreter().BroadcastEvent (new_event_sp);
-        }
-    }
-
-    return true;
-}
-
-const ConstString
-DebuggerInstanceSettings::CreateInstanceName ()
-{
-    static int instance_count = 1;
-    StreamString sstr;
-
-    sstr.Printf ("debugger_%d", instance_count);
-    ++instance_count;
-
-    const ConstString ret_val (sstr.GetData());
-
-    return ret_val;
-}
-
-
-//--------------------------------------------------
-// SettingsController Variable Tables
-//--------------------------------------------------
-
-
-SettingEntry
-Debugger::SettingsController::global_settings_table[] =
-{
-  //{ "var-name",    var-type,      "default", enum-table, init'd, hidden, "help-text"},
-  // The Debugger level global table should always be empty; all Debugger settable variables should be instance
-  // variables.
-    {  NULL, eSetVarTypeNone, NULL, NULL, 0, 0, NULL }
-};
-
-#define MODULE_WITH_FUNC "{ ${module.file.basename}{`${function.name-with-args}${function.pc-offset}}}"
-#define FILE_AND_LINE "{ at ${line.file.basename}:${line.number}}"
-
-#define DEFAULT_THREAD_FORMAT "thread #${thread.index}: tid = ${thread.id}"\
-    "{, ${frame.pc}}"\
-    MODULE_WITH_FUNC\
-    FILE_AND_LINE\
-    "{, stop reason = ${thread.stop-reason}}"\
-    "{\\nReturn value: ${thread.return-value}}"\
-    "\\n"
-
-//#define DEFAULT_THREAD_FORMAT "thread #${thread.index}: tid = ${thread.id}"\
-//    "{, ${frame.pc}}"\
-//    MODULE_WITH_FUNC\
-//    FILE_AND_LINE\
-//    "{, stop reason = ${thread.stop-reason}}"\
-//    "{, name = ${thread.name}}"\
-//    "{, queue = ${thread.queue}}"\
-//    "\\n"
-
-#define DEFAULT_FRAME_FORMAT "frame #${frame.index}: ${frame.pc}"\
-    MODULE_WITH_FUNC\
-    FILE_AND_LINE\
-    "\\n"
-
-SettingEntry
-Debugger::SettingsController::instance_settings_table[] =
-{
-//  NAME                    Setting variable type   Default                 Enum  Init'd Hidden Help
-//  ======================= ======================= ======================  ====  ====== ====== ======================
-{   "frame-format",         eSetVarTypeString,      DEFAULT_FRAME_FORMAT,   NULL, false, false, "The default frame format string to use when displaying thread information." },
-{   "prompt",               eSetVarTypeString,      "(lldb) ",              NULL, false, false, "The debugger command line prompt displayed for the user." },
-{   "notify-void",          eSetVarTypeBoolean,     "false",                NULL, false, false, "Notify the user explicitly if an expression returns void." },
-{   "script-lang",          eSetVarTypeString,      "python",               NULL, false, false, "The script language to be used for evaluating user-written scripts." },
-{   "term-width",           eSetVarTypeInt,         "80"    ,               NULL, false, false, "The maximum number of columns to use for displaying text." },
-{   "thread-format",        eSetVarTypeString,      DEFAULT_THREAD_FORMAT,  NULL, false, false, "The default thread format string to use when displaying thread information." },
-{   "use-external-editor",  eSetVarTypeBoolean,     "false",                NULL, false, false, "Whether to use an external editor or not." },
-{   "auto-confirm",         eSetVarTypeBoolean,     "false",                NULL, false, false, "If true all confirmation prompts will receive their default reply." },
-{   "stop-line-count-before",eSetVarTypeInt,        "3",                    NULL, false, false, "The number of sources lines to display that come before the current source line when displaying a stopped context." },
-{   "stop-line-count-after", eSetVarTypeInt,        "3",                    NULL, false, false, "The number of sources lines to display that come after the current source line when displaying a stopped context." },
-{   "stop-disassembly-count",  eSetVarTypeInt,      "0",                    NULL, false, false, "The number of disassembly lines to show when displaying a stopped context." },
-{   "stop-disassembly-display", eSetVarTypeEnum,    "no-source",           g_show_disassembly_enum_values, false, false, "Control when to display disassembly when displaying a stopped context." },
-{   NULL,                   eSetVarTypeNone,        NULL,                   NULL, false, false, NULL }
-};

@@ -26,7 +26,7 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -53,6 +53,9 @@ public:
 
     virtual lldb::CompUnitSP
     ParseCompileUnitAtIndex(uint32_t index);
+
+    virtual lldb::LanguageType
+    ParseCompileUnitLanguage (const lldb_private::SymbolContext& sc);
 
     virtual size_t
     ParseCompileUnitFunctions (const lldb_private::SymbolContext& sc);
@@ -110,11 +113,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();

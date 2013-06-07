@@ -76,11 +76,29 @@ public:
         return m_ast; 
     }
 
+    static ClangASTType
+    GetCanonicalType (clang::ASTContext *ast, lldb::clang_type_t clang_type);
+
+    ClangASTType
+    GetCanonicalType ()
+    {
+        return GetCanonicalType (GetASTContext(), GetOpaqueQualType());
+    }
+
     ConstString
     GetConstTypeName ();
     
     ConstString
     GetConstQualifiedTypeName ();
+
+    static lldb::BasicType
+    GetBasicTypeEnumeration (const ConstString &name);
+
+    static ClangASTType
+    GetBasicType (clang::ASTContext *ast, lldb::BasicType type);
+
+    static ClangASTType
+    GetBasicType (clang::ASTContext *ast, const ConstString &name);
 
     static ConstString
     GetConstTypeName (clang::ASTContext *ast,
@@ -98,10 +116,17 @@ public:
     GetTypeNameForOpaqueQualType (clang::ASTContext *ast,
                                   lldb::clang_type_t opaque_qual_type);
 
-    uint32_t
+    uint64_t
+    GetClangTypeByteSize ();
+
+    static uint64_t
+    GetClangTypeByteSize (clang::ASTContext *ast_context,
+                          lldb::clang_type_t clang_type);
+    
+    uint64_t
     GetClangTypeBitWidth ();
 
-    static uint32_t
+    static uint64_t
     GetClangTypeBitWidth (clang::ASTContext *ast_context, lldb::clang_type_t opaque_clang_qual_type);
 
     size_t
@@ -121,12 +146,18 @@ public:
     GetTypeClass (clang::ASTContext *ast_context, 
                   lldb::clang_type_t clang_type);
 
+    lldb::TypeClass
+    GetTypeClass () const
+    {
+        return GetTypeClass (GetASTContext(), GetOpaqueQualType());
+    }
+
     void
     DumpValue (ExecutionContext *exe_ctx,
                Stream *s,
                lldb::Format format,
                const DataExtractor &data,
-               uint32_t data_offset,
+               lldb::offset_t data_offset,
                size_t data_byte_size,
                uint32_t bitfield_bit_size,
                uint32_t bitfield_bit_offset,
@@ -142,7 +173,7 @@ public:
                Stream *s,
                lldb::Format format,
                const DataExtractor &data,
-               uint32_t data_offset,
+               lldb::offset_t data_offset,
                size_t data_byte_size,
                uint32_t bitfield_bit_size,
                uint32_t bitfield_bit_offset,
@@ -155,7 +186,7 @@ public:
     DumpTypeValue (Stream *s,
                    lldb::Format format,
                    const DataExtractor &data,
-                   uint32_t data_offset,
+                   lldb::offset_t data_offset,
                    size_t data_byte_size,
                    uint32_t bitfield_bit_size,
                    uint32_t bitfield_bit_offset,
@@ -168,7 +199,7 @@ public:
                    Stream *s,
                    lldb::Format format,
                    const DataExtractor &data,
-                   uint32_t data_offset,
+                   lldb::offset_t data_offset,
                    size_t data_byte_size,
                    uint32_t bitfield_bit_size,
                    uint32_t bitfield_bit_offset,
@@ -178,7 +209,7 @@ public:
     DumpSummary (ExecutionContext *exe_ctx,
                  Stream *s,
                  const DataExtractor &data,
-                 uint32_t data_offset,
+                 lldb::offset_t data_offset,
                  size_t data_byte_size);
                  
     
@@ -188,9 +219,12 @@ public:
                  ExecutionContext *exe_ctx,
                  Stream *s,
                  const DataExtractor &data,
-                 uint32_t data_offset,
+                 lldb::offset_t data_offset,
                  size_t data_byte_size);
     
+    void
+    DumpTypeDescription (); // Dump to stdout
+
     void
     DumpTypeDescription (Stream *s);
     
@@ -199,17 +233,11 @@ public:
                          lldb::clang_type_t opaque_clang_qual_type,
                          Stream *s);
     
-    void DumpTypeCode (Stream *s);
-    
-    static void
-    DumpTypeCode (void *type,
-                  Stream *s);
-                         
     lldb::Encoding
-    GetEncoding (uint32_t &count);                 
+    GetEncoding (uint64_t &count);
 
     static lldb::Encoding
-    GetEncoding (lldb::clang_type_t opaque_clang_qual_type, uint32_t &count);
+    GetEncoding (lldb::clang_type_t opaque_clang_qual_type, uint64_t &count);
 
     lldb::Format
     GetFormat ();
@@ -217,16 +245,16 @@ public:
     static lldb::Format
     GetFormat (lldb::clang_type_t opaque_clang_qual_type);
     
-    uint32_t
+    uint64_t
     GetTypeByteSize() const;
     
-    static uint32_t
+    static uint64_t
     GetTypeByteSize(clang::ASTContext *ast_context,
                     lldb::clang_type_t opaque_clang_qual_type);
 
     bool
     GetValueAsScalar (const DataExtractor &data,
-                      uint32_t data_offset,
+                      lldb::offset_t data_offset,
                       size_t data_byte_size,
                       Scalar &value);
 
@@ -234,7 +262,7 @@ public:
     GetValueAsScalar (clang::ASTContext *ast_context,
                       lldb::clang_type_t opaque_clang_qual_type,
                       const DataExtractor &data,
-                      uint32_t data_offset,
+                      lldb::offset_t data_offset,
                       size_t data_byte_size,
                       Scalar &value);
 
@@ -297,18 +325,18 @@ public:
                    StreamString &new_value);
 
     lldb::clang_type_t
-    GetPointeeType ();
+    GetPointeeType () const;
 
     static lldb::clang_type_t
     GetPointeeType (lldb::clang_type_t opaque_clang_qual_type);
     
     lldb::clang_type_t
-    GetArrayElementType (uint32_t& stride);
+    GetArrayElementType (uint64_t& stride);
     
     static lldb::clang_type_t
     GetArrayElementType (clang::ASTContext* ast,
                          lldb::clang_type_t opaque_clang_qual_type,
-						 uint32_t& stride);
+						 uint64_t& stride);
     
     lldb::clang_type_t
     GetPointerType () const;
@@ -319,6 +347,9 @@ public:
 
     static lldb::clang_type_t
     RemoveFastQualifiers (lldb::clang_type_t);
+
+    static clang::CXXRecordDecl *
+    GetAsCXXRecordDecl (lldb::clang_type_t opaque_clang_qual_type);
 
     void
     Clear()

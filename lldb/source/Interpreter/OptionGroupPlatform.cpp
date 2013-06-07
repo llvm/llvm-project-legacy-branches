@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/OptionGroupPlatform.h"
 
 // C Includes
@@ -34,9 +36,11 @@ OptionGroupPlatform::CreatePlatformWithOptions (CommandInterpreter &interpreter,
         platform_sp = Platform::Create (m_platform_name.c_str(), error);
         if (platform_sp)
         {
-            if (platform_arch.IsValid() && !platform_sp->IsCompatibleArchitecture(arch, &platform_arch))
+            if (platform_arch.IsValid() && !platform_sp->IsCompatibleArchitecture(arch, false, &platform_arch))
             {
-                error.SetErrorStringWithFormat("platform '%s' doesn't support '%s'", platform_sp->GetName(), arch.GetTriple().getTriple().c_str());
+                error.SetErrorStringWithFormat ("platform '%s' doesn't support '%s'",
+                                                platform_sp->GetName().GetCString(),
+                                                arch.GetTriple().getTriple().c_str());
                 platform_sp.reset();
                 return platform_sp;
             }
@@ -84,7 +88,7 @@ g_option_table[] =
     { LLDB_OPT_SET_ALL, false, "platform", 'p', required_argument, NULL, 0, eArgTypePlatform, "Specify name of the platform to use for this target, creating the platform if necessary."},
     { LLDB_OPT_SET_ALL, false, "version" , 'v', required_argument, NULL, 0, eArgTypeNone, "Specify the initial SDK version to use prior to connecting." },
     { LLDB_OPT_SET_ALL, false, "build"   , 'b', required_argument, NULL, 0, eArgTypeNone, "Specify the initial SDK build number." },
-    { LLDB_OPT_SET_ALL, false, "sysroot" , 's', required_argument, NULL, 0, eArgTypeFilename, "Specify the SDK root directory that contains a root of all remote system files." }
+    { LLDB_OPT_SET_ALL, false, "sysroot" , 'S', required_argument, NULL, 0, eArgTypeFilename, "Specify the SDK root directory that contains a root of all remote system files." }
 };
 
 const OptionDefinition*
@@ -113,7 +117,7 @@ OptionGroupPlatform::SetOptionValue (CommandInterpreter &interpreter,
     if (!m_include_platform_option)
         ++option_idx;
     
-    char short_option = (char) g_option_table[option_idx].short_option;
+    const int short_option = g_option_table[option_idx].short_option;
     
     switch (short_option)
     {
@@ -133,7 +137,7 @@ OptionGroupPlatform::SetOptionValue (CommandInterpreter &interpreter,
             m_sdk_build.SetCString (option_arg);
             break;
             
-        case 's':
+        case 'S':
             m_sdk_sysroot.SetCString (option_arg);
             break;
 

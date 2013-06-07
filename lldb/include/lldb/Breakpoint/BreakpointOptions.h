@@ -12,7 +12,6 @@
 
 // C Includes
 // C++ Includes
-#include <memory>
 // Other libraries and framework includes
 // Project includes
 #include "lldb/lldb-private.h"
@@ -67,7 +66,8 @@ public:
                       void *baton,
                       bool enabled = true,
                       int32_t ignore = 0,
-                      lldb::tid_t thread_id = LLDB_INVALID_THREAD_ID);
+                      lldb::tid_t thread_id = LLDB_INVALID_THREAD_ID,
+                      bool one_shot = false);
 
     virtual ~BreakpointOptions();
 
@@ -183,7 +183,7 @@ public:
     ///    A pointer to the condition expression text, or NULL if no
     //     condition has been set.
     //------------------------------------------------------------------
-    const char *GetConditionText () const;
+    const char *GetConditionText (size_t *hash = NULL) const;
     
     //------------------------------------------------------------------
     // Enabled/Ignore Count
@@ -195,13 +195,39 @@ public:
     ///     \b true if the breakpoint is enabled, \b false if disabled.
     //------------------------------------------------------------------
     bool         
-    IsEnabled () const;
+    IsEnabled () const
+    {
+        return m_enabled;
+    }
 
     //------------------------------------------------------------------
     /// If \a enable is \b true, enable the breakpoint, if \b false disable it.
     //------------------------------------------------------------------
     void
-    SetEnabled (bool enabled);
+    SetEnabled (bool enabled)
+    {
+        m_enabled = enabled;
+    }
+
+    //------------------------------------------------------------------
+    /// Check the One-shot state.
+    /// @return
+    ///     \b true if the breakpoint is one-shot, \b false otherwise.
+    //------------------------------------------------------------------
+    bool         
+    IsOneShot () const
+    {
+        return m_one_shot;
+    }
+
+    //------------------------------------------------------------------
+    /// If \a enable is \b true, enable the breakpoint, if \b false disable it.
+    //------------------------------------------------------------------
+    void
+    SetOneShot (bool one_shot)
+    {
+        m_one_shot = one_shot;
+    }
 
     //------------------------------------------------------------------
     /// Set the breakpoint to ignore the next \a count breakpoint hits.
@@ -210,7 +236,10 @@ public:
     //------------------------------------------------------------------
 
     void
-    SetIgnoreCount (uint32_t n);
+    SetIgnoreCount (uint32_t n)
+    {
+        m_ignore_count = n;
+    }
 
     //------------------------------------------------------------------
     /// Return the current Ignore Count.
@@ -218,7 +247,10 @@ public:
     ///     The number of breakpoint hits to be ignored.
     //------------------------------------------------------------------
     uint32_t
-    GetIgnoreCount () const;
+    GetIgnoreCount () const
+    {
+        return m_ignore_count;
+    }
 
     //------------------------------------------------------------------
     /// Return the current thread spec for this option.  This will return NULL if the no thread
@@ -314,10 +346,11 @@ private:
     lldb::BatonSP m_callback_baton_sp; // This is the client data for the callback
     bool m_callback_is_synchronous;
     bool m_enabled;
+    bool m_one_shot;
     uint32_t m_ignore_count; // Number of times to ignore this breakpoint
-    std::auto_ptr<ThreadSpec> m_thread_spec_ap; // Thread for which this breakpoint will take
-    std::auto_ptr<ClangUserExpression> m_condition_ap;  // The condition to test.
-
+    std::unique_ptr<ThreadSpec> m_thread_spec_ap; // Thread for which this breakpoint will take
+    std::string m_condition_text;  // The condition to test.
+    size_t m_condition_text_hash; // Its hash, so that locations know when the condition is updated.
 };
 
 } // namespace lldb_private

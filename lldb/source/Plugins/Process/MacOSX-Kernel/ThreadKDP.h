@@ -20,14 +20,11 @@ class ProcessKDP;
 class ThreadKDP : public lldb_private::Thread
 {
 public:
-    ThreadKDP (const lldb::ProcessSP &process_sp, 
+    ThreadKDP (lldb_private::Process &process,
                lldb::tid_t tid);
 
     virtual
     ~ThreadKDP ();
-
-    virtual bool
-    WillResume (lldb::StateType resume_state);
 
     virtual void
     RefreshStateAfterStop();
@@ -43,9 +40,6 @@ public:
 
     virtual lldb::RegisterContextSP
     CreateRegisterContextForFrame (lldb_private::StackFrame *frame);
-
-    virtual void
-    ClearStackFrames ();
 
     void
     Dump (lldb_private::Log *log, uint32_t index);
@@ -79,6 +73,9 @@ public:
     {
         m_thread_dispatch_qaddr = thread_dispatch_qaddr;
     }
+    
+    void
+    SetStopInfoFrom_KDP_EXCEPTION (const lldb_private::DataExtractor &exc_reply_packet);
 
 protected:
     
@@ -90,14 +87,12 @@ protected:
     std::string m_thread_name;
     std::string m_dispatch_queue_name;
     lldb::addr_t m_thread_dispatch_qaddr;
+    lldb::StopInfoSP m_cached_stop_info_sp;
     //------------------------------------------------------------------
-    // Member variables.
+    // Protected member functions.
     //------------------------------------------------------------------
-
-    virtual lldb::StopInfoSP
-    GetPrivateStopReason ();
-
-
+    virtual bool
+    CalculateStopInfo ();
 };
 
 #endif  // liblldb_ThreadKDP_h_

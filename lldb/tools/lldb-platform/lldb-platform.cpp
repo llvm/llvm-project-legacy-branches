@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 #include <errno.h>
 #include <getopt.h>
@@ -30,7 +32,7 @@ using namespace lldb;
 using namespace lldb_private;
 
 //----------------------------------------------------------------------
-// option descriptors for getopt_long()
+// option descriptors for getopt_long_only()
 //----------------------------------------------------------------------
 
 int g_debug = 0;
@@ -133,7 +135,7 @@ main (int argc, char *argv[])
 //        return 3;
 //    }
     
-    while ((ch = getopt_long(argc, argv, "l:f:L:", g_long_options, &long_option_index)) != -1)
+    while ((ch = getopt_long_only(argc, argv, "l:f:L:", g_long_options, &long_option_index)) != -1)
     {
 //        DNBLogDebug("option: ch == %c (0x%2.2x) --%s%c%s\n",
 //                    ch, (uint8_t)ch,
@@ -201,7 +203,7 @@ main (int argc, char *argv[])
         ProcessGDBRemoteLog::EnableLog (log_stream_sp, 0,log_args.GetConstArgumentVector(), log_stream_sp.get());
     }
 
-    // Skip any options we consumed with getopt_long
+    // Skip any options we consumed with getopt_long_only
     argc -= optind;
     argv += optind;
 
@@ -210,48 +212,52 @@ main (int argc, char *argv[])
         GDBRemoteCommunicationServer gdb_server (true);
         if (!listen_host_port.empty())
         {
-            for (int j = 0; j < listen_host_port.size(); j++)
-            {
-                char c = listen_host_port[j];
-                if (c > '9' || c < '0')
-                    printf("WARNING: passing anything but a number as argument to --listen will most probably make connecting impossible.\n");
-            }
-            std::auto_ptr<ConnectionFileDescriptor> conn_ap(new ConnectionFileDescriptor());
+            std::unique_ptr<ConnectionFileDescriptor> conn_ap(new ConnectionFileDescriptor());
             if (conn_ap.get())
             {
-                std::string connect_url ("listen://");
-                connect_url.append(listen_host_port.c_str());
-
-                printf ("Listening for a connection on %s...\n", listen_host_port.c_str());
-                if (conn_ap->Connect(connect_url.c_str(), &error) == eConnectionStatusSuccess)
+                for (int j = 0; j < listen_host_port.size(); j++)
                 {
-                    printf ("Connection established.\n");
-                    gdb_server.SetConnection (conn_ap.release());
+                    char c = listen_host_port[j];
+                    if (c > '9' || c < '0')
+                        printf("WARNING: passing anything but a number as argument to --listen will most probably make connecting impossible.\n");
+                }
+                std::auto_ptr<ConnectionFileDescriptor> conn_ap(new ConnectionFileDescriptor());
+                if (conn_ap.get())
+                {
+                    std::string connect_url ("listen://");
+                    connect_url.append(listen_host_port.c_str());
+
+                    printf ("Listening for a connection on %s...\n", listen_host_port.c_str());
+                    if (conn_ap->Connect(connect_url.c_str(), &error) == eConnectionStatusSuccess)
+                    {
+                        printf ("Connection established.\n");
+                        gdb_server.SetConnection (conn_ap.release());
+                    }
                 }
             }
-        }
 
-        if (gdb_server.IsConnected())
-        {
-            // After we connected, we need to get an initial ack from...
-            if (gdb_server.HandshakeWithClient(&error))
+            if (gdb_server.IsConnected())
             {
-                bool interrupt = false;
-                bool done = false;
-                while (!interrupt && !done)
+                // After we connected, we need to get an initial ack from...
+                if (gdb_server.HandshakeWithClient(&error))
                 {
-                    if (!gdb_server.GetPacketAndSendResponse (UINT32_MAX, error, interrupt, done))
-                        break;
+                    bool interrupt = false;
+                    bool done = false;
+                    while (!interrupt && !done)
+                    {
+                        if (!gdb_server.GetPacketAndSendResponse (UINT32_MAX, error, interrupt, done))
+                            break;
+                    }
+                    
+                    if (error.Fail())
+                    {
+                        fprintf(stderr, "error: %s\n", error.AsCString());
+                    }
                 }
-                
-                if (error.Fail())
+                else
                 {
-                    fprintf(stderr, "error: %s\n", error.AsCString());
+                    fprintf(stderr, "error: handshake with client failed\n");
                 }
-            }
-            else
-            {
-                fprintf(stderr, "error: handshake with client failed\n");
             }
         }
     } while (g_stay_alive);

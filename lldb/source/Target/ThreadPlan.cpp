@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Target/ThreadPlan.h"
 
 // C Includes
@@ -34,6 +36,7 @@ ThreadPlan::ThreadPlan(ThreadPlanKind kind, const char *name, Thread &thread, Vo
     m_kind (kind),
     m_name (name),
     m_plan_complete_mutex (Mutex::eMutexTypeRecursive),
+    m_cached_plan_explains_stop (eLazyBoolCalculate),
     m_plan_complete (false),
     m_plan_private (false),
     m_okay_to_discard (true),
@@ -48,6 +51,21 @@ ThreadPlan::ThreadPlan(ThreadPlanKind kind, const char *name, Thread &thread, Vo
 //----------------------------------------------------------------------
 ThreadPlan::~ThreadPlan()
 {
+}
+
+bool
+ThreadPlan::PlanExplainsStop (Event *event_ptr)
+{
+    if (m_cached_plan_explains_stop == eLazyBoolCalculate)
+    {
+        bool actual_value = DoPlanExplainsStop(event_ptr);
+        m_cached_plan_explains_stop = actual_value ? eLazyBoolYes : eLazyBoolNo;
+        return actual_value;
+    }
+    else
+    {
+        return m_cached_plan_explains_stop == eLazyBoolYes;
+    }
 }
 
 bool
@@ -77,7 +95,7 @@ ThreadPlan::MischiefManaged ()
 Vote
 ThreadPlan::ShouldReportStop (Event *event_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     if (m_stop_vote == eVoteNoOpinion)
     {
@@ -129,9 +147,11 @@ ThreadPlan::SetStopOthers (bool new_value)
 bool
 ThreadPlan::WillResume (StateType resume_state, bool current_plan)
 {
+    m_cached_plan_explains_stop = eLazyBoolCalculate;
+    
     if (current_plan)
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
         if (log)
         {
@@ -139,7 +159,7 @@ ThreadPlan::WillResume (StateType resume_state, bool current_plan)
             addr_t pc = reg_ctx->GetPC();
             addr_t sp = reg_ctx->GetSP();
             addr_t fp = reg_ctx->GetFP();
-            log->Printf("%s Thread #%u: tid = 0x%4.4llx, pc = 0x%8.8llx, sp = 0x%8.8llx, fp = 0x%8.8llx, "
+            log->Printf("%s Thread #%u: tid = 0x%4.4" PRIx64 ", pc = 0x%8.8" PRIx64 ", sp = 0x%8.8" PRIx64 ", fp = 0x%8.8" PRIx64 ", "
                         "plan = '%s', state = %s, stop others = %d", 
                         __FUNCTION__,
                         m_thread.GetIndexID(), 
@@ -152,7 +172,7 @@ ThreadPlan::WillResume (StateType resume_state, bool current_plan)
                         StopOthers());
         }
     }
-    return true;
+    return DoWillResume (resume_state, current_plan);
 }
 
 lldb::user_id_t

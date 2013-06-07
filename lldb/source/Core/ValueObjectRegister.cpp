@@ -60,7 +60,7 @@ ValueObjectRegisterContext::GetQualifiedTypeName()
     return ConstString();
 }
 
-uint32_t
+size_t
 ValueObjectRegisterContext::CalculateNumChildren()
 {
     return m_reg_ctx_sp->GetRegisterSetCount();
@@ -72,7 +72,7 @@ ValueObjectRegisterContext::GetClangASTImpl ()
     return NULL;
 }
 
-size_t
+uint64_t
 ValueObjectRegisterContext::GetByteSize()
 {
     return 0;
@@ -101,11 +101,11 @@ ValueObjectRegisterContext::UpdateValue ()
 }
 
 ValueObject *
-ValueObjectRegisterContext::CreateChildAtIndex (uint32_t idx, bool synthetic_array_member, int32_t synthetic_index)
+ValueObjectRegisterContext::CreateChildAtIndex (size_t idx, bool synthetic_array_member, int32_t synthetic_index)
 {
     ValueObject *new_valobj = NULL;
     
-    const uint32_t num_children = GetNumChildren();
+    const size_t num_children = GetNumChildren();
     if (idx < num_children)
     {
         ExecutionContext exe_ctx(GetExecutionContextRef());
@@ -162,7 +162,7 @@ ValueObjectRegisterSet::GetQualifiedTypeName()
     return ConstString();
 }
 
-uint32_t
+size_t
 ValueObjectRegisterSet::CalculateNumChildren()
 {
     const RegisterSet *reg_set = m_reg_ctx_sp->GetRegisterSet(m_reg_set_idx);
@@ -177,7 +177,7 @@ ValueObjectRegisterSet::GetClangASTImpl ()
     return NULL;
 }
 
-size_t
+uint64_t
 ValueObjectRegisterSet::GetByteSize()
 {
     return 0;
@@ -222,12 +222,12 @@ ValueObjectRegisterSet::UpdateValue ()
 
 
 ValueObject *
-ValueObjectRegisterSet::CreateChildAtIndex (uint32_t idx, bool synthetic_array_member, int32_t synthetic_index)
+ValueObjectRegisterSet::CreateChildAtIndex (size_t idx, bool synthetic_array_member, int32_t synthetic_index)
 {
     ValueObject *valobj = NULL;
     if (m_reg_ctx_sp && m_reg_set)
     {
-        const uint32_t num_children = GetNumChildren();
+        const size_t num_children = GetNumChildren();
         if (idx < num_children)
             valobj = new ValueObjectRegister(*this, m_reg_ctx_sp, m_reg_set->registers[idx]);
     }
@@ -250,7 +250,7 @@ ValueObjectRegisterSet::GetChildMemberWithName (const ConstString &name, bool ca
         return ValueObjectSP();
 }
 
-uint32_t
+size_t
 ValueObjectRegisterSet::GetIndexOfChildWithName (const ConstString &name)
 {
     if (m_reg_ctx_sp && m_reg_set)
@@ -341,10 +341,10 @@ ValueObjectRegister::GetTypeName()
     return m_type_name;
 }
 
-uint32_t
+size_t
 ValueObjectRegister::CalculateNumChildren()
 {
-    return 0;
+    return ClangASTContext::GetNumChildren(GetClangAST(), GetClangType(), true);
 }
 
 clang::ASTContext *
@@ -361,7 +361,7 @@ ValueObjectRegister::GetClangASTImpl ()
     return NULL;
 }
 
-size_t
+uint64_t
 ValueObjectRegister::GetByteSize()
 {
     return m_reg_info.byte_size;
@@ -423,11 +423,35 @@ ValueObjectRegister::SetValueFromCString (const char *value_str, Error& error)
 }
 
 bool
+ValueObjectRegister::SetData (DataExtractor &data, Error &error)
+{
+    error = m_reg_value.SetValueFromData(&m_reg_info, data, 0, false);
+    if (error.Success())
+    {
+        if (m_reg_ctx_sp->WriteRegister (&m_reg_info, m_reg_value))
+        {
+            SetNeedsUpdate();
+            return true;
+        }
+        else
+            return false;
+    }
+    else
+        return false;
+}
+
+bool
 ValueObjectRegister::ResolveValue (Scalar &scalar)
 {
     if (UpdateValueIfNeeded(false)) // make sure that you are up to date before returning anything
         return m_reg_value.GetScalarValue(scalar);
     return false;
+}
+
+void
+ValueObjectRegister::GetExpressionPath (Stream &s, bool qualify_cxx_base_classes, GetExpressionPathFormat epformat)
+{
+    s.Printf("$%s", m_reg_info.name);
 }
 
 

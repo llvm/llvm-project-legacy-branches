@@ -28,6 +28,8 @@
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
 
+#include "llvm/ADT/StringRef.h"
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -49,7 +51,7 @@ Type::Type
     lldb::user_id_t uid,
     SymbolFile* symbol_file,
     const ConstString &name,
-    uint32_t byte_size,
+    uint64_t byte_size,
     SymbolContextScope *context,
     user_id_t encoding_uid,
     EncodingDataType encoding_uid_type,
@@ -57,6 +59,7 @@ Type::Type
     clang_type_t clang_type,
     ResolveState clang_type_resolve_state
 ) :
+    std::enable_shared_from_this<Type> (),
     UserID (uid),
     m_name (name),
     m_symbol_file (symbol_file),
@@ -73,12 +76,13 @@ Type::Type
 }
 
 Type::Type () :
+    std::enable_shared_from_this<Type> (),
     UserID (0),
     m_name ("<INVALID TYPE>"),
     m_symbol_file (NULL),
     m_context (NULL),
     m_encoding_type (NULL),
-    m_encoding_uid (0),
+    m_encoding_uid (LLDB_INVALID_UID),
     m_encoding_uid_type (eEncodingInvalid),
     m_byte_size (0),
     m_decl (),
@@ -90,6 +94,7 @@ Type::Type () :
 
 
 Type::Type (const Type &rhs) :
+    std::enable_shared_from_this<Type> (rhs),
     UserID (rhs),
     m_name (rhs.m_name),
     m_symbol_file (rhs.m_symbol_file),
@@ -136,7 +141,7 @@ Type::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_name)
 
     // Call the get byte size accesor so we resolve our byte size
     if (GetByteSize())
-        s->Printf(", byte-size = %u", m_byte_size);
+        s->Printf(", byte-size = %" PRIu64, m_byte_size);
     bool show_fullpaths = (level == lldb::eDescriptionLevelVerbose);
     m_decl.Dump(s, show_fullpaths);
 
@@ -148,7 +153,7 @@ Type::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_name)
     }
     else if (m_encoding_uid != LLDB_INVALID_UID)
     {
-        s->Printf(", type_uid = 0x%8.8x", m_encoding_uid);
+        s->Printf(", type_uid = 0x%8.8" PRIx64, m_encoding_uid);
         switch (m_encoding_uid_type)
         {
         case eEncodingInvalid: break;
@@ -176,7 +181,7 @@ Type::Dump (Stream *s, bool show_context)
         *s << ", name = \"" << m_name << "\"";
 
     if (m_byte_size != 0)
-        s->Printf(", size = %u", m_byte_size);
+        s->Printf(", size = %" PRIu64, m_byte_size);
 
     if (show_context && m_context != NULL)
     {
@@ -255,7 +260,7 @@ Type::DumpValue
         {
             s->PutChar('(');
             if (verbose)
-                s->Printf("Type{0x%8.8llx} ", GetID());
+                s->Printf("Type{0x%8.8" PRIx64 "} ", GetID());
             DumpTypeName (s);
             s->PutCString(") ");
         }
@@ -287,7 +292,7 @@ Type::GetEncodingType ()
     
 
 
-uint32_t
+uint64_t
 Type::GetByteSize()
 {
     if (m_byte_size == 0)
@@ -373,7 +378,7 @@ Type::GetFormat ()
 
 
 lldb::Encoding
-Type::GetEncoding (uint32_t &count)
+Type::GetEncoding (uint64_t &count)
 {
     // Make sure we resolve our type if it already hasn't been.
     if (!ResolveClangType(eResolveStateForward))
@@ -424,7 +429,7 @@ Type::ReadFromMemory (ExecutionContext *exe_ctx, lldb::addr_t addr, AddressType 
         return false;
     }
 
-    const uint32_t byte_size = GetByteSize();
+    const uint64_t byte_size = GetByteSize();
     if (data.GetByteSize() < byte_size)
     {
         lldb::DataBufferSP data_sp(new DataBufferHeap (byte_size, '\0'));
@@ -437,6 +442,8 @@ Type::ReadFromMemory (ExecutionContext *exe_ctx, lldb::addr_t addr, AddressType 
         if (address_type == eAddressTypeHost)
         {
             // The address is an address in this process, so just copy it
+            if (addr == 0)
+                return false;
             memcpy (dst, (uint8_t*)NULL + addr, byte_size);
             return true;
         }
@@ -728,14 +735,43 @@ Type::GetQualifiedName ()
 
 
 bool
-Type::GetTypeScopeAndBasename (const char* name_cstr,
+Type::GetTypeScopeAndBasename (const char* &name_cstr,
                                std::string &scope,
-                               std::string &basename)
+                               std::string &basename,
+                               TypeClass &type_class)
 {
     // Protect against null c string.
     
+    type_class = eTypeClassAny;
+
     if (name_cstr && name_cstr[0])
     {
+        llvm::StringRef name_strref(name_cstr);
+        if (name_strref.startswith("struct "))
+        {
+            name_cstr += 7;
+            type_class = eTypeClassStruct;
+        }
+        else if (name_strref.startswith("class "))
+        {
+            name_cstr += 6;
+            type_class = eTypeClassClass;
+        }
+        else if (name_strref.startswith("union "))
+        {
+            name_cstr += 6;
+            type_class = eTypeClassUnion;
+        }
+        else if (name_strref.startswith("enum "))
+        {
+            name_cstr += 5;
+            type_class = eTypeClassEnumeration;
+        }
+        else if (name_strref.startswith("typedef "))
+        {
+            name_cstr += 8;
+            type_class = eTypeClassTypedef;
+        }
         const char *basename_cstr = name_cstr;
         const char* namespace_separator = ::strstr (basename_cstr, "::");
         if (namespace_separator)
@@ -797,6 +833,26 @@ TypeAndOrName::operator= (const TypeAndOrName &rhs)
     return *this;
 }
 
+bool
+TypeAndOrName::operator==(const TypeAndOrName &other) const
+{
+    if (m_type_sp != other.m_type_sp)
+        return false;
+    if (m_type_name != other.m_type_name)
+        return false;
+    return true;
+}
+
+bool
+TypeAndOrName::operator!=(const TypeAndOrName &other) const
+{
+    if (m_type_sp != other.m_type_sp)
+        return true;
+    if (m_type_name != other.m_type_name)
+        return true;
+    return false;
+}
+
 ConstString
 TypeAndOrName::GetName () const
 {    
@@ -807,15 +863,15 @@ TypeAndOrName::GetName () const
 }
 
 void
-TypeAndOrName::SetName (ConstString &type_name_const_str)
+TypeAndOrName::SetName (const ConstString &type_name)
 {
-    m_type_name = type_name_const_str;
+    m_type_name = type_name;
 }
 
 void
-TypeAndOrName::SetName (const char *type_name_str)
+TypeAndOrName::SetName (const char *type_name_cstr)
 {
-    m_type_name.SetCString (type_name_str);
+    m_type_name.SetCString (type_name_cstr);
 }
 
 void
@@ -833,6 +889,25 @@ TypeAndOrName::IsEmpty()
         return false;
     else
         return true;
+}
+
+void
+TypeAndOrName::Clear ()
+{
+    m_type_name.Clear();
+    m_type_sp.reset();
+}
+
+bool
+TypeAndOrName::HasName ()
+{
+    return (bool)m_type_name;
+}
+
+bool
+TypeAndOrName::HasTypeSP ()
+{
+    return m_type_sp.get() != NULL;
 }
 
 TypeImpl::TypeImpl(const lldb_private::ClangASTType& clang_ast_type) :

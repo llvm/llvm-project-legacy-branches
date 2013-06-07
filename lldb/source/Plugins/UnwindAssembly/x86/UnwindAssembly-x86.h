@@ -10,6 +10,8 @@
 #ifndef liblldb_UnwindAssembly_x86_h_
 #define liblldb_UnwindAssembly_x86_h_
 
+#include "llvm-c/Disassembler.h"
+
 #include "lldb/lldb-private.h"
 #include "lldb/Target/UnwindAssembly.h"
 
@@ -48,17 +50,14 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
     GetPluginDescriptionStatic();
 
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-    
-    virtual const char *
-    GetShortPluginName();
     
     virtual uint32_t
     GetPluginVersion();
@@ -67,6 +66,7 @@ private:
     UnwindAssembly_x86 (const lldb_private::ArchSpec &arch, int cpu);
 
     int m_cpu;
+    lldb_private::ArchSpec m_arch;
 };
 
 

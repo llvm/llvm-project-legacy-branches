@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/ScriptInterpreter.h"
 
 #include <string>
@@ -77,6 +79,12 @@ ScriptInterpreter::LanguageToString (lldb::ScriptLanguage language)
     }
 
     return return_value;
+}
+
+std::unique_ptr<ScriptInterpreterLocker>
+ScriptInterpreter::AcquireInterpreterLock ()
+{
+    return std::unique_ptr<ScriptInterpreterLocker>(new ScriptInterpreterLocker());
 }
 
 void

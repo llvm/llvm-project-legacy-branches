@@ -36,14 +36,20 @@ public:
     GetError ();
 
     size_t
-    PutOutput (FILE *fh);
-
-    size_t
     GetOutputSize ();
 
     size_t
     GetErrorSize ();
 
+    const char *
+    GetOutput (bool only_if_no_immediate);
+    
+    const char *
+    GetError (bool if_no_immediate);
+    
+    size_t
+    PutOutput (FILE *fh);
+    
     size_t
     PutError (FILE *fh);
 
@@ -65,6 +71,9 @@ public:
     void
     AppendMessage (const char *message);
 
+    void
+    AppendWarning (const char *message);
+
     bool
     GetDescription (lldb::SBStream &description);
     
@@ -75,10 +84,16 @@ public:
     SetImmediateErrorFile (FILE *fh);
 
 	void
-	PutCString(const char* string, int len = -1);
+	PutCString(const char* string, int len);
 
-	size_t
-	Printf(const char* format, ...);
+    // wrapping the variadic Printf() with a plain Print()
+    // because it is hard to support varargs in SWIG bridgings
+    %extend {
+        void Print (const char* str)
+        {
+            self->Printf("%s", str);
+        }
+    }
 
 };
 

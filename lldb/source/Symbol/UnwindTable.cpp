@@ -135,12 +135,12 @@ UnwindTable::GetUncachedFuncUnwindersContainingAddress (const Address& addr, Sym
 void
 UnwindTable::Dump (Stream &s)
 {
-    s.Printf("UnwindTable for %s/%s:\n", m_object_file.GetFileSpec().GetDirectory().GetCString(), m_object_file.GetFileSpec().GetFilename().GetCString());
+    s.Printf("UnwindTable for '%s':\n", m_object_file.GetFileSpec().GetPath().c_str());
     const_iterator begin = m_unwinds.begin();
     const_iterator end = m_unwinds.end();
     for (const_iterator pos = begin; pos != end; ++pos)
     {
-        s.Printf ("[%u] 0x%16.16llx\n", (unsigned)std::distance (begin, pos), pos->first);
+        s.Printf ("[%u] 0x%16.16" PRIx64 "\n", (unsigned)std::distance (begin, pos), pos->first);
     }
     s.EOL();
 }

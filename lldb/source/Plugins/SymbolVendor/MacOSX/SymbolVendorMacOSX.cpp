@@ -16,9 +16,12 @@
 #include <AvailabilityMacros.h>
 
 #include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Section.h"
+#include "lldb/Core/StreamString.h"
 #include "lldb/Core/Timer.h"
+#include "lldb/Host/Host.h"
 #include "lldb/Host/Symbols.h"
 #include "lldb/Symbol/ObjectFile.h"
 
@@ -42,14 +45,40 @@ SymbolVendorMacOSX::~SymbolVendorMacOSX()
 
 
 static bool
-UUIDsMatch(Module *module, ObjectFile *ofile)
+UUIDsMatch(Module *module, ObjectFile *ofile, lldb_private::Stream *feedback_strm)
 {
     if (module && ofile)
     {
         // Make sure the UUIDs match
         lldb_private::UUID dsym_uuid;
-        if (ofile->GetUUID(&dsym_uuid))
-            return dsym_uuid == module->GetUUID();
+
+        if (!ofile->GetUUID(&dsym_uuid))
+        {
+            if (feedback_strm)
+            {
+                feedback_strm->PutCString("warning: failed to get the uuid for object file: '");
+                ofile->GetFileSpec().Dump(feedback_strm);
+                feedback_strm->PutCString("\n");
+            }
+            return false;
+        }
+
+        if (dsym_uuid == module->GetUUID())
+            return true;
+
+        // Emit some warning messages since the UUIDs do not match!
+        if (feedback_strm)
+        {
+            feedback_strm->PutCString("warning: UUID mismatch detected between modules:\n    ");
+            module->GetUUID().Dump(feedback_strm);
+            feedback_strm->PutChar(' ');
+            module->GetFileSpec().Dump(feedback_strm);
+            feedback_strm->PutCString("\n    ");
+            dsym_uuid.Dump(feedback_strm);
+            feedback_strm->PutChar(' ');
+            ofile->GetFileSpec().Dump(feedback_strm);
+            feedback_strm->EOL();
+        }
     }
     return false;
 }
@@ -78,6 +107,16 @@ ReplaceDSYMSectionsWithExecutableSections (ObjectFile *exec_objfile, ObjectFile 
                 // and in the dSYM with those from the executable. If we fail to
                 // replace the one in the dSYM, then add the executable section to
                 // the dSYM.
+                SectionSP dsym_sect_sp(dsym_section_list->FindSectionByID(exec_sect_sp->GetID()));
+                if (dsym_sect_sp.get() && dsym_sect_sp->GetName() != exec_sect_sp->GetName())
+                {
+                    // The sections in a dSYM are normally a superset of the sections in an executable.
+                    // If we find a section # in the exectuable & dSYM that don't have the same name,
+                    // something has changed since the dSYM was written.  The mach_kernel DSTROOT binary
+                    // has a CTF segment added, for instance, and it's easiest to simply not add that to
+                    // the dSYM - none of the nlist entries are going to have references to that section.
+                    continue;
+                }
                 if (dsym_section_list->ReplaceSection(exec_sect_sp->GetID(), exec_sect_sp, 0) == false)
                     dsym_section_list->AddSection(exec_sect_sp);
             }
@@ -102,10 +141,11 @@ SymbolVendorMacOSX::Terminate()
 }
 
 
-const char *
+lldb_private::ConstString
 SymbolVendorMacOSX::GetPluginNameStatic()
 {
-    return "symbol-vendor.macosx";
+    static ConstString g_name("macosx");
+    return g_name;
 }
 
 const char *
@@ -124,15 +164,14 @@ SymbolVendorMacOSX::GetPluginDescriptionStatic()
 // also allow for finding separate debug information files.
 //----------------------------------------------------------------------
 SymbolVendor*
-SymbolVendorMacOSX::CreateInstance (const lldb::ModuleSP &module_sp)
+SymbolVendorMacOSX::CreateInstance (const lldb::ModuleSP &module_sp, lldb_private::Stream *feedback_strm)
 {
     if (!module_sp)
         return NULL;
 
     Timer scoped_timer (__PRETTY_FUNCTION__,
-                        "SymbolVendorMacOSX::CreateInstance (module = %s/%s)",
-                        module_sp->GetFileSpec().GetDirectory().AsCString(),
-                        module_sp->GetFileSpec().GetFilename().AsCString());
+                        "SymbolVendorMacOSX::CreateInstance (module = %s)",
+                        module_sp->GetFileSpec().GetPath().c_str());
     SymbolVendorMacOSX* symbol_vendor = new SymbolVendorMacOSX(module_sp);
     if (symbol_vendor)
     {
@@ -144,9 +183,8 @@ SymbolVendorMacOSX::CreateInstance (const lldb::ModuleSP &module_sp)
         if (obj_file)
         {
             Timer scoped_timer2 ("SymbolVendorMacOSX::CreateInstance () locate dSYM",
-                                 "SymbolVendorMacOSX::CreateInstance (module = %s/%s) locate dSYM",
-                                 module_sp->GetFileSpec().GetDirectory().AsCString(),
-                                 module_sp->GetFileSpec().GetFilename().AsCString());
+                                 "SymbolVendorMacOSX::CreateInstance (module = %s) locate dSYM",
+                                 module_sp->GetFileSpec().GetPath().c_str());
 
             // First check to see if the module has a symbol file in mind already.
             // If it does, then we MUST use that.
@@ -157,24 +195,23 @@ SymbolVendorMacOSX::CreateInstance (const lldb::ModuleSP &module_sp)
             {
                 // No symbol file was specified in the module, lets try and find
                 // one ourselves.
-                const FileSpec &file_spec = obj_file->GetFileSpec();
-                if (file_spec)
-                {
-                    ModuleSpec module_spec(file_spec, module_sp->GetArchitecture());
-                    module_spec.GetUUID() = module_sp->GetUUID();
-                    dsym_fspec = Symbols::LocateExecutableSymbolFile (module_spec);
-                    if (module_spec.GetSourceMappingList().GetSize())
-                    {
-                        module_sp->GetSourceMappingList().Append (module_spec.GetSourceMappingList (), true);
-                    }
-                }
+                FileSpec file_spec = obj_file->GetFileSpec();
+                if (!file_spec)
+                    file_spec = module_sp->GetFileSpec();
+                
+                ModuleSpec module_spec(file_spec, module_sp->GetArchitecture());
+                module_spec.GetUUID() = module_sp->GetUUID();
+                dsym_fspec = Symbols::LocateExecutableSymbolFile (module_spec);
+                if (module_spec.GetSourceMappingList().GetSize())
+                    module_sp->GetSourceMappingList().Append (module_spec.GetSourceMappingList (), true);
             }
             
             if (dsym_fspec)
             {
                 DataBufferSP dsym_file_data_sp;
-                dsym_objfile_sp = ObjectFile::FindPlugin(module_sp, &dsym_fspec, 0, dsym_fspec.GetByteSize(), dsym_file_data_sp);
-                if (UUIDsMatch(module_sp.get(), dsym_objfile_sp.get()))
+                lldb::offset_t dsym_file_data_offset = 0;
+                dsym_objfile_sp = ObjectFile::FindPlugin(module_sp, &dsym_fspec, 0, dsym_fspec.GetByteSize(), dsym_file_data_sp, dsym_file_data_offset);
+                if (UUIDsMatch(module_sp.get(), dsym_objfile_sp.get(), feedback_strm))
                 {
                     char dsym_path[PATH_MAX];
                     if (module_sp->GetSourceMappingList().IsEmpty() && dsym_fspec.GetPath(dsym_path, sizeof(dsym_path)))
@@ -182,16 +219,15 @@ SymbolVendorMacOSX::CreateInstance (const lldb::ModuleSP &module_sp)
                         lldb_private::UUID dsym_uuid;
                         if (dsym_objfile_sp->GetUUID(&dsym_uuid))
                         {
-                            char uuid_cstr_buf[64];
-                            const char *uuid_cstr = dsym_uuid.GetAsCString (uuid_cstr_buf, sizeof(uuid_cstr_buf));
-                            if (uuid_cstr)
+                            std::string uuid_str = dsym_uuid.GetAsString ();
+                            if (!uuid_str.empty())
                             {
                                 char *resources = strstr (dsym_path, "/Contents/Resources/");
                                 if (resources)
                                 {
                                     char dsym_uuid_plist_path[PATH_MAX];
                                     resources[strlen("/Contents/Resources/")] = '\0';
-                                    snprintf(dsym_uuid_plist_path, sizeof(dsym_uuid_plist_path), "%s%s.plist", dsym_path, uuid_cstr);
+                                    snprintf(dsym_uuid_plist_path, sizeof(dsym_uuid_plist_path), "%s%s.plist", dsym_path, uuid_str.c_str());
                                     FileSpec dsym_uuid_plist_spec(dsym_uuid_plist_path, false);
                                     if (dsym_uuid_plist_spec.Exists())
                                     {
@@ -297,14 +333,8 @@ SymbolVendorMacOSX::CreateInstance (const lldb::ModuleSP &module_sp)
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+ConstString
 SymbolVendorMacOSX::GetPluginName()
-{
-    return "SymbolVendorMacOSX";
-}
-
-const char *
-SymbolVendorMacOSX::GetShortPluginName()
 {
     return GetPluginNameStatic();
 }

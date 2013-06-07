@@ -19,6 +19,7 @@
 // Other libraries and framework includes
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/Broadcaster.h"
+#include "lldb/Core/ConstString.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/InputReader.h"
 #include "lldb/Core/StreamString.h"
@@ -50,7 +51,7 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -71,8 +72,8 @@ public:
     CanDebug (lldb_private::Target &target,
               bool plugin_specified_by_name);
 
-//    virtual uint32_t
-//    ListProcessesMatchingName (const char *name, lldb_private::StringList &matches, std::vector<lldb::pid_t> &pids);
+    virtual lldb_private::CommandObject *
+    GetPluginCommandObject();
 
     //------------------------------------------------------------------
     // Creating a new process, or attaching to an existing one
@@ -94,7 +95,7 @@ public:
     WillAttachToProcessWithName (const char *process_name, bool wait_for_launch);
 
     virtual lldb_private::Error
-    DoConnectRemote (const char *remote_url);
+    DoConnectRemote (lldb_private::Stream *strm, const char *remote_url);
     
     lldb_private::Error
     WillLaunchOrAttach ();
@@ -116,11 +117,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -138,10 +136,10 @@ public:
     DoHalt (bool &caused_stop);
 
     virtual lldb_private::Error
-    WillDetach ();
-
-    virtual lldb_private::Error
-    DoDetach ();
+    DoDetach (bool keep_stopped);
+    
+    virtual bool
+    DetachRequiresHalt() { return true; }
 
     virtual lldb_private::Error
     DoSignal (int signal);
@@ -190,19 +188,19 @@ public:
     // Process Breakpoints
     //----------------------------------------------------------------------
     virtual lldb_private::Error
-    EnableBreakpoint (lldb_private::BreakpointSite *bp_site);
+    EnableBreakpointSite (lldb_private::BreakpointSite *bp_site);
 
     virtual lldb_private::Error
-    DisableBreakpoint (lldb_private::BreakpointSite *bp_site);
+    DisableBreakpointSite (lldb_private::BreakpointSite *bp_site);
 
     //----------------------------------------------------------------------
     // Process Watchpoints
     //----------------------------------------------------------------------
     virtual lldb_private::Error
-    EnableWatchpoint (lldb_private::Watchpoint *wp);
+    EnableWatchpoint (lldb_private::Watchpoint *wp, bool notify = true);
 
     virtual lldb_private::Error
-    DisableWatchpoint (lldb_private::Watchpoint *wp);
+    DisableWatchpoint (lldb_private::Watchpoint *wp, bool notify = true);
 
     virtual lldb_private::Error
     GetWatchpointSupportInfo (uint32_t &num);
@@ -288,11 +286,8 @@ protected:
     BuildDynamicRegisterInfo (bool force);
 
     void
-    SetLastStopPacket (const StringExtractorGDBRemote &response)
-    {
-        lldb_private::Mutex::Locker locker (m_last_stop_packet_mutex);
-        m_last_stop_packet = response;
-    }
+    SetLastStopPacket (const StringExtractorGDBRemote &response);
+
     //------------------------------------------------------------------
     /// Broadcaster event bits definitions.
     //------------------------------------------------------------------
@@ -303,6 +298,13 @@ protected:
         eBroadcastBitAsyncThreadDidExit             = (1 << 2)
     };
 
+    typedef enum AsyncThreadState
+    {
+        eAsyncThreadNotStarted,
+        eAsyncThreadRunning,
+        eAsyncThreadDone
+    } AsyncThreadState;
+    
     lldb_private::Flags m_flags;            // Process specific flags (see eFlags enums)
     GDBRemoteCommunicationClient m_gdb_comm;
     lldb::pid_t m_debugserver_pid;
@@ -311,6 +313,8 @@ protected:
     GDBRemoteDynamicRegisterInfo m_register_info;
     lldb_private::Broadcaster m_async_broadcaster;
     lldb::thread_t m_async_thread;
+    AsyncThreadState m_async_thread_state;
+    lldb_private::Mutex m_async_thread_state_mutex;
     typedef std::vector<lldb::tid_t> tid_collection;
     typedef std::vector< std::pair<lldb::tid_t,int> > tid_sig_collection;
     typedef std::map<lldb::addr_t, lldb::addr_t> MMapMap;
@@ -325,6 +329,7 @@ protected:
     lldb::BreakpointSP m_thread_create_bp_sp;
     bool m_waiting_for_attach;
     bool m_destroy_tried_resuming;
+    lldb::CommandObjectSP m_command_sp;
     
     bool
     StartAsyncThread ();
@@ -368,10 +373,8 @@ protected:
                                const char *bytes, 
                                size_t bytes_len);
 
-    lldb_private::Error
-    InterruptIfRunning (bool discard_thread_plans, 
-                        bool catch_stop_event, 
-                        lldb::EventSP &stop_event_sp);
+    lldb_private::DynamicLoader *
+    GetDynamicLoader ();
 
 private:
     //------------------------------------------------------------------

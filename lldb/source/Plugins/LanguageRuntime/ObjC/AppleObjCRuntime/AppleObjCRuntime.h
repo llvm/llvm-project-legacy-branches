@@ -63,29 +63,10 @@ public:
     virtual lldb::ThreadPlanSP
     GetStepThroughTrampolinePlan (Thread &thread, bool stop_others);
     
-    virtual bool
-    IsValidISA(ObjCISA isa)
-    {
-        return false;
-    }
-    
-    virtual ObjCISA
-    GetISA(ValueObject& valobj)
-    {
-        return 0;
-    }
-    
-    virtual ConstString
-    GetActualTypeName(ObjCISA isa)
-    {
-        return ConstString(NULL);
-    }
-    
-    virtual ObjCISA
-    GetParentClass(ObjCISA isa)
-    {
-        return 0;
-    }
+    // Get the "libobjc.A.dylib" module from the current target if we can find
+    // it, also cache it once it is found to ensure quick lookups.
+    lldb::ModuleSP
+    GetObjCModule ();
     
     //------------------------------------------------------------------
     // Static Functions
@@ -115,20 +96,27 @@ public:
     
     virtual bool
     ExceptionBreakpointsExplainStop (lldb::StopInfoSP stop_reason);
+    
+    virtual lldb::SearchFilterSP
+    CreateExceptionSearchFilter ();
+    
 protected:
     Address *
     GetPrintForDebuggerAddr();
     
-    std::auto_ptr<Address>  m_PrintForDebugger_addr;
+    std::unique_ptr<Address>  m_PrintForDebugger_addr;
     bool m_read_objc_library;
-    std::auto_ptr<lldb_private::AppleObjCTrampolineHandler> m_objc_trampoline_handler_ap;
+    std::unique_ptr<lldb_private::AppleObjCTrampolineHandler> m_objc_trampoline_handler_ap;
     lldb::BreakpointSP m_objc_exception_bp_sp;
+    lldb::ModuleWP m_objc_module_wp;
 
-    AppleObjCRuntime(Process *process) : 
+    AppleObjCRuntime(Process *process) :
         lldb_private::ObjCLanguageRuntime(process),
         m_read_objc_library (false),
-        m_objc_trampoline_handler_ap(NULL)
-     { } // Call CreateInstance instead.
+        m_objc_trampoline_handler_ap ()
+     {
+         // Call CreateInstance instead.
+     }
 };
     
 } // namespace lldb_private

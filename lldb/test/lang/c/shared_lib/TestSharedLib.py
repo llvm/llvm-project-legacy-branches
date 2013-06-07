@@ -4,6 +4,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class SharedLibTestCase(TestBase):
 
@@ -38,14 +39,16 @@ class SharedLibTestCase(TestBase):
         TestBase.setUp(self)
         # Find the line number to break inside main().
         self.line = line_number('main.c', '// Set breakpoint 0 here.')
+        if sys.platform.startswith("linux"):
+            self.runCmd("settings set target.env-vars " + self.dylibPath + "=" + os.getcwd())
+            self.addTearDownHook(lambda: self.runCmd("settings remove target.env-vars " + self.dylibPath))
 
     def common_setup(self):
         exe = os.path.join(os.getcwd(), "a.out")
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Break inside the foo function which takes a bar_ptr argument.
-        self.expect("breakpoint set -f main.c -l %d" % self.line, BREAKPOINT_CREATED,
-            startstr = "Breakpoint created")
+        lldbutil.run_break_set_by_file_and_line (self, "main.c", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -63,7 +66,7 @@ class SharedLibTestCase(TestBase):
 	self.common_setup()
 
         # This should display correctly.
-        self.expect("expression *my_foo_ptr", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("expression --show-types -- *my_foo_ptr", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ["(foo)", "(sub_foo)", "other_element = 3"])
 
     @unittest2.expectedFailure
@@ -73,7 +76,7 @@ class SharedLibTestCase(TestBase):
 	self.common_setup()
 
         # This should display correctly.
-        self.expect("frame variable *my_foo_ptr", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types -- *my_foo_ptr", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ["(foo)", "(sub_foo)", "other_element = 3"])
                        
 if __name__ == '__main__':

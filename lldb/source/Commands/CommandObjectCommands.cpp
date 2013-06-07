@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectCommands.h"
 
 // C Includes
@@ -72,7 +74,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success;
             
             switch (short_option)
@@ -186,7 +188,7 @@ public:
         return "";
     }
     
-    int
+    virtual int
     HandleArgumentCompletion (Args &input,
                               int &cursor_index,
                               int &cursor_char_position,
@@ -234,7 +236,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success;
             
             switch (short_option)
@@ -283,7 +285,7 @@ protected:
     bool
     DoExecute(Args& command, CommandReturnObject &result)
     {
-        const int argc = command.GetArgumentCount();
+        const size_t argc = command.GetArgumentCount();
         if (argc == 1)
         {
             const char *filename = command.GetArgumentAtIndex(0);
@@ -599,8 +601,7 @@ protected:
                      {
                          const std::string sub_command = args.GetArgumentAtIndex(0);
                          assert (sub_command.length() != 0);
-                         subcommand_obj_sp =
-                                           (((CommandObjectMultiword *) cmd_obj)->GetSubcommandSP (sub_command.c_str()));
+                         subcommand_obj_sp = cmd_obj->GetSubcommandSP (sub_command.c_str());
                          if (subcommand_obj_sp.get())
                          {
                              sub_cmd_obj = subcommand_obj_sp.get();
@@ -792,10 +793,12 @@ public:
 "\n"
 "EXAMPLES\n"
 "\n"
-"The following example with define a regular expression command named 'f' that\n"
+"The following example will define a regular expression command named 'f' that\n"
 "will call 'finish' if there are no arguments, or 'frame select <frame-idx>' if\n"
 "a number follows 'f':\n"
-"(lldb) command regex f s/^$/finish/ 's/([0-9]+)/frame select %1/'\n"
+"\n"
+"    (lldb) command regex f s/^$/finish/ 's/([0-9]+)/frame select %1/'\n"
+"\n"
                     );
     }
     
@@ -1063,7 +1066,7 @@ protected:
     }
 
 private:
-    std::auto_ptr<CommandObjectRegexCommand> m_regex_cmd_ap;    
+    std::unique_ptr<CommandObjectRegexCommand> m_regex_cmd_ap;
 
      class CommandOptions : public Options
      {
@@ -1081,7 +1084,7 @@ private:
          SetOptionValue (uint32_t option_idx, const char *option_arg)
          {
              Error error;
-             char short_option = (char) m_getopt_table[option_idx].val;
+             const int short_option = m_getopt_table[option_idx].val;
              
              switch (short_option)
              {
@@ -1160,6 +1163,7 @@ class CommandObjectPythonFunction : public CommandObjectRaw
 private:
     std::string m_function_name;
     ScriptedCommandSynchronicity m_synchro;
+    bool m_fetched_help_long;
     
 public:
     
@@ -1172,15 +1176,9 @@ public:
                           (std::string("Run Python function ") + funct).c_str(),
                           NULL),
         m_function_name(funct),
-        m_synchro(synch)
+        m_synchro(synch),
+        m_fetched_help_long(false)
     {
-        ScriptInterpreter* scripter = m_interpreter.GetScriptInterpreter();
-        if (scripter)
-        {
-            std::string docstring = scripter->GetDocumentationForItem(funct.c_str());
-            if (!docstring.empty())
-                SetHelpLong(docstring);
-        }
     }
     
     virtual
@@ -1189,7 +1187,7 @@ public:
     }
     
     virtual bool
-    IsRemovable ()
+    IsRemovable () const
     {
         return true;
     }
@@ -1204,6 +1202,23 @@ public:
     GetSynchronicity ()
     {
         return m_synchro;
+    }
+    
+    virtual const char *
+    GetHelpLong ()
+    {
+        if (!m_fetched_help_long)
+        {
+            ScriptInterpreter* scripter = m_interpreter.GetScriptInterpreter();
+            if (scripter)
+            {
+                std::string docstring;
+                m_fetched_help_long = scripter->GetDocumentationForItem(m_function_name.c_str(),docstring);
+                if (!docstring.empty())
+                    SetHelpLong(docstring);
+            }
+        }
+        return CommandObjectRaw::GetHelpLong();
     }
     
 protected:
@@ -1274,7 +1289,7 @@ public:
     {
     }
     
-    int
+    virtual int
     HandleArgumentCompletion (Args &input,
                               int &cursor_index,
                               int &cursor_char_position,
@@ -1322,7 +1337,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -1340,7 +1355,7 @@ protected:
         void
         OptionParsingStarting ()
         {
-            m_allow_reload = false;
+            m_allow_reload = true;
         }
         
         const OptionDefinition*
@@ -1381,8 +1396,17 @@ protected:
         std::string path = command.GetArgumentAtIndex(0);
         Error error;
         
+        const bool init_session = true;
+        // FIXME: this is necessary because CommandObject::CheckRequirements() assumes that
+        // commands won't ever be recursively invoked, but it's actually possible to craft
+        // a Python script that does other "command script imports" in __lldb_init_module
+        // the real fix is to have recursive commands possible with a CommandInvocation object
+        // separate from the CommandObject itself, so that recursive command invocations
+        // won't stomp on each other (wrt to execution contents, options, and more)
+        m_exe_ctx.Clear();
         if (m_interpreter.GetScriptInterpreter()->LoadScriptingModule(path.c_str(),
                                                                       m_options.m_allow_reload,
+                                                                      init_session,
                                                                       error))
         {
             result.SetStatus (eReturnStatusSuccessFinishNoResult);
@@ -1402,7 +1426,7 @@ protected:
 OptionDefinition
 CommandObjectCommandsScriptImport::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_1, false, "allow-reload", 'r', no_argument, NULL, 0, eArgTypeNone,        "Allow the script to be loaded even if it was already loaded before (for Python, the __lldb_init_module function will be called again, but the module will not be reloaded from disk)."},
+    { LLDB_OPT_SET_1, false, "allow-reload", 'r', no_argument, NULL, 0, eArgTypeNone,        "Allow the script to be loaded even if it was already loaded before. This argument exists for backwards compatibility, but reloading is always allowed, whether you specify it or not."},
     { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
@@ -1463,7 +1487,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {

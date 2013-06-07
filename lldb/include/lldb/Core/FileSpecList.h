@@ -123,8 +123,8 @@ public:
     ///     The index of the file that matches \a file if it is found,
     ///     else UINT32_MAX is returned.
     //------------------------------------------------------------------
-    uint32_t
-    FindFileIndex (uint32_t idx, const FileSpec &file, bool full) const;
+    size_t
+    FindFileIndex (size_t idx, const FileSpec &file, bool full) const;
 
     //------------------------------------------------------------------
     /// Get file at index.
@@ -143,7 +143,7 @@ public:
     ///     returned.
     //------------------------------------------------------------------
     const FileSpec &
-    GetFileSpecAtIndex (uint32_t idx) const;
+    GetFileSpecAtIndex (size_t idx) const;
 
     //------------------------------------------------------------------
     /// Get file specification pointer at index.
@@ -159,7 +159,7 @@ public:
     ///     If \a idx is out of range, then an NULL is returned.
     //------------------------------------------------------------------
     const FileSpec *
-    GetFileSpecPointerAtIndex (uint32_t idx) const;
+    GetFileSpecPointerAtIndex (size_t idx) const;
 
     //------------------------------------------------------------------
     /// Get the memory cost of this object.
@@ -176,14 +176,58 @@ public:
     size_t
     MemorySize () const;
 
+    bool
+    IsEmpty() const
+    {
+        return m_files.empty();
+    }
+
     //------------------------------------------------------------------
     /// Get the number of files in the file list.
     ///
     /// @return
     ///     The number of files in the file spec list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     GetSize () const;
+
+    bool
+    Insert (size_t idx, const FileSpec &file)
+    {
+        if (idx < m_files.size())
+        {
+            m_files.insert(m_files.begin() + idx, file);
+            return true;
+        }
+        else if (idx == m_files.size())
+        {
+            m_files.push_back(file);
+            return true;
+        }
+        return false;
+    }
+
+    bool
+    Replace (size_t idx, const FileSpec &file)
+    {
+        if (idx < m_files.size())
+        {
+            m_files[idx] = file;
+            return true;
+        }
+        return false;
+    }
+
+    bool
+    Remove (size_t idx)
+    {
+        if (idx < m_files.size())
+        {
+            m_files.erase(m_files.begin() + idx);
+            return true;
+        }
+        return false;
+    }
 
     static size_t GetFilesMatchingPartialPath (const char *path, bool dir_okay, FileSpecList &matches);
 

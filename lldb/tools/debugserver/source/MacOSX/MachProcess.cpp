@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "DNB.h"
+#include <inttypes.h>
 #include <mach/mach.h>
 #include <signal.h>
 #include <spawn.h>
@@ -83,18 +84,25 @@ MachProcess::MachProcess() :
     m_stdio_mutex       (PTHREAD_MUTEX_RECURSIVE),
     m_stdout_data       (),
     m_thread_actions    (),
+    m_profile_enabled   (false),
+    m_profile_interval_usec (0),
+    m_profile_thread    (0),
+    m_profile_data_mutex(PTHREAD_MUTEX_RECURSIVE),
+    m_profile_data      (),
     m_thread_list        (),
     m_exception_messages (),
     m_exception_messages_mutex (PTHREAD_MUTEX_RECURSIVE),
     m_state             (eStateUnloaded),
     m_state_mutex       (PTHREAD_MUTEX_RECURSIVE),
     m_events            (0, kAllEventsMask),
+    m_private_events    (0, kAllEventsMask),
     m_breakpoints       (),
     m_watchpoints       (),
     m_name_to_addr_callback(NULL),
     m_name_to_addr_baton(NULL),
     m_image_infos_callback(NULL),
-    m_image_infos_baton(NULL)
+    m_image_infos_baton(NULL),
+    m_did_exec (false)
 {
     DNBLogThreadedIf(LOG_PROCESS | LOG_VERBOSE, "%s", __PRETTY_FUNCTION__);
 }
@@ -151,14 +159,20 @@ MachProcess::GetThreadAtIndex (nub_size_t thread_idx) const
     return m_thread_list.ThreadIDAtIndex(thread_idx);
 }
 
+nub_thread_t
+MachProcess::GetThreadIDForMachPortNumber (thread_t mach_port_number) const
+{
+    return m_thread_list.GetThreadIDByMachPortNumber (mach_port_number);
+}
+
 nub_bool_t
 MachProcess::SyncThreadState (nub_thread_t tid)
 {
     MachThreadSP thread_sp(m_thread_list.GetThreadByID(tid));
     if (!thread_sp)
         return false;
-    kern_return_t kret = ::thread_abort_safely(thread_sp->ThreadID());
-    DNBLogThreadedIf (LOG_THREAD, "thread = 0x%4.4x calling thread_abort_safely (tid) => %u (GetGPRState() for stop_count = %u)", thread_sp->ThreadID(), kret, thread_sp->Process()->StopCount());
+    kern_return_t kret = ::thread_abort_safely(thread_sp->MachPortNumber());
+    DNBLogThreadedIf (LOG_THREAD, "thread = 0x%8.8" PRIx32 " calling thread_abort_safely (tid) => %u (GetGPRState() for stop_count = %u)", thread_sp->MachPortNumber(), kret, thread_sp->Process()->StopCount());
 
     if (kret == KERN_SUCCESS)
         return true;
@@ -174,15 +188,27 @@ MachProcess::GetCurrentThread ()
 }
 
 nub_thread_t
+MachProcess::GetCurrentThreadMachPort ()
+{
+    return m_thread_list.GetMachPortNumberByThreadID(m_thread_list.CurrentThreadID());
+}
+
+nub_thread_t
 MachProcess::SetCurrentThread(nub_thread_t tid)
 {
     return m_thread_list.SetCurrentThread(tid);
 }
 
 bool
-MachProcess::GetThreadStoppedReason(nub_thread_t tid, struct DNBThreadStopInfo *stop_info) const
+MachProcess::GetThreadStoppedReason(nub_thread_t tid, struct DNBThreadStopInfo *stop_info)
 {
-    return m_thread_list.GetThreadStoppedReason(tid, stop_info);
+    if (m_thread_list.GetThreadStoppedReason(tid, stop_info))
+    {
+        if (m_did_exec)
+            stop_info->reason = eStopTypeExec;
+        return true;
+    }
+    return false;
 }
 
 void
@@ -240,8 +266,6 @@ MachProcess::SetState(nub_state_t new_state)
     // Scope for mutex locker
     {
         PTHREAD_MUTEX_LOCKER(locker, m_state_mutex);
-        DNBLogThreadedIf(LOG_PROCESS, "MachProcess::SetState ( %s )", DNBStateAsString(new_state));
-
         const nub_state_t old_state = m_state;
 
         if (old_state != new_state)
@@ -251,15 +275,26 @@ MachProcess::SetState(nub_state_t new_state)
             else
                 event_mask = eEventProcessRunningStateChanged;
 
+            DNBLogThreadedIf(LOG_PROCESS, "MachProcess::SetState ( old = %s, new = %s ) updating state, event_mask = 0x%8.8x", DNBStateAsString(old_state), DNBStateAsString(new_state), event_mask);
+
             m_state = new_state;
             if (new_state == eStateStopped)
                 m_stop_count++;
+        }
+        else
+        {
+            DNBLogThreadedIf(LOG_PROCESS, "MachProcess::SetState ( old = %s, new = %s ) ignoring state...", DNBStateAsString(old_state), DNBStateAsString(new_state));
         }
     }
 
     if (event_mask != 0)
     {
         m_events.SetEvents (event_mask);
+        m_private_events.SetEvents (event_mask);
+        if (event_mask == eEventProcessStoppedStateChanged)
+            m_private_events.ResetEvents (eEventProcessRunningStateChanged);
+        else
+            m_private_events.ResetEvents (eEventProcessStoppedStateChanged);
 
         // Wait for the event bit to reset if a reset ACK is requested
         m_events.WaitForResetAck(event_mask);
@@ -286,6 +321,11 @@ MachProcess::Clear()
         PTHREAD_MUTEX_LOCKER(locker, m_exception_messages_mutex);
         m_exception_messages.clear();
     }
+    if (m_profile_thread)
+    {
+        pthread_join(m_profile_thread, NULL);
+        m_profile_thread = NULL;
+    }
 }
 
 
@@ -295,6 +335,32 @@ MachProcess::StartSTDIOThread()
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s ( )", __FUNCTION__);
     // Create the thread that watches for the child STDIO
     return ::pthread_create (&m_stdio_thread, NULL, MachProcess::STDIOThread, this) == 0;
+}
+
+void
+MachProcess::SetEnableAsyncProfiling(bool enable, uint64_t interval_usec, DNBProfileDataScanType scan_type)
+{
+    m_profile_enabled = enable;
+    m_profile_interval_usec = interval_usec;
+    m_profile_scan_type = scan_type;
+    
+    if (m_profile_enabled && (m_profile_thread == NULL))
+    {
+        StartProfileThread();
+    }
+    else if (!m_profile_enabled && m_profile_thread)
+    {
+        pthread_join(m_profile_thread, NULL);
+        m_profile_thread = NULL;
+    }
+}
+
+bool
+MachProcess::StartProfileThread()
+{
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s ( )", __FUNCTION__);
+    // Create the thread that profiles the inferior and reports back if enabled
+    return ::pthread_create (&m_profile_thread, NULL, MachProcess::ProfileThread, this) == 0;
 }
 
 
@@ -320,10 +386,10 @@ MachProcess::Resume (const DNBThreadResumeActions& thread_actions)
     }
     else if (state == eStateRunning)
     {
-        DNBLogThreadedIf(LOG_PROCESS, "Resume() - task 0x%x is running, ignoring...", m_task.TaskPort());
+        DNBLog("Resume() - task 0x%x is already running, ignoring...", m_task.TaskPort());
         return true;
     }
-    DNBLogThreadedIf(LOG_PROCESS, "Resume() - task 0x%x can't continue, ignoring...", m_task.TaskPort());
+    DNBLog("Resume() - task 0x%x has state %s, can't continue...", m_task.TaskPort(), DNBStateAsString(state));
     return false;
 }
 
@@ -334,12 +400,28 @@ MachProcess::Kill (const struct timespec *timeout_abstime)
     nub_state_t state = DoSIGSTOP(true, false, NULL);
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::Kill() DoSIGSTOP() state = %s", DNBStateAsString(state));
     errno = 0;
+    DNBLog ("Sending ptrace PT_KILL to terminate inferior process.");
     ::ptrace (PT_KILL, m_pid, 0, 0);
     DNBError err;
     err.SetErrorToErrno();
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::Kill() DoSIGSTOP() ::ptrace (PT_KILL, pid=%u, 0, 0) => 0x%8.8x (%s)", m_pid, err.Error(), err.AsString());
     m_thread_actions = DNBThreadResumeActions (eStateRunning, 0);
     PrivateResume ();
+    
+    // Try and reap the process without touching our m_events since
+    // we want the code above this to still get the eStateExited event
+    const uint32_t reap_timeout_usec = 1000000;    // Wait 1 second and try to reap the process
+    const uint32_t reap_interval_usec = 10000;  //
+    uint32_t reap_time_elapsed;
+    for (reap_time_elapsed = 0;
+         reap_time_elapsed < reap_timeout_usec;
+         reap_time_elapsed += reap_interval_usec)
+    {
+        if (GetState() == eStateExited)
+            break;
+        usleep(reap_interval_usec);
+    }
+    DNBLog ("Waited %u ms for process to be reaped (state = %s)", reap_time_elapsed/1000, DNBStateAsString(GetState()));
     return true;
 }
 
@@ -354,7 +436,7 @@ MachProcess::Signal (int signal, const struct timespec *timeout_abstime)
         if (IsRunning(state) && timeout_abstime)
         {
             DNBLogThreadedIf(LOG_PROCESS, "MachProcess::Signal (signal = %d, timeout = %p) waiting for signal to stop process...", signal, timeout_abstime);
-            m_events.WaitForSetEvents(eEventProcessStoppedStateChanged, timeout_abstime);
+            m_private_events.WaitForSetEvents(eEventProcessStoppedStateChanged, timeout_abstime);
             state = GetState();
             DNBLogThreadedIf(LOG_PROCESS, "MachProcess::Signal (signal = %d, timeout = %p) state = %s", signal, timeout_abstime, DNBStateAsString(state));
             return !IsRunning (state);
@@ -614,13 +696,18 @@ MachProcess::ReplyToAllExceptions ()
             DNBLogThreadedIf(LOG_EXCEPTIONS, "Replying to exception %u...", (uint32_t)std::distance(begin, pos));
             int thread_reply_signal = 0;
 
-            const DNBThreadResumeAction *action = m_thread_actions.GetActionForThread (pos->state.thread_port, false);
+            nub_thread_t tid = m_thread_list.GetThreadIDByMachPortNumber (pos->state.thread_port);
+            const DNBThreadResumeAction *action = NULL;
+            if (tid != INVALID_NUB_THREAD)
+            {
+                action = m_thread_actions.GetActionForThread (tid, false);
+            }
 
             if (action)
             {
                 thread_reply_signal = action->signal;
                 if (thread_reply_signal)
-                    m_thread_actions.SetSignalHandledForThread (pos->state.thread_port);
+                    m_thread_actions.SetSignalHandledForThread (tid);
             }
 
             DNBError err (pos->Reply(this, thread_reply_signal));
@@ -659,7 +746,7 @@ MachProcess::PrivateResume ()
 nub_break_t
 MachProcess::CreateBreakpoint(nub_addr_t addr, nub_size_t length, bool hardware, thread_t tid)
 {
-    DNBLogThreadedIf(LOG_BREAKPOINTS, "MachProcess::CreateBreakpoint ( addr = 0x%8.8llx, length = %zu, hardware = %i, tid = 0x%4.4x )", (uint64_t)addr, length, hardware, tid);
+    DNBLogThreadedIf(LOG_BREAKPOINTS, "MachProcess::CreateBreakpoint ( addr = 0x%8.8llx, length = %llu, hardware = %i, tid = 0x%4.4x )", (uint64_t)addr, (uint64_t)length, hardware, tid);
     if (hardware && tid == INVALID_NUB_THREAD)
         tid = GetCurrentThread();
 
@@ -667,7 +754,7 @@ MachProcess::CreateBreakpoint(nub_addr_t addr, nub_size_t length, bool hardware,
     nub_break_t breakID = m_breakpoints.Add(bp);
     if (EnableBreakpoint(breakID))
     {
-        DNBLogThreadedIf(LOG_BREAKPOINTS, "MachProcess::CreateBreakpoint ( addr = 0x%8.8llx, length = %zu, tid = 0x%4.4x ) => %u", (uint64_t)addr, length, tid, breakID);
+        DNBLogThreadedIf(LOG_BREAKPOINTS, "MachProcess::CreateBreakpoint ( addr = 0x%8.8llx, length = %llu, tid = 0x%4.4x ) => %u", (uint64_t)addr, (uint64_t)length, tid, breakID);
         return breakID;
     }
     else
@@ -681,7 +768,7 @@ MachProcess::CreateBreakpoint(nub_addr_t addr, nub_size_t length, bool hardware,
 nub_watch_t
 MachProcess::CreateWatchpoint(nub_addr_t addr, nub_size_t length, uint32_t watch_flags, bool hardware, thread_t tid)
 {
-    DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %zu, flags = 0x%8.8x, hardware = %i, tid = 0x%4.4x )", (uint64_t)addr, length, watch_flags, hardware, tid);
+    DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %llu, flags = 0x%8.8x, hardware = %i, tid = 0x%4.4x )", (uint64_t)addr, (uint64_t)length, watch_flags, hardware, tid);
     if (hardware && tid == INVALID_NUB_THREAD)
         tid = GetCurrentThread();
 
@@ -691,12 +778,12 @@ MachProcess::CreateWatchpoint(nub_addr_t addr, nub_size_t length, uint32_t watch
     nub_watch_t watchID = m_watchpoints.Add(watch);
     if (EnableWatchpoint(watchID))
     {
-        DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %zu, tid = 0x%x) => %u", (uint64_t)addr, length, tid, watchID);
+        DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %llu, tid = 0x%x) => %u", (uint64_t)addr, (uint64_t)length, tid, watchID);
         return watchID;
     }
     else
     {
-        DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %zu, tid = 0x%x) => FAILED (%u)", (uint64_t)addr, length, tid, watchID);
+        DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %llu, tid = 0x%x) => FAILED (%u)", (uint64_t)addr, (uint64_t)length, tid, watchID);
         m_watchpoints.Remove(watchID);
     }
     // We failed to enable the watchpoint
@@ -753,6 +840,11 @@ MachProcess::DisableBreakpoint(nub_break_t breakID, bool remove)
     DNBBreakpoint *bp = m_breakpoints.FindByID (breakID);
     if (bp)
     {
+        // After "exec" we might end up with a bunch of breakpoints that were disabled
+        // manually, just ignore them
+        if (!bp->IsEnabled())
+            return true;
+
         nub_addr_t addr = bp->Address();
         DNBLogThreadedIf(LOG_BREAKPOINTS | LOG_VERBOSE, "MachProcess::DisableBreakpoint ( breakID = %d, remove = %d ) addr = 0x%8.8llx", breakID, remove, (uint64_t)addr);
 
@@ -1072,16 +1164,65 @@ MachProcess::ExceptionMessageBundleComplete()
 {
     // We have a complete bundle of exceptions for our child process.
     PTHREAD_MUTEX_LOCKER (locker, m_exception_messages_mutex);
-    DNBLogThreadedIf(LOG_EXCEPTIONS, "%s: %zu exception messages.", __PRETTY_FUNCTION__, m_exception_messages.size());
+    DNBLogThreadedIf(LOG_EXCEPTIONS, "%s: %llu exception messages.", __PRETTY_FUNCTION__, (uint64_t)m_exception_messages.size());
     if (!m_exception_messages.empty())
     {
+        m_did_exec = false;
+        // First check for any SIGTRAP and make sure we didn't exec
+        const task_t task = m_task.TaskPort();
+        size_t i;
+        if (m_pid != 0)
+        {
+            for (i=0; i<m_exception_messages.size(); ++i)
+            {
+                if (m_exception_messages[i].state.task_port == task)
+                {
+                    const int signo = m_exception_messages[i].state.SoftSignal();
+                    if (signo == SIGTRAP)
+                    {
+                        // SIGTRAP could mean that we exec'ed. We need to check the
+                        // dyld all_image_infos.infoArray to see if it is NULL and if
+                        // so, say that we exec'ed.
+                        const nub_addr_t aii_addr = GetDYLDAllImageInfosAddress();
+                        if (aii_addr != INVALID_NUB_ADDRESS)
+                        {
+                            const nub_addr_t info_array_count_addr = aii_addr + 4;
+                            uint32_t info_array_count = 0;
+                            if (m_task.ReadMemory(info_array_count_addr, 4, &info_array_count) == 4)
+                            {
+                                DNBLog ("info_array_count is 0x%x", info_array_count);
+                                if (info_array_count == 0)
+                                    m_did_exec = true;
+                            }
+                            else
+                            {
+                                DNBLog ("error: failed to read all_image_infos.infoArrayCount from 0x%8.8llx", info_array_count_addr);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            if (m_did_exec)
+            {
+                cpu_type_t process_cpu_type = MachProcess::GetCPUTypeForLocalProcess (m_pid);
+                if (m_cpu_type != process_cpu_type)
+                {
+                    DNBLog ("arch changed from 0x%8.8x to 0x%8.8x", m_cpu_type, process_cpu_type);
+                    m_cpu_type = process_cpu_type;
+                    DNBArchProtocol::SetArchitecture (process_cpu_type);
+                }
+                m_thread_list.Clear();
+                m_breakpoints.DisableAll();
+            }
+        }
+
         // Let all threads recover from stopping and do any clean up based
         // on the previous thread state (if any).
         m_thread_list.ProcessDidStop(this);
 
         // Let each thread know of any exceptions
-        task_t task = m_task.TaskPort();
-        size_t i;
         for (i=0; i<m_exception_messages.size(); ++i)
         {
             // Let the thread list figure use the MachProcess to forward all exceptions
@@ -1115,7 +1256,7 @@ MachProcess::ExceptionMessageBundleComplete()
     }
     else
     {
-        DNBLogThreadedIf(LOG_EXCEPTIONS, "%s empty exception messages bundle (%zu exceptions).", __PRETTY_FUNCTION__, m_exception_messages.size());
+        DNBLogThreadedIf(LOG_EXCEPTIONS, "%s empty exception messages bundle (%llu exceptions).", __PRETTY_FUNCTION__, (uint64_t)m_exception_messages.size());
     }
 }
 
@@ -1141,7 +1282,7 @@ MachProcess::SharedLibrariesUpdated ( )
 void
 MachProcess::AppendSTDOUT (char* s, size_t len)
 {
-    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (<%zu> %s) ...", __FUNCTION__, len, s);
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (<%llu> %s) ...", __FUNCTION__, (uint64_t)len, s);
     PTHREAD_MUTEX_LOCKER (locker, m_stdio_mutex);
     m_stdout_data.append(s, len);
     m_events.SetEvents(eEventStdioAvailable);
@@ -1153,7 +1294,7 @@ MachProcess::AppendSTDOUT (char* s, size_t len)
 size_t
 MachProcess::GetAvailableSTDOUT (char *buf, size_t buf_size)
 {
-    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (&%p[%zu]) ...", __FUNCTION__, buf, buf_size);
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (&%p[%llu]) ...", __FUNCTION__, buf, (uint64_t)buf_size);
     PTHREAD_MUTEX_LOCKER (locker, m_stdio_mutex);
     size_t bytes_available = m_stdout_data.size();
     if (bytes_available > 0)
@@ -1311,6 +1452,77 @@ MachProcess::STDIOThread(void *arg)
     return NULL;
 }
 
+
+void
+MachProcess::SignalAsyncProfileData (const char *info)
+{
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (%s) ...", __FUNCTION__, info);
+    PTHREAD_MUTEX_LOCKER (locker, m_profile_data_mutex);
+    m_profile_data.push_back(info);
+    m_events.SetEvents(eEventProfileDataAvailable);
+    
+    // Wait for the event bit to reset if a reset ACK is requested
+    m_events.WaitForResetAck(eEventProfileDataAvailable);
+}
+
+
+size_t
+MachProcess::GetAsyncProfileData (char *buf, size_t buf_size)
+{
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (&%p[%llu]) ...", __FUNCTION__, buf, (uint64_t)buf_size);
+    PTHREAD_MUTEX_LOCKER (locker, m_profile_data_mutex);
+    if (m_profile_data.empty())
+        return 0;
+    
+    size_t bytes_available = m_profile_data.front().size();
+    if (bytes_available > 0)
+    {
+        if (bytes_available > buf_size)
+        {
+            memcpy(buf, m_profile_data.front().data(), buf_size);
+            m_profile_data.front().erase(0, buf_size);
+            bytes_available = buf_size;
+        }
+        else
+        {
+            memcpy(buf, m_profile_data.front().data(), bytes_available);
+            m_profile_data.erase(m_profile_data.begin());
+        }
+    }
+    return bytes_available;
+}
+
+
+void *
+MachProcess::ProfileThread(void *arg)
+{
+    MachProcess *proc = (MachProcess*) arg;
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s ( arg = %p ) thread starting...", __FUNCTION__, arg);
+
+    while (proc->IsProfilingEnabled())
+    {
+        nub_state_t state = proc->GetState();
+        if (state == eStateRunning)
+        {
+            std::string data = proc->Task().GetProfileData(proc->GetProfileScanType());
+            if (!data.empty())
+            {
+                proc->SignalAsyncProfileData(data.c_str());
+            }
+        }
+        else if ((state == eStateUnloaded) || (state == eStateDetached) || (state == eStateUnloaded))
+        {
+            // Done. Get out of this thread.
+            break;
+        }
+        
+        // A simple way to set up the profile interval. We can also use select() or dispatch timer source if necessary.
+        usleep(proc->ProfileInterval());
+    }
+    return NULL;
+}
+
+
 pid_t
 MachProcess::AttachForDebug (pid_t pid, char *err_str, size_t err_len)
 {
@@ -1387,7 +1599,8 @@ MachProcess::PrepareForAttach (const char *path, nub_launch_flavor_t launch_flav
         return NULL;
 
     const char *app_ext = strstr(path, ".app");
-    if (app_ext == NULL)
+    const bool is_app = app_ext != NULL && (app_ext[4] == '\0' || app_ext[4] == '/');
+    if (!is_app)
     {
         DNBLogThreadedIf(LOG_PROCESS, "MachProcess::PrepareForAttach(): path '%s' doesn't contain .app, we can't tell springboard to wait for launch...", path);
         return NULL;
@@ -1532,12 +1745,28 @@ MachProcess::LaunchForDebug
 
     case eLaunchFlavorSpringBoard:
         {
-            const char *app_ext = strstr(path, ".app");
-            if (app_ext != NULL)
+            //  .../whatever.app/whatever ?  
+            //  Or .../com.apple.whatever.app/whatever -- be careful of ".app" in "com.apple.whatever" here
+            const char *app_ext = strstr (path, ".app/");
+            if (app_ext == NULL)
+            {
+                // .../whatever.app ?
+                int len = strlen (path);
+                if (len > 5)
+                {
+                    if (strcmp (path + len - 4, ".app") == 0)
+                    {
+                        app_ext = path + len - 4;
+                    }
+                }
+            }
+            if (app_ext)
             {
                 std::string app_bundle_path(path, app_ext + strlen(".app"));
                 if (SBLaunchForDebug (app_bundle_path.c_str(), argv, envp, no_stdio, launch_err) != 0)
                     return m_pid; // A successful SBLaunchForDebug() returns and assigns a non-zero m_pid.
+                else
+                    break; // We tried a springboard launch, but didn't succeed lets get out
             }
         }
         // In case the executable name has a ".app" fragment which confuses our debugserver,
@@ -1587,6 +1816,7 @@ MachProcess::LaunchForDebug
         {
             if (launch_err.AsString() == NULL)
                 launch_err.SetErrorString("unable to start the exception thread");
+            DNBLog ("Could not get inferior's Mach exception port, sending ptrace PT_KILL and exiting.");
             ::ptrace (PT_KILL, m_pid, 0, 0);
             m_pid = INVALID_NUB_PROCESS;
             return INVALID_NUB_PROCESS;
@@ -1690,7 +1920,7 @@ MachProcess::PosixSpawnChildForPTraceDebugging
         size_t ocount = 0;
         err.SetError( ::posix_spawnattr_setbinpref_np (&attr, 1, &cpu_type, &ocount), DNBError::POSIX);
         if (err.Fail() || DNBLogCheckLogBit(LOG_PROCESS))
-            err.LogThreaded("::posix_spawnattr_setbinpref_np ( &attr, 1, cpu_type = 0x%8.8x, count => %zu )", cpu_type, ocount);
+            err.LogThreaded("::posix_spawnattr_setbinpref_np ( &attr, 1, cpu_type = 0x%8.8x, count => %llu )", cpu_type, (uint64_t)ocount);
 
         if (err.Fail() != 0 || ocount != 1)
             return INVALID_NUB_PROCESS;
@@ -1717,7 +1947,7 @@ MachProcess::PosixSpawnChildForPTraceDebugging
             }
         }
 
-		// if no_stdio or std paths not supplied, then route to "/dev/null".
+        // if no_stdio or std paths not supplied, then route to "/dev/null".
         if (no_stdio || stdin_path == NULL || stdin_path[0] == '\0')
             stdin_path = "/dev/null";
         if (no_stdio || stdout_path == NULL || stdout_path[0] == '\0')
@@ -1927,6 +2157,7 @@ MachProcess::SBLaunchForDebug (const char *path, char const *argv[], char const 
         {
             if (launch_err.AsString() == NULL)
                 launch_err.SetErrorString("unable to start the exception thread");
+            DNBLog ("Could not get inferior's Mach exception port, sending ptrace PT_KILL and exiting.");
             ::ptrace (PT_KILL, m_pid, 0, 0);
             m_pid = INVALID_NUB_PROCESS;
             return INVALID_NUB_PROCESS;
@@ -2083,19 +2314,6 @@ MachProcess::SBForkChildForPTraceDebugging (const char *app_bundle_path, char co
 
     std::string bundleID;
     CFString::UTF8(bundleIDCFStr, bundleID);
-
-    CFData argv_data(NULL);
-
-    if (launch_argv.get())
-    {
-        if (argv_data.Serialize(launch_argv.get(), kCFPropertyListBinaryFormat_v1_0) == NULL)
-        {
-            DNBLogThreadedIf(LOG_PROCESS, "%s() error: failed to serialize launch arg array...", __FUNCTION__);
-            return INVALID_NUB_PROCESS;
-        }
-    }
-
-    DNBLogThreadedIf(LOG_PROCESS, "%s() serialized launch arg array", __FUNCTION__);
 
     // Find SpringBoard
     SBSApplicationLaunchError sbs_error = 0;

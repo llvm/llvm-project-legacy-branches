@@ -13,7 +13,6 @@
 // C Includes
 // C++ Includes
 #include <list>
-#include <memory>
 #include <map>
 #include <vector>
 
@@ -22,6 +21,7 @@
 #include "clang/AST/ExternalASTSource.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/ClangForward.h"
@@ -43,6 +43,7 @@
 //----------------------------------------------------------------------
 // Forward Declarations for this DWARF plugin
 //----------------------------------------------------------------------
+class DebugMapModule;
 class DWARFAbbreviationDeclaration;
 class DWARFAbbreviationDeclarationSet;
 class DWARFileUnit;
@@ -61,8 +62,9 @@ class SymbolFileDWARFDebugMap;
 class SymbolFileDWARF : public lldb_private::SymbolFile, public lldb_private::UserID
 {
 public:
-    friend class SymbolFileDWARFDebugMap;    
-
+    friend class SymbolFileDWARFDebugMap;
+    friend class DebugMapModule;
+    friend class DWARFCompileUnit;
     //------------------------------------------------------------------
     // Static Functions
     //------------------------------------------------------------------
@@ -72,7 +74,7 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -95,6 +97,7 @@ public:
     virtual uint32_t        GetNumCompileUnits();
     virtual lldb::CompUnitSP ParseCompileUnitAtIndex(uint32_t index);
 
+    virtual lldb::LanguageType ParseCompileUnitLanguage (const lldb_private::SymbolContext& sc);
     virtual size_t          ParseCompileUnitFunctions (const lldb_private::SymbolContext& sc);
     virtual bool            ParseCompileUnitLineTable (const lldb_private::SymbolContext& sc);
     virtual bool            ParseCompileUnitSupportFiles (const lldb_private::SymbolContext& sc, lldb_private::FileSpecList& support_files);
@@ -164,25 +167,22 @@ public:
         LayoutInfo () :
             bit_size(0),
             alignment(0),
-            field_offsets()//,
-            //base_offsets(), // We don't need to fill in the base classes, this can be done automatically
-            //vbase_offsets() // We don't need to fill in the virtual base classes, this can be done automatically
+            field_offsets(),
+            base_offsets(),
+            vbase_offsets()
         {
         }
         uint64_t bit_size;
         uint64_t alignment;
         llvm::DenseMap <const clang::FieldDecl *, uint64_t> field_offsets;
-//        llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> base_offsets;
-//        llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> vbase_offsets;
+        llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> base_offsets;
+        llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> vbase_offsets;
     };
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -301,7 +301,7 @@ protected:
 
     DISALLOW_COPY_AND_ASSIGN (SymbolFileDWARF);
     lldb::CompUnitSP        ParseCompileUnit (DWARFCompileUnit* dwarf_cu, uint32_t cu_idx);
-    DWARFCompileUnit*       GetDWARFCompileUnitForUID(lldb::user_id_t cu_uid);
+    DWARFCompileUnit*       GetDWARFCompileUnit(lldb_private::CompileUnit *comp_unit);
     DWARFCompileUnit*       GetNextUnparsedDWARFCompileUnit(DWARFCompileUnit* prev_cu);
     lldb_private::CompileUnit*      GetCompUnitForDWARFCompUnit(DWARFCompileUnit* dwarf_cu, uint32_t cu_idx = UINT32_MAX);
     bool                    GetFunction (DWARFCompileUnit* dwarf_cu, const DWARFDebugInfoEntry* func_die, lldb_private::SymbolContext& sc);
@@ -334,6 +334,10 @@ protected:
     class DelayedAddObjCClassProperty;
     typedef std::vector <DelayedAddObjCClassProperty> DelayedPropertyList;
     
+    bool                    ClassOrStructIsVirtual (
+                                DWARFCompileUnit* dwarf_cu,
+                                const DWARFDebugInfoEntry *parent_die);
+
     size_t                  ParseChildMembers(
                                 const lldb_private::SymbolContext& sc,
                                 DWARFCompileUnit* dwarf_cu,
@@ -364,6 +368,7 @@ protected:
     size_t                  ParseChildEnumerators(
                                 const lldb_private::SymbolContext& sc,
                                 lldb::clang_type_t enumerator_qual_type,
+                                bool is_signed,
                                 uint32_t enumerator_byte_size,
                                 DWARFCompileUnit* dwarf_cu,
                                 const DWARFDebugInfoEntry *enum_die);
@@ -440,10 +445,13 @@ protected:
     
     void                    DumpIndexes();
 
-    void                    SetDebugMapSymfile (SymbolFileDWARFDebugMap *debug_map_symfile)
+    void                    SetDebugMapModule (const lldb::ModuleSP &module_sp)
                             {
-                                m_debug_map_symfile = debug_map_symfile;
+                                m_debug_map_module_wp = module_sp;
                             }
+    
+    SymbolFileDWARFDebugMap *
+                            GetDebugMapSymfile ();
 
     const DWARFDebugInfoEntry *
                             FindBlockContainingSpecification (dw_offset_t func_die_offset, 
@@ -526,12 +534,18 @@ protected:
                            const lldb_private::ConstString &selector);
 
     bool
-    CopyUniqueClassMethodTypes (lldb_private::Type *class_type,
+    CopyUniqueClassMethodTypes (SymbolFileDWARF *class_symfile,
+                                lldb_private::Type *class_type,
                                 DWARFCompileUnit* src_cu,
                                 const DWARFDebugInfoEntry *src_class_die,
                                 DWARFCompileUnit* dst_cu,
-                                const DWARFDebugInfoEntry *dst_class_die);
+                                const DWARFDebugInfoEntry *dst_class_die,
+                                llvm::SmallVectorImpl <const DWARFDebugInfoEntry *> &failures);
 
+    bool
+    FixupAddress (lldb_private::Address &addr);
+
+    lldb::ModuleWP                  m_debug_map_module_wp;
     SymbolFileDWARFDebugMap *       m_debug_map_symfile;
     clang::TranslationUnitDecl *    m_clang_tu_decl;
     lldb_private::Flags             m_flags;
@@ -549,15 +563,15 @@ protected:
     lldb_private::DataExtractor     m_data_apple_namespaces;
     lldb_private::DataExtractor     m_data_apple_objc;
 
-    // The auto_ptr items below are generated on demand if and when someone accesses
+    // The unique pointer items below are generated on demand if and when someone accesses
     // them through a non const version of this class.
-    std::auto_ptr<DWARFDebugAbbrev>     m_abbr;
-    std::auto_ptr<DWARFDebugInfo>       m_info;
-    std::auto_ptr<DWARFDebugLine>       m_line;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_names_ap;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_types_ap;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_namespaces_ap;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_objc_ap;
+    std::unique_ptr<DWARFDebugAbbrev>     m_abbr;
+    std::unique_ptr<DWARFDebugInfo>       m_info;
+    std::unique_ptr<DWARFDebugLine>       m_line;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_names_ap;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_types_ap;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_namespaces_ap;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_objc_ap;
     NameToDIE                           m_function_basename_index;  // All concrete functions
     NameToDIE                           m_function_fullname_index;  // All concrete functions
     NameToDIE                           m_function_method_index;    // All inlined functions
@@ -571,7 +585,7 @@ protected:
                                         m_using_apple_tables:1;
     lldb_private::LazyBool              m_supports_DW_AT_APPLE_objc_complete_type;
 
-    std::auto_ptr<DWARFDebugRanges>     m_ranges;
+    std::unique_ptr<DWARFDebugRanges>     m_ranges;
     UniqueDWARFASTTypeMap m_unique_ast_type_map;
     typedef llvm::SmallPtrSet<const DWARFDebugInfoEntry *, 4> DIEPointerSet;
     typedef llvm::DenseMap<const DWARFDebugInfoEntry *, clang::DeclContext *> DIEToDeclContextMap;

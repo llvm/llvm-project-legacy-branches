@@ -336,7 +336,7 @@ RegisterContextDarwin_x86_64::GetRegisterCount ()
 
 
 const RegisterInfo *
-RegisterContextDarwin_x86_64::GetRegisterInfoAtIndex (uint32_t reg)
+RegisterContextDarwin_x86_64::GetRegisterInfoAtIndex (size_t reg)
 {
     assert(k_num_register_infos == k_num_registers);
     if (reg < k_num_registers)
@@ -457,7 +457,7 @@ RegisterContextDarwin_x86_64::GetRegisterSetCount ()
 }
 
 const RegisterSet *
-RegisterContextDarwin_x86_64::GetRegisterSet (uint32_t reg_set)
+RegisterContextDarwin_x86_64::GetRegisterSet (size_t reg_set)
 {
     if (reg_set < k_num_regsets)
         return &g_reg_sets[reg_set];
@@ -491,7 +491,7 @@ RegisterContextDarwin_x86_64::LogGPR(Log *log, const char *format, ...)
         for (uint32_t i=0; i<k_num_gpr_registers; i++)
         {
             uint32_t reg = gpr_rax + i;
-            log->Printf("%12s = 0x%16.16llx", g_register_infos[reg].name, (&gpr.rax)[reg]);
+            log->Printf("%12s = 0x%16.16" PRIx64, g_register_infos[reg].name, (&gpr.rax)[reg]);
         }
     }
 }

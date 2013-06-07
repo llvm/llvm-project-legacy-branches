@@ -37,6 +37,7 @@
 
 #include "lldb/lldb-private.h"
 #include "lldb/Target/StackID.h"
+#include "lldb/Host/Mutex.h"
 
 namespace lldb_private {
 
@@ -254,10 +255,7 @@ public:
     ///     A shared pointer to a target that is not guaranteed to be valid.
     //------------------------------------------------------------------
     lldb::TargetSP
-    GetTargetSP () const
-    {
-        return m_target_wp.lock();
-    }
+    GetTargetSP () const;
     
     //------------------------------------------------------------------
     /// Get accessor that creates a strong reference from the weak process
@@ -267,10 +265,7 @@ public:
     ///     A shared pointer to a process that is not guaranteed to be valid.
     //------------------------------------------------------------------
     lldb::ProcessSP
-    GetProcessSP () const
-    {
-        return m_process_wp.lock();
-    }
+    GetProcessSP () const;
     
     //------------------------------------------------------------------
     /// Get accessor that creates a strong reference from the weak thread
@@ -340,7 +335,6 @@ public:
     ClearFrame ()
     {
         m_stack_id.Clear();
-        m_frame_wp.reset();
     }
 
 protected:
@@ -350,7 +344,6 @@ protected:
     lldb::TargetWP m_target_wp;             ///< A weak reference to a target
     lldb::ProcessWP m_process_wp;           ///< A weak reference to a process
     mutable lldb::ThreadWP m_thread_wp;     ///< A weak reference to a thread
-    mutable lldb::StackFrameWP m_frame_wp;  ///< A weak reference to a frame
     lldb::tid_t m_tid;                      ///< The thread ID that this object refers to in case the backing object changes
     StackID m_stack_id;                     ///< The stack ID that this object refers to in case the backing object changes
 };
@@ -410,6 +403,11 @@ public:
     ExecutionContext (const lldb::StackFrameWP &frame_wp);    
     ExecutionContext (const ExecutionContextRef &exe_ctx_ref);
     ExecutionContext (const ExecutionContextRef *exe_ctx_ref);
+    
+    // These two variants take in a locker, and grab the target, lock the API mutex into locker, then
+    // fill in the rest of the shared pointers.
+    ExecutionContext (const ExecutionContextRef &exe_ctx_ref, Mutex::Locker &locker);
+    ExecutionContext (const ExecutionContextRef *exe_ctx_ref, Mutex::Locker &locker);
     //------------------------------------------------------------------
     // Create execution contexts from execution context scopes
     //------------------------------------------------------------------
@@ -727,10 +725,7 @@ public:
     /// GetTargetRef() do not need to be checked for validity.
     //------------------------------------------------------------------
     bool
-    HasTargetScope () const
-    {
-        return (bool) m_target_sp;
-    }
+    HasTargetScope () const;
 
     //------------------------------------------------------------------
     /// Returns true the ExecutionContext object contains a valid 
@@ -742,10 +737,7 @@ public:
     /// need to be checked for validity.
     //------------------------------------------------------------------
     bool
-    HasProcessScope () const
-    {
-        return m_target_sp && m_process_sp;
-    }
+    HasProcessScope () const;
 
     //------------------------------------------------------------------
     /// Returns true the ExecutionContext object contains a valid 
@@ -757,10 +749,7 @@ public:
     /// and GetThreadRef() do not need to be checked for validity.
     //------------------------------------------------------------------
     bool
-    HasThreadScope () const
-    {
-        return m_target_sp && m_process_sp && m_thread_sp;
-    }
+    HasThreadScope () const;
     
     //------------------------------------------------------------------
     /// Returns true the ExecutionContext object contains a valid 
@@ -773,10 +762,7 @@ public:
     /// to be checked for validity.
     //------------------------------------------------------------------
     bool
-    HasFrameScope () const
-    {
-        return m_target_sp && m_process_sp && m_thread_sp && m_frame_sp;
-    }
+    HasFrameScope () const;
     
 protected:
     //------------------------------------------------------------------

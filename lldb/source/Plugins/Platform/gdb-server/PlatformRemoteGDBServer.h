@@ -32,8 +32,8 @@ public:
     static lldb_private::Platform* 
     CreateInstance (bool force, const lldb_private::ArchSpec *arch);
 
-    static const char *
-    GetShortPluginNameStatic();
+    static lldb_private::ConstString
+    GetPluginNameStatic();
 
     static const char *
     GetDescriptionStatic();
@@ -47,16 +47,10 @@ public:
     //------------------------------------------------------------
     // lldb_private::PluginInterface functions
     //------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName()
     {
-        return "PlatformRemoteGDBServer";
-    }
-    
-    virtual const char *
-    GetShortPluginName()
-    {
-        return GetShortPluginNameStatic();
+        return GetPluginNameStatic();
     }
     
     virtual uint32_t
@@ -148,22 +142,30 @@ public:
     virtual lldb::user_id_t
     OpenFile (const lldb_private::FileSpec& file_spec,
               uint32_t flags,
-              mode_t mode);
+              mode_t mode,
+              lldb_private::Error &error);
     
     virtual bool
-    CloseFile (lldb::user_id_t fd);
+    CloseFile (lldb::user_id_t fd,
+               lldb_private::Error &error);
     
+    virtual uint64_t
+    ReadFile (lldb::user_id_t fd,
+              uint64_t offset,
+              void *data_ptr,
+              uint64_t len,
+              lldb_private::Error &error);
+    
+    virtual uint64_t
+    WriteFile (lldb::user_id_t fd,
+               uint64_t offset,
+               const void* data,
+               uint64_t len,
+               lldb_private::Error &error);
+
     virtual lldb::user_id_t
     GetFileSize (const lldb_private::FileSpec& file_spec);
 
-    virtual uint32_t
-    ReadFile (lldb::user_id_t fd, uint64_t offset,
-              void *data_ptr, size_t len);
-    
-    virtual uint32_t
-    WriteFile (lldb::user_id_t fd, uint64_t offset,
-               void* data, size_t len);
-    
     virtual lldb_private::Error
     PutFile (const lldb_private::FileSpec& source,
              const lldb_private::FileSpec& destination,
@@ -173,6 +175,10 @@ public:
     virtual bool
     GetFileExists (const lldb_private::FileSpec& file_spec);
     
+    virtual uint32_t
+    GetFilePermissions (const lldb_private::FileSpec &file_spec,
+                        lldb_private::Error &error);
+
     virtual lldb_private::Error
     RunShellCommand (const char *command,           // Shouldn't be NULL
                      const char *working_dir,       // Pass NULL to use the current working directory

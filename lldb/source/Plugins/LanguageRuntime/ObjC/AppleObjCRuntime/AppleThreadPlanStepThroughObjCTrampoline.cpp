@@ -84,9 +84,15 @@ AppleThreadPlanStepThroughObjCTrampoline::InitializeClangFunction ()
         }
         m_impl_function = m_trampoline_handler->GetLookupImplementationWrapperFunction();
         ExecutionContext exc_ctx;
+        const bool unwind_on_error = true;
+        const bool ignore_breakpoints = true;
         m_thread.CalculateExecutionContext(exc_ctx);
-        m_func_sp.reset(m_impl_function->GetThreadPlanToCallFunction (exc_ctx, m_args_addr, errors, m_stop_others));
-        m_func_sp->SetPrivate(true);
+        m_func_sp.reset(m_impl_function->GetThreadPlanToCallFunction (exc_ctx,
+                                                                      m_args_addr,
+                                                                      errors,
+                                                                      m_stop_others,
+                                                                      unwind_on_error,
+                                                                      ignore_breakpoints));
         m_func_sp->SetOkayToDiscard(true);
         m_thread.QueueThreadPlan (m_func_sp, false);
     }
@@ -108,8 +114,8 @@ AppleThreadPlanStepThroughObjCTrampoline::GetDescription (Stream *s,
         s->Printf("Step through ObjC trampoline");
     else
     {
-        s->Printf ("Stepping to implementation of ObjC method - obj: 0x%llx, isa: 0x%llx, sel: 0x%llx",
-        m_input_values.GetValueAtIndex(0)->GetScalar().ULongLong(), m_isa_addr, m_sel_addr);
+        s->Printf ("Stepping to implementation of ObjC method - obj: 0x%llx, isa: 0x%" PRIx64 ", sel: 0x%" PRIx64,
+                   m_input_values.GetValueAtIndex(0)->GetScalar().ULongLong(), m_isa_addr, m_sel_addr);
     }
 }
                 
@@ -120,7 +126,7 @@ AppleThreadPlanStepThroughObjCTrampoline::ValidatePlan (Stream *error)
 }
 
 bool
-AppleThreadPlanStepThroughObjCTrampoline::PlanExplainsStop ()
+AppleThreadPlanStepThroughObjCTrampoline::DoPlanExplainsStop (Event *event_ptr)
 {
     // If we get asked to explain the stop it will be because something went
     // wrong (like the implementation for selector function crashed...  We're going
@@ -167,7 +173,7 @@ AppleThreadPlanStepThroughObjCTrampoline::ShouldStop (Event *event_ptr)
         lldb::addr_t target_addr = target_addr_value.GetScalar().ULongLong();
         Address target_so_addr;
         target_so_addr.SetOpcodeLoadAddress(target_addr, exc_ctx.GetTargetPtr());
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (target_addr == 0)
         {
             if (log)
@@ -178,7 +184,7 @@ AppleThreadPlanStepThroughObjCTrampoline::ShouldStop (Event *event_ptr)
         if (m_trampoline_handler->AddrIsMsgForward(target_addr))
         {
             if (log)
-                log->Printf ("Implementation lookup returned msgForward function: 0x%llx, stopping.", target_addr);
+                log->Printf ("Implementation lookup returned msgForward function: 0x%" PRIx64 ", stopping.", target_addr);
 
             SymbolContext sc = m_thread.GetStackFrameAtIndex(0)->GetSymbolContext(eSymbolContextEverything);
             m_run_to_sp.reset(new ThreadPlanStepOut (m_thread, 
@@ -194,13 +200,13 @@ AppleThreadPlanStepThroughObjCTrampoline::ShouldStop (Event *event_ptr)
         }
         
         if (log)
-            log->Printf("Running to ObjC method implementation: 0x%llx", target_addr);
+            log->Printf("Running to ObjC method implementation: 0x%" PRIx64, target_addr);
         
         ObjCLanguageRuntime *objc_runtime = GetThread().GetProcess()->GetObjCLanguageRuntime();
         assert (objc_runtime != NULL);
         objc_runtime->AddToMethodCache (m_isa_addr, m_sel_addr, target_addr);
         if (log)
-            log->Printf("Adding {isa-addr=0x%llx, sel-addr=0x%llx} = addr=0x%llx to cache.", m_isa_addr, m_sel_addr, target_addr);
+            log->Printf("Adding {isa-addr=0x%" PRIx64 ", sel-addr=0x%" PRIx64 "} = addr=0x%" PRIx64 " to cache.", m_isa_addr, m_sel_addr, target_addr);
 
         // Extract the target address from the value:
         

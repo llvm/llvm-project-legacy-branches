@@ -39,9 +39,11 @@ BreakpointOptions::BreakpointOptions() :
     m_callback_baton_sp (),
     m_callback_is_synchronous (false),
     m_enabled (true),
+    m_one_shot (false),
     m_ignore_count (0),
-    m_thread_spec_ap (NULL),
-    m_condition_ap()
+    m_thread_spec_ap (),
+    m_condition_text (),
+    m_condition_text_hash (0)
 {
 }
 
@@ -53,14 +55,14 @@ BreakpointOptions::BreakpointOptions(const BreakpointOptions& rhs) :
     m_callback_baton_sp (rhs.m_callback_baton_sp),
     m_callback_is_synchronous (rhs.m_callback_is_synchronous),
     m_enabled (rhs.m_enabled),
+    m_one_shot (rhs.m_one_shot),
     m_ignore_count (rhs.m_ignore_count),
-    m_thread_spec_ap (NULL),
-    m_condition_ap (NULL)
+    m_thread_spec_ap ()
 {
     if (rhs.m_thread_spec_ap.get() != NULL)
         m_thread_spec_ap.reset (new ThreadSpec(*rhs.m_thread_spec_ap.get()));
-    if (rhs.m_condition_ap.get())
-        m_condition_ap.reset (new ClangUserExpression (rhs.m_condition_ap->GetUserText(), NULL, lldb::eLanguageTypeUnknown, ClangUserExpression::eResultTypeAny));
+    m_condition_text = rhs.m_condition_text;
+    m_condition_text_hash = rhs.m_condition_text_hash;
 }
 
 //----------------------------------------------------------------------
@@ -73,11 +75,12 @@ BreakpointOptions::operator=(const BreakpointOptions& rhs)
     m_callback_baton_sp = rhs.m_callback_baton_sp;
     m_callback_is_synchronous = rhs.m_callback_is_synchronous;
     m_enabled = rhs.m_enabled;
+    m_one_shot = rhs.m_one_shot;
     m_ignore_count = rhs.m_ignore_count;
     if (rhs.m_thread_spec_ap.get() != NULL)
         m_thread_spec_ap.reset(new ThreadSpec(*rhs.m_thread_spec_ap.get()));
-    if (rhs.m_condition_ap.get())
-        m_condition_ap.reset (new ClangUserExpression (rhs.m_condition_ap->GetUserText(), NULL, lldb::eLanguageTypeUnknown, ClangUserExpression::eResultTypeAny));
+    m_condition_text = rhs.m_condition_text;
+    m_condition_text_hash = rhs.m_condition_text_hash;
     return *this;
 }
 
@@ -159,51 +162,28 @@ BreakpointOptions::HasCallback ()
 void 
 BreakpointOptions::SetCondition (const char *condition)
 {
-    if (condition == NULL || condition[0] == '\0')
-    {
-        if (m_condition_ap.get())
-            m_condition_ap.reset();
-    }
-    else
-    {
-        m_condition_ap.reset(new ClangUserExpression (condition, NULL, lldb::eLanguageTypeUnknown, ClangUserExpression::eResultTypeAny));
-    }
+    if (!condition)
+        condition = "";
+    
+    m_condition_text.assign(condition);
+    std::hash<std::string> hasher;
+    m_condition_text_hash = hasher(m_condition_text);
 }
 
 const char *
-BreakpointOptions::GetConditionText () const
+BreakpointOptions::GetConditionText (size_t *hash) const
 {
-    if (m_condition_ap.get())
-        return m_condition_ap->GetUserText();
+    if (!m_condition_text.empty())
+    {
+        if (hash)
+            *hash = m_condition_text_hash;
+        
+        return m_condition_text.c_str();
+    }
     else
+    {
         return NULL;
-}
-
-//------------------------------------------------------------------
-// Enabled/Ignore Count
-//------------------------------------------------------------------
-bool
-BreakpointOptions::IsEnabled () const
-{
-    return m_enabled;
-}
-
-void
-BreakpointOptions::SetEnabled (bool enabled)
-{
-    m_enabled = enabled;
-}
-
-uint32_t
-BreakpointOptions::GetIgnoreCount () const
-{
-    return m_ignore_count;
-}
-
-void
-BreakpointOptions::SetIgnoreCount (uint32_t n)
-{
-    m_ignore_count = n;
+    }
 }
 
 const ThreadSpec *
@@ -234,7 +214,7 @@ BreakpointOptions::GetDescription (Stream *s, lldb::DescriptionLevel level) cons
     // Figure out if there are any options not at their default value, and only print 
     // anything if there are:
     
-    if (m_ignore_count != 0 || !m_enabled || (GetThreadSpecNoCreate() != NULL && GetThreadSpecNoCreate()->HasSpecification ()))
+    if (m_ignore_count != 0 || !m_enabled || m_one_shot || (GetThreadSpecNoCreate() != NULL && GetThreadSpecNoCreate()->HasSpecification ()))
     {
         if (level == lldb::eDescriptionLevelVerbose)
         {
@@ -251,6 +231,9 @@ BreakpointOptions::GetDescription (Stream *s, lldb::DescriptionLevel level) cons
         if (m_ignore_count > 0)
             s->Printf("ignore: %d ", m_ignore_count);
         s->Printf("%sabled ", m_enabled ? "en" : "dis");
+        
+        if (m_one_shot)
+            s->Printf ("one-shot ");
         
         if (m_thread_spec_ap.get())
             m_thread_spec_ap->GetDescription (s, level);
@@ -271,12 +254,12 @@ BreakpointOptions::GetDescription (Stream *s, lldb::DescriptionLevel level) cons
             m_callback_baton_sp->GetDescription (s, level);
         }
     }
-    if (m_condition_ap.get())
+    if (!m_condition_text.empty())
     {
        if (level != eDescriptionLevelBrief)
        {
             s->EOL();
-            s->Printf("Condition: %s\n", m_condition_ap->GetUserText());
+            s->Printf("Condition: %s\n", m_condition_text.c_str());
         }
     }    
 }

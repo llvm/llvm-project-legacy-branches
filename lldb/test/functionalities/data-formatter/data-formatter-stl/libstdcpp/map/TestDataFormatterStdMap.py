@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class StdMapDataFormatterTestCase(TestBase):
 
@@ -18,6 +19,10 @@ class StdMapDataFormatterTestCase(TestBase):
         self.buildDsym()
         self.data_formatter_commands()
 
+    @expectedFailureClang # llvm.org/pr15301: LLDB prints incorrect size of
+                          # libstdc++ containers
+    @skipIfGcc # llvm.org/pr15036: When built with GCC, this test causes lldb to crash with
+               # assert DeclCXX.h:554 queried property of class with no definition
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
@@ -34,10 +39,7 @@ class StdMapDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=-1)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -58,7 +60,7 @@ class StdMapDataFormatterTestCase(TestBase):
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
 
-        self.runCmd("frame variable ii -T")
+        self.runCmd("frame variable ii --show-types")
         
         self.runCmd("type summary add -x \"std::map<\" --summary-string \"map has ${svar%#} items\" -e") 
         
@@ -120,6 +122,9 @@ class StdMapDataFormatterTestCase(TestBase):
         self.expect("frame variable ii[8]", matching=True,
                     substrs = ['1234567'])
 
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("ii").MightHaveChildren(), "ii.MightHaveChildren() says False for non empty!")
+
         # check that the expression parser does not make use of
         # synthetic children instead of running code
         # TOT clang has a fix for this, which makes the expression command here succeed
@@ -135,7 +140,7 @@ class StdMapDataFormatterTestCase(TestBase):
                                '{}'])
         
         self.runCmd("n")
-        self.runCmd("frame variable si -T")
+        self.runCmd("frame variable si --show-types")
 
         self.expect('frame variable si',
                     substrs = ['map has 0 items',
@@ -191,7 +196,10 @@ class StdMapDataFormatterTestCase(TestBase):
         self.expect("frame variable si[0]",
                     substrs = ['first = ', 'four',
                                'second = 4']);
-        
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("si").MightHaveChildren(), "si.MightHaveChildren() says False for non empty!")
+
         # check that the expression parser does not make use of
         # synthetic children instead of running code
         # TOT clang has a fix for this, which makes the expression command here succeed
@@ -207,7 +215,7 @@ class StdMapDataFormatterTestCase(TestBase):
                                '{}'])
 
         self.runCmd("n")
-        self.runCmd("frame variable is -T")
+        self.runCmd("frame variable is --show-types")
         
         self.expect('frame variable is',
                     substrs = ['map has 0 items',
@@ -249,7 +257,10 @@ class StdMapDataFormatterTestCase(TestBase):
         self.expect("frame variable is[0]",
                     substrs = ['first = ',
                                'second =']);
-        
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("is").MightHaveChildren(), "is.MightHaveChildren() says False for non empty!")
+
         # check that the expression parser does not make use of
         # synthetic children instead of running code
         # TOT clang has a fix for this, which makes the expression command here succeed
@@ -265,7 +276,7 @@ class StdMapDataFormatterTestCase(TestBase):
                                '{}'])
 
         self.runCmd("n")
-        self.runCmd("frame variable ss -T")
+        self.runCmd("frame variable ss --show-types")
         
         self.expect('frame variable ss',
                     substrs = ['map has 0 items',
@@ -306,6 +317,9 @@ class StdMapDataFormatterTestCase(TestBase):
         # check access-by-index
         self.expect("frame variable ss[3]",
                     substrs = ['gatto', 'cat']);
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("ss").MightHaveChildren(), "ss.MightHaveChildren() says False for non empty!")
         
         # check that the expression parser does not make use of
         # synthetic children instead of running code

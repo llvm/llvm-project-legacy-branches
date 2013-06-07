@@ -118,6 +118,15 @@ public:
 
     bool
     IsEnabled ();
+    
+    void
+    SetOneShot (bool one_shot);
+
+    bool
+    IsOneShot ();
+    
+    bool
+    IsInternal ();
 
     uint32_t
     GetHitCount () const;
@@ -179,6 +188,12 @@ public:
 
     bool
     GetDescription (lldb::SBStream &description);
+
+    bool
+    operator == (const lldb::SBBreakpoint& rhs);
+           
+    bool
+    operator != (const lldb::SBBreakpoint& rhs);
 
     static bool
     EventIsBreakpointEvent (const lldb::SBEvent &event);

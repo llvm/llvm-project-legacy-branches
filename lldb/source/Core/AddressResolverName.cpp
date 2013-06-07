@@ -11,8 +11,12 @@
 
 // Project includes
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Symbol/ClangNamespaceDecl.h"
+#include "lldb/Symbol/Function.h"
+#include "lldb/Symbol/SymbolContext.h"
+#include "lldb/Symbol/Symbol.h"
 #include "lldb/lldb-private-log.h"
 
 using namespace lldb;
@@ -33,7 +37,7 @@ AddressResolverName::AddressResolverName
     {
         if (!m_regex.Compile (m_func_name.AsCString()))
         {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
+            Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
 
             if (log)
                 log->Warning ("function name regexp: \"%s\" did not compile.", m_func_name.AsCString());
@@ -94,7 +98,7 @@ AddressResolverName::SearchCallback
     SymbolContext sc;
     Address func_addr;
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
 
     if (m_class_name)
     {
@@ -116,7 +120,7 @@ AddressResolverName::SearchCallback
                                                            sym_list);
             context.module_sp->FindFunctions (m_func_name,
                                               NULL,
-                                              eFunctionNameTypeBase | eFunctionNameTypeFull | eFunctionNameTypeMethod | eFunctionNameTypeSelector,
+                                              eFunctionNameTypeAuto,
                                               include_symbols,
                                               include_inlines,
                                               append, 

@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 // C++ Includes
 
@@ -188,7 +190,7 @@ but do NOT enter more than one command per line. \n" );
                                              CommandReturnObject &result)
     {
         InputReaderSP reader_sp (new InputReader(m_interpreter.GetDebugger()));
-        std::auto_ptr<WatchpointOptions::CommandData> data_ap(new WatchpointOptions::CommandData());
+        std::unique_ptr<WatchpointOptions::CommandData> data_ap(new WatchpointOptions::CommandData());
         if (reader_sp && data_ap.get())
         {
             BatonSP baton_sp (new WatchpointOptions::CommandBaton (data_ap.release()));
@@ -224,7 +226,7 @@ but do NOT enter more than one command per line. \n" );
     SetWatchpointCommandCallback (WatchpointOptions *wp_options,
                                   const char *oneliner)
     {
-        std::auto_ptr<WatchpointOptions::CommandData> data_ap(new WatchpointOptions::CommandData());
+        std::unique_ptr<WatchpointOptions::CommandData> data_ap(new WatchpointOptions::CommandData());
 
         // It's necessary to set both user_source and script_source to the oneliner.
         // The former is used to generate callback description (as in watchpoint command list)
@@ -396,7 +398,7 @@ but do NOT enter more than one command per line. \n" );
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -599,16 +601,16 @@ g_script_option_enumeration[4] =
 OptionDefinition
 CommandObjectWatchpointCommandAdd::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_1,   false, "one-liner",       'o', required_argument, NULL, NULL, eArgTypeOneLiner,
+    { LLDB_OPT_SET_1,   false, "one-liner",       'o', required_argument, NULL, 0, eArgTypeOneLiner,
         "Specify a one-line watchpoint command inline. Be sure to surround it with quotes." },
 
-    { LLDB_OPT_SET_ALL, false, "stop-on-error",   'e', required_argument, NULL, NULL, eArgTypeBoolean,
+    { LLDB_OPT_SET_ALL, false, "stop-on-error",   'e', required_argument, NULL, 0, eArgTypeBoolean,
         "Specify whether watchpoint command execution should terminate on error." },
 
-    { LLDB_OPT_SET_ALL, false, "script-type",     's', required_argument, g_script_option_enumeration, NULL, eArgTypeNone,
+    { LLDB_OPT_SET_ALL, false, "script-type",     's', required_argument, g_script_option_enumeration, 0, eArgTypeNone,
         "Specify the language for the commands - if none is specified, the lldb command interpreter will be used."},
 
-    { LLDB_OPT_SET_2,   false, "python-function", 'F', required_argument, NULL, NULL, eArgTypePythonFunction,
+    { LLDB_OPT_SET_2,   false, "python-function", 'F', required_argument, NULL, 0, eArgTypePythonFunction,
         "Give the name of a Python function to run as command for this watchpoint. Be sure to give a module name if appropriate."},
     
     { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
@@ -828,7 +830,6 @@ CommandObjectWatchpointCommand::CommandObjectWatchpointCommand (CommandInterpret
                             "A set of commands for adding, removing and examining bits of code to be executed when the watchpoint is hit (watchpoint 'commmands').",
                             "command <sub-command> [<sub-command-options>] <watchpoint-id>")
 {
-    bool status;
     CommandObjectSP add_command_object (new CommandObjectWatchpointCommandAdd (interpreter));
     CommandObjectSP delete_command_object (new CommandObjectWatchpointCommandDelete (interpreter));
     CommandObjectSP list_command_object (new CommandObjectWatchpointCommandList (interpreter));
@@ -837,9 +838,9 @@ CommandObjectWatchpointCommand::CommandObjectWatchpointCommand (CommandInterpret
     delete_command_object->SetCommandName ("watchpoint command delete");
     list_command_object->SetCommandName ("watchpoint command list");
 
-    status = LoadSubCommand ("add",    add_command_object);
-    status = LoadSubCommand ("delete", delete_command_object);
-    status = LoadSubCommand ("list",   list_command_object);
+    LoadSubCommand ("add",    add_command_object);
+    LoadSubCommand ("delete", delete_command_object);
+    LoadSubCommand ("list",   list_command_object);
 }
 
 CommandObjectWatchpointCommand::~CommandObjectWatchpointCommand ()

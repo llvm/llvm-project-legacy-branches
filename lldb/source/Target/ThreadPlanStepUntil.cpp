@@ -73,6 +73,7 @@ ThreadPlanStepUntil::ThreadPlanStepUntil
             {
                 return_bp->SetThreadID(thread_id);
                 m_return_bp_id = return_bp->GetID();
+                return_bp->SetBreakpointKind ("until-return-backstop");
             }
         }
 
@@ -86,6 +87,7 @@ ThreadPlanStepUntil::ThreadPlanStepUntil
             {
                 until_bp->SetThreadID(thread_id);
                 m_until_points[address_list[i]] = until_bp->GetID();
+                until_bp->SetBreakpointKind("until-target");
             }
             else
             {
@@ -133,21 +135,21 @@ ThreadPlanStepUntil::GetDescription (Stream *s, lldb::DescriptionLevel level)
     else
     {
         if (m_until_points.size() == 1)
-            s->Printf ("Stepping from address 0x%llx until we reach 0x%llx using breakpoint %d",
+            s->Printf ("Stepping from address 0x%" PRIx64 " until we reach 0x%" PRIx64 " using breakpoint %d",
                        (uint64_t)m_step_from_insn,
                        (uint64_t) (*m_until_points.begin()).first,
                        (*m_until_points.begin()).second);
         else
         {
             until_collection::iterator pos, end = m_until_points.end();
-            s->Printf ("Stepping from address 0x%llx until we reach one of:",
+            s->Printf ("Stepping from address 0x%" PRIx64 " until we reach one of:",
                        (uint64_t)m_step_from_insn);
             for (pos = m_until_points.begin(); pos != end; pos++)
             {
-                s->Printf ("\n\t0x%llx (bp: %d)", (uint64_t) (*pos).first, (*pos).second);
+                s->Printf ("\n\t0x%" PRIx64 " (bp: %d)", (uint64_t) (*pos).first, (*pos).second);
             }
         }
-        s->Printf(" stepped out address is 0x%llx.", (uint64_t) m_return_addr);
+        s->Printf(" stepped out address is 0x%" PRIx64 ".", (uint64_t) m_return_addr);
     }
 }
 
@@ -174,7 +176,7 @@ ThreadPlanStepUntil::AnalyzeStop()
     if (m_ran_analyze)
         return;
         
-    StopInfoSP stop_info_sp = GetPrivateStopReason();
+    StopInfoSP stop_info_sp = GetPrivateStopInfo ();
     m_should_stop = true;
     m_explains_stop = false;
     
@@ -291,6 +293,8 @@ ThreadPlanStepUntil::AnalyzeStop()
             case eStopReasonWatchpoint:
             case eStopReasonSignal:
             case eStopReasonException:
+            case eStopReasonExec:
+            case eStopReasonThreadExiting:
                 m_explains_stop = false;
                 break;
             default:
@@ -301,7 +305,7 @@ ThreadPlanStepUntil::AnalyzeStop()
 }
 
 bool
-ThreadPlanStepUntil::PlanExplainsStop ()
+ThreadPlanStepUntil::DoPlanExplainsStop (Event *event_ptr)
 {
     // We don't explain signals or breakpoints (breakpoints that handle stepping in or
     // out will be handled by a child plan.
@@ -316,7 +320,7 @@ ThreadPlanStepUntil::ShouldStop (Event *event_ptr)
     // do so here.  Otherwise, as long as this thread has stopped for a reason,
     // we will stop.
 
-    StopInfoSP stop_info_sp = GetPrivateStopReason();
+    StopInfoSP stop_info_sp = GetPrivateStopInfo ();
     if (!stop_info_sp || stop_info_sp->GetStopReason() == eStopReasonNone)
         return false;
 
@@ -337,9 +341,8 @@ ThreadPlanStepUntil::GetPlanRunState ()
 }
 
 bool
-ThreadPlanStepUntil::WillResume (StateType resume_state, bool current_plan)
+ThreadPlanStepUntil::DoWillResume (StateType resume_state, bool current_plan)
 {
-    ThreadPlan::WillResume (resume_state, current_plan);
     if (current_plan)
     {
         TargetSP target_sp (m_thread.CalculateTarget());
@@ -394,7 +397,7 @@ ThreadPlanStepUntil::MischiefManaged ()
     bool done = false;
     if (IsPlanComplete())
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log)
             log->Printf("Completed step until plan.");
 

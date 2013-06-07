@@ -15,14 +15,26 @@ class CommandLineCompletionTestCase(TestBase):
     @classmethod
     def classCleanup(cls):
         """Cleanup the test byproducts."""
-        os.remove("child_send.txt")
-        os.remove("child_read.txt")
+        try:
+            os.remove("child_send.txt")
+            os.remove("child_read.txt")
+        except:
+            pass
+
+    def test_at(self):
+        """Test that 'at' completes to 'attach '."""
+        self.complete_from_to('at', 'attach ')
+
+    def test_de(self):
+        """Test that 'de' completes to 'detach '."""
+        self.complete_from_to('de', 'detach ')
 
     def test_process_attach_dash_dash_con(self):
         """Test that 'process attach --con' completes to 'process attach --continue '."""
         self.complete_from_to('process attach --con', 'process attach --continue ')
 
     # <rdar://problem/11052829>
+    @skipIfLinux # llvm.org/pr14637: this test case fails (with GCC 4.6 but not clang) because the input prompt "(lldb)" is missing
     def test_infinite_loop_while_completing(self):
         """Test that 'process print hello\' completes to itself and does not infinite loop."""
         self.complete_from_to('process print hello\\', 'process print hello\\',
@@ -85,12 +97,12 @@ class CommandLineCompletionTestCase(TestBase):
         self.complete_from_to('settings set th', 'settings set thread-format')
 
     def test_settings_s_dash(self):
-        """Test that 'settings set -' completes to ['Available completions:', '-n', '-r']."""
-        self.complete_from_to('settings set -', ['Available completions:', '-n', '-r'])
+        """Test that 'settings set -' completes to 'settings set -g'."""
+        self.complete_from_to('settings set -', 'settings set -g')
 
-    def test_settings_set_dash_r_th(self):
-        """Test that 'settings set -r th' completes to 'settings set -r thread-format'."""
-        self.complete_from_to('settings set -r th', 'settings set -r thread-format')
+    def test_settings_clear_th(self):
+        """Test that 'settings clear th' completes to 'settings clear thread-format'."""
+        self.complete_from_to('settings clear th', 'settings clear thread-format')
 
     def test_settings_set_ta(self):
         """Test that 'settings set ta' completes to 'settings set target.'."""
@@ -98,7 +110,7 @@ class CommandLineCompletionTestCase(TestBase):
 
     def test_settings_set_target_exec(self):
         """Test that 'settings set target.exec' completes to 'settings set target.exec-search-paths '."""
-        self.complete_from_to('settings set target.exec', 'settings set target.exec-search-paths ')
+        self.complete_from_to('settings set target.exec', 'settings set target.exec-search-paths')
 
     def test_settings_set_target_pr(self):
         """Test that 'settings set target.pr' completes to ['Available completions:',
@@ -130,6 +142,10 @@ class CommandLineCompletionTestCase(TestBase):
         self.complete_from_to('target ',
                               ['Available completions:', 'create', 'delete', 'list',
                                'modules', 'select', 'stop-hook', 'variable'])
+
+    def test_target_create_dash_co(self):
+        """Test that 'target create --co' completes to 'target variable --core '."""
+        self.complete_from_to('target create --co', 'target create --core ')
 
     def test_target_va(self):
         """Test that 'target va' completes to 'target variable '."""

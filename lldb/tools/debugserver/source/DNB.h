@@ -16,10 +16,7 @@
 
 #include "DNBDefs.h"
 #include <mach/thread_info.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <string>
 
 #define DNB_EXPORT __attribute__((visibility("default")))
 
@@ -67,6 +64,8 @@ nub_size_t      DNBProcessMemoryWrite   (nub_process_t pid, nub_addr_t addr, nub
 nub_addr_t      DNBProcessMemoryAllocate    (nub_process_t pid, nub_size_t size, uint32_t permissions) DNB_EXPORT;
 nub_bool_t      DNBProcessMemoryDeallocate  (nub_process_t pid, nub_addr_t addr) DNB_EXPORT;
 int             DNBProcessMemoryRegionInfo  (nub_process_t pid, nub_addr_t addr, DNBRegionInfo *region_info) DNB_EXPORT;
+std::string     DNBProcessGetProfileData (nub_process_t pid, DNBProfileDataScanType scanType) DNB_EXPORT;
+nub_bool_t      DNBProcessSetEnableAsyncProfiling   (nub_process_t pid, nub_bool_t enable, uint64_t interval_usec, DNBProfileDataScanType scan_type) DNB_EXPORT;
 
 //----------------------------------------------------------------------
 // Process status
@@ -77,6 +76,7 @@ nub_bool_t      DNBProcessGetExitStatus                 (nub_process_t pid, int 
 nub_bool_t      DNBProcessSetExitStatus                 (nub_process_t pid, int status) DNB_EXPORT;
 nub_size_t      DNBProcessGetNumThreads                 (nub_process_t pid) DNB_EXPORT;
 nub_thread_t    DNBProcessGetCurrentThread              (nub_process_t pid) DNB_EXPORT;
+nub_thread_t    DNBProcessGetCurrentThreadMachPort      (nub_process_t pid) DNB_EXPORT;
 nub_thread_t    DNBProcessSetCurrentThread              (nub_process_t pid, nub_thread_t tid) DNB_EXPORT;
 nub_thread_t    DNBProcessGetThreadAtIndex              (nub_process_t pid, nub_size_t thread_idx) DNB_EXPORT;
 nub_bool_t      DNBProcessSyncThreadState               (nub_process_t pid, nub_thread_t tid) DNB_EXPORT;
@@ -88,6 +88,7 @@ nub_bool_t      DNBProcessSetSharedLibraryInfoCallback  (nub_process_t pid, DNBC
 nub_addr_t      DNBProcessLookupAddress                 (nub_process_t pid, const char *name, const char *shlib) DNB_EXPORT;
 nub_size_t      DNBProcessGetAvailableSTDOUT            (nub_process_t pid, char *buf, nub_size_t buf_size) DNB_EXPORT;
 nub_size_t      DNBProcessGetAvailableSTDERR            (nub_process_t pid, char *buf, nub_size_t buf_size) DNB_EXPORT;
+nub_size_t      DNBProcessGetAvailableProfileData       (nub_process_t pid, char *buf, nub_size_t buf_size) DNB_EXPORT;
 nub_size_t      DNBProcessGetStopCount                  (nub_process_t pid) DNB_EXPORT;
 uint32_t        DNBProcessGetCPUType                    (nub_process_t pid) DNB_EXPORT; 
 
@@ -103,7 +104,6 @@ nub_size_t      DNBProcessGetArgumentCount      (nub_process_t pid) DNB_EXPORT;
 //----------------------------------------------------------------------
 nub_event_t     DNBProcessWaitForEvents         (nub_process_t pid, nub_event_t event_mask, bool wait_for_set, struct timespec* timeout) DNB_EXPORT;
 void            DNBProcessResetEvents           (nub_process_t pid, nub_event_t event_mask) DNB_EXPORT;
-void            DNBProcessInterruptEvents       (nub_process_t pid) DNB_EXPORT;
 
 //----------------------------------------------------------------------
 // Thread functions
@@ -156,9 +156,5 @@ nub_size_t      DNBPrintf (nub_process_t pid, nub_thread_t tid, nub_addr_t addr,
 //----------------------------------------------------------------------
 const char *    DNBStateAsString (nub_state_t state) DNB_EXPORT;
 nub_bool_t      DNBResolveExecutablePath (const char *path, char *resolved_path, size_t resolved_path_size) DNB_EXPORT;
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

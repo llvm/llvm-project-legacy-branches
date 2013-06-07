@@ -53,6 +53,7 @@ public:
         eServerPacketType_qGroupName,
         eServerPacketType_qHostInfo,
         eServerPacketType_qLaunchGDBServer,
+        eServerPacketType_qKillSpawnedProcess,
         eServerPacketType_qLaunchSuccess,
         eServerPacketType_qProcessInfoPID,
         eServerPacketType_qSpeedTest,
@@ -72,6 +73,7 @@ public:
         eServerPacketType_vFile_pRead,
         eServerPacketType_vFile_pWrite,
         eServerPacketType_vFile_Size,
+        eServerPacketType_vFile_Mode,
         eServerPacketType_vFile_Exists,
         eServerPacketType_vFile_MD5,
         eServerPacketType_vFile_Stat

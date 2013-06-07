@@ -42,9 +42,15 @@ CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/source/Plugins/Process/Utility
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/source/Plugins/Process/POSIX
 ifeq ($(HOST_OS),Darwin)
 CPP.Flags += -F/System/Library/Frameworks -F/System/Library/PrivateFrameworks
+CPP.Flags += -I/usr/include/libxml2
 endif
 ifdef LLDB_VENDOR
 CPP.Flags += -DLLDB_VENDOR='"$(LLDB_VENDOR) "'
+endif
+
+# If building on a 32-bit system, make sure off_t can store offsets > 2GB
+ifneq "$(HOST_ARCH)" "x86_64"
+CPP.Flags += -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
 endif
 
 # Disable -fstrict-aliasing. Darwin disables it by default (and LLVM doesn't

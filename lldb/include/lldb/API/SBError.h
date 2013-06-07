@@ -66,7 +66,6 @@ public:
 
 protected:
 
-    friend class SBArguments;
     friend class SBData;
     friend class SBDebugger;
     friend class SBCommunication;
@@ -94,7 +93,7 @@ protected:
     SetError (const lldb_private::Error &lldb_error);
 
 private:
-    std::auto_ptr<lldb_private::Error> m_opaque_ap;
+    std::unique_ptr<lldb_private::Error> m_opaque_ap;
 
     void
     CreateIfNeeded ();

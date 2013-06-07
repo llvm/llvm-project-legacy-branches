@@ -89,7 +89,10 @@ public:
     GetLaunchSuccess (std::string &error_str);
 
     uint16_t
-    LaunchGDBserverAndGetPort ();
+    LaunchGDBserverAndGetPort (lldb::pid_t &pid);
+    
+    bool
+    KillSpawnedProcess (lldb::pid_t pid);
 
     //------------------------------------------------------------------
     /// Sends a GDB remote protocol 'A' packet that delivers program
@@ -199,8 +202,8 @@ public:
     bool
     DeallocateMemory (lldb::addr_t addr);
 
-    bool
-    Detach ();
+    lldb_private::Error
+    Detach (bool keep_stopped);
 
     lldb_private::Error
     GetMemoryRegionInfo (lldb::addr_t addr, 
@@ -217,7 +220,10 @@ public:
 
     const lldb_private::ArchSpec &
     GetHostArchitecture ();
-    
+
+    const lldb_private::ArchSpec &
+    GetProcessArchitecture ();
+
     bool
     GetVContSupported (char flavor);
 
@@ -294,7 +300,7 @@ public:
     GetStopReply (StringExtractorGDBRemote &response);
 
     bool
-    GetThreadStopInfo (uint32_t tid, 
+    GetThreadStopInfo (lldb::tid_t tid, 
                        StringExtractorGDBRemote &response);
 
     bool
@@ -307,7 +313,6 @@ public:
         case eWatchpointWrite:      return m_supports_z2;
         case eWatchpointRead:       return m_supports_z3;
         case eWatchpointReadWrite:  return m_supports_z4;
-        default:                    break;
         }
         return false;
     }
@@ -330,10 +335,10 @@ public:
                          uint32_t recv_size);
     
     bool
-    SetCurrentThread (int tid);
+    SetCurrentThread (uint64_t tid);
     
     bool
-    SetCurrentThreadForRun (int tid);
+    SetCurrentThreadForRun (uint64_t tid);
 
     lldb_private::LazyBool
     SupportsAllocDeallocMemory () // const
@@ -356,21 +361,33 @@ public:
     virtual lldb::user_id_t
     OpenFile (const lldb_private::FileSpec& file_spec,
               uint32_t flags,
-              mode_t mode);
+              mode_t mode,
+              lldb_private::Error &error);
     
     virtual bool
-    CloseFile (lldb::user_id_t fd);
+    CloseFile (lldb::user_id_t fd,
+               lldb_private::Error &error);
     
     virtual lldb::user_id_t
     GetFileSize (const lldb_private::FileSpec& file_spec);
-
-    virtual uint32_t
-    ReadFile (lldb::user_id_t fd, uint64_t offset,
-              void *data_ptr, size_t len);
     
     virtual uint32_t
-    WriteFile (lldb::user_id_t fd, uint64_t offset,
-               void* data, size_t len);
+    GetFilePermissions(const lldb_private::FileSpec& file_spec,
+                       lldb_private::Error &error);
+
+    virtual uint64_t
+    ReadFile (lldb::user_id_t fd,
+              uint64_t offset,
+              void *dst,
+              uint64_t dst_len,
+              lldb_private::Error &error);
+    
+    virtual uint64_t
+    WriteFile (lldb::user_id_t fd,
+               uint64_t offset,
+               const void* src,
+               uint64_t src_len,
+               lldb_private::Error &error);
     
     virtual uint32_t
     MakeDirectory (const std::string &path,
@@ -392,7 +409,14 @@ public:
                   uint64_t &high,
                   uint64_t &low);
     
+    std::string
+    HarmonizeThreadIdsForProfileData (ProcessGDBRemote *process,
+                                      StringExtractorGDBRemote &inputStringExtractor);
+
 protected:
+
+    bool
+    GetCurrentProcessInfo ();
 
     //------------------------------------------------------------------
     // Classes that inherit from GDBRemoteCommunicationClient can see and modify these
@@ -407,9 +431,11 @@ protected:
     lldb_private::LazyBool m_supports_vCont_s;
     lldb_private::LazyBool m_supports_vCont_S;
     lldb_private::LazyBool m_qHostInfo_is_valid;
+    lldb_private::LazyBool m_qProcessInfo_is_valid;
     lldb_private::LazyBool m_supports_alloc_dealloc_memory;
     lldb_private::LazyBool m_supports_memory_region_info;
     lldb_private::LazyBool m_supports_watchpoint_support_info;
+    lldb_private::LazyBool m_supports_detach_stay_stopped;
     lldb_private::LazyBool m_watchpoints_trigger_after_instruction;
     lldb_private::LazyBool m_attach_or_wait_reply;
     lldb_private::LazyBool m_prepare_for_reg_writing_reply;
@@ -441,8 +467,11 @@ protected:
     StringExtractorGDBRemote m_async_response;
     int m_async_signal; // We were asked to deliver a signal to the inferior process.
     bool m_interrupt_sent;
+    std::string m_partial_profile_data;
+    std::map<uint64_t, uint32_t> m_thread_id_to_used_usec_map;
     
     lldb_private::ArchSpec m_host_arch;
+    lldb_private::ArchSpec m_process_arch;
     uint32_t m_os_version_major;
     uint32_t m_os_version_minor;
     uint32_t m_os_version_update;

@@ -3,7 +3,7 @@ import lldb.formatters.Logger
 
 # C++ STL formatters for LLDB
 # These formatters are based upon the version of the GNU libstdc++
-# as it ships with Mac OS X 10.6.8 thru 10.7.3
+# as it ships with Mac OS X 10.6.8 thru 10.8.0
 # You are encouraged to look at the STL implementation for your platform
 # before relying on these formatters to do the right thing for your setup
 
@@ -132,6 +132,9 @@ class StdListSynthProvider:
 		except:
 			pass
 
+	def has_children(self):
+		return True
+
 class StdVectorSynthProvider:
 
 	def __init__(self, valobj, dict):
@@ -225,6 +228,10 @@ class StdVectorSynthProvider:
 				self.count = 0
 		except:
 			pass
+			
+
+	def has_children(self):
+		return True
 
 
 class StdMapSynthProvider:
@@ -408,6 +415,8 @@ class StdMapSynthProvider:
 				x = y;
 			return x;
 
+	def has_children(self):
+		return True
 
 _map_capping_size = 255
 _list_capping_size = 255

@@ -90,6 +90,12 @@ public:
     bool
     GetDescription (lldb::SBStream &description);
     
+    bool
+    operator == (const lldb::SBSection &rhs);
+
+    bool
+    operator != (const lldb::SBSection &rhs);
+     
     %pythoncode %{
         def get_addr(self):
             return SBAddress(self, 0)
@@ -122,7 +128,7 @@ public:
 
 private:
 
-    std::auto_ptr<lldb_private::SectionImpl> m_opaque_ap;
+    std::unique_ptr<lldb_private::SectionImpl> m_opaque_ap;
 };
 
 } // namespace lldb

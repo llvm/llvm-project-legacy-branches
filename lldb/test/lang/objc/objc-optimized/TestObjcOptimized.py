@@ -11,6 +11,8 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
+import re
 
 # rdar://problem/9087739
 # test failure: objc_optimized does not work for "-C clang -A i386"
@@ -39,9 +41,7 @@ class ObjcOptimizedTestCase(TestBase):
         exe = os.path.join(os.getcwd(), "a.out")
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -n '%s'" % self.method_spec,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: name = '%s', locations = 1" % self.method_spec)
+        lldbutil.run_break_set_by_symbol (self, self.method_spec, num_expected_locations=1, sym_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
         self.expect("thread backtrace", STOPPED_DUE_TO_BREAKPOINT,
@@ -51,8 +51,21 @@ class ObjcOptimizedTestCase(TestBase):
         self.expect('expression member',
             startstr = "(int) $0 = 5")
 
-        self.expect('expression self',
-            startstr = "(%s *) $1 = " % self.myclass)
+        # <rdar://problem/12693963>
+        interp = self.dbg.GetCommandInterpreter()
+        result = lldb.SBCommandReturnObject()
+        interp.HandleCommand('frame variable self', result)
+        output = result.GetOutput()
+
+        desired_pointer = "0x0"
+
+        mo = re.search("0x[0-9a-f]+", output)
+
+        if mo:
+            desired_pointer = mo.group(0)
+
+        self.expect('expression (self)',
+            substrs = [("(%s *) $1 = " % self.myclass), desired_pointer])
 
         self.expect('expression self->non_member', error=True,
             substrs = ["does not have a member named 'non_member'"])

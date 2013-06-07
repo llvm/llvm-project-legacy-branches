@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/CommandObject.h"
 
 #include <string>
@@ -167,7 +169,7 @@ CommandObject::ParseOptions
         Error error;
         options->NotifyOptionParsingStarting();
 
-        // ParseOptions calls getopt_long, which always skips the zero'th item in the array and starts at position 1,
+        // ParseOptions calls getopt_long_only, which always skips the zero'th item in the array and starts at position 1,
         // so we need to push a dummy value into position zero.
         args.Unshift("dummy_string");
         error = args.ParseOptions (*options);
@@ -206,8 +208,77 @@ CommandObject::ParseOptions
 
 
 bool
-CommandObject::CheckFlags (CommandReturnObject &result)
+CommandObject::CheckRequirements (CommandReturnObject &result)
 {
+#ifdef LLDB_CONFIGURATION_DEBUG
+    // Nothing should be stored in m_exe_ctx between running commands as m_exe_ctx
+    // has shared pointers to the target, process, thread and frame and we don't
+    // want any CommandObject instances to keep any of these objects around
+    // longer than for a single command. Every command should call
+    // CommandObject::Cleanup() after it has completed
+    assert (m_exe_ctx.GetTargetPtr() == NULL);
+    assert (m_exe_ctx.GetProcessPtr() == NULL);
+    assert (m_exe_ctx.GetThreadPtr() == NULL);
+    assert (m_exe_ctx.GetFramePtr() == NULL);
+#endif
+
+    // Lock down the interpreter's execution context prior to running the
+    // command so we guarantee the selected target, process, thread and frame
+    // can't go away during the execution
+    m_exe_ctx = m_interpreter.GetExecutionContext();
+
+    const uint32_t flags = GetFlags().Get();
+    if (flags & (eFlagRequiresTarget   |
+                 eFlagRequiresProcess  |
+                 eFlagRequiresThread   |
+                 eFlagRequiresFrame    |
+                 eFlagTryTargetAPILock ))
+    {
+
+        if ((flags & eFlagRequiresTarget) && !m_exe_ctx.HasTargetScope())
+        {
+            result.AppendError (GetInvalidTargetDescription());
+            return false;
+        }
+
+        if ((flags & eFlagRequiresProcess) && !m_exe_ctx.HasProcessScope())
+        {
+            result.AppendError (GetInvalidProcessDescription());
+            return false;
+        }
+        
+        if ((flags & eFlagRequiresThread) && !m_exe_ctx.HasThreadScope())
+        {
+            result.AppendError (GetInvalidThreadDescription());
+            return false;
+        }
+        
+        if ((flags & eFlagRequiresFrame) && !m_exe_ctx.HasFrameScope())
+        {
+            result.AppendError (GetInvalidFrameDescription());
+            return false;
+        }
+        
+        if ((flags & eFlagRequiresRegContext) && (m_exe_ctx.GetRegisterContext() == NULL))
+        {
+            result.AppendError (GetInvalidRegContextDescription());
+            return false;
+        }
+
+        if (flags & eFlagTryTargetAPILock)
+        {
+            Target *target = m_exe_ctx.GetTargetPtr();
+            if (target)
+            {
+                if (m_api_locker.TryLock (target->GetAPIMutex(), NULL) == false)
+                {
+                    result.AppendError ("failed to get API lock");
+                    return false;
+                }
+            }
+        }
+    }
+
     if (GetFlags().AnySet (CommandObject::eFlagProcessMustBeLaunched | CommandObject::eFlagProcessMustBePaused))
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
@@ -224,7 +295,6 @@ CommandObject::CheckFlags (CommandReturnObject &result)
         else
         {
             StateType state = process->GetState();
-            
             switch (state)
             {
             case eStateInvalid:
@@ -261,6 +331,14 @@ CommandObject::CheckFlags (CommandReturnObject &result)
     return true;
 }
 
+void
+CommandObject::Cleanup ()
+{
+    m_exe_ctx.Clear();
+    m_api_locker.Unlock();
+}
+
+
 class CommandDictCommandPartialMatch
 {
     public:
@@ -272,13 +350,9 @@ class CommandDictCommandPartialMatch
         {
             // A NULL or empty string matches everything.
             if (m_match_str == NULL || *m_match_str == '\0')
-                return 1;
+                return true;
 
-            size_t found = map_element.first.find (m_match_str, 0);
-            if (found == std::string::npos)
-                return 0;
-            else
-                return found == 0;
+            return map_element.first.find (m_match_str, 0) == 0;
         }
 
     private:
@@ -341,7 +415,7 @@ CommandObject::HandleCompletion
 
 
             // I stick an element on the end of the input, because if the last element is
-            // option that requires an argument, getopt_long will freak out.
+            // option that requires an argument, getopt_long_only will freak out.
 
             input.AppendArgument ("<FAKE-VALUE>");
 
@@ -377,23 +451,19 @@ CommandObject::HandleCompletion
 bool
 CommandObject::HelpTextContainsWord (const char *search_word)
 {
-    const char *short_help;
-    const char *long_help;
-    const char *syntax_help;
     std::string options_usage_help;
-
 
     bool found_word = false;
 
-    short_help = GetHelp();
-    long_help = GetHelpLong();
-    syntax_help = GetSyntax();
+    const char *short_help = GetHelp();
+    const char *long_help = GetHelpLong();
+    const char *syntax_help = GetSyntax();
     
-    if (strcasestr (short_help, search_word))
+    if (short_help && strcasestr (short_help, search_word))
         found_word = true;
-    else if (strcasestr (long_help, search_word))
+    else if (long_help && strcasestr (long_help, search_word))
         found_word = true;
-    else if (strcasestr (syntax_help, search_word))
+    else if (syntax_help && strcasestr (syntax_help, search_word))
         found_word = true;
 
     if (!found_word
@@ -630,6 +700,23 @@ CommandObject::LookupArgumentName (const char *arg_name)
 }
 
 static const char *
+RegisterNameHelpTextCallback ()
+{
+    return "Register names can be specified using the architecture specific names.  "
+    "They can also be specified using generic names.  Not all generic entities have "
+    "registers backing them on all architectures.  When they don't the generic name "
+    "will return an error.\n"
+    "The generic names defined in lldb are:\n"
+    "\n"
+    "pc       - program counter register\n"
+    "ra       - return address register\n"
+    "fp       - frame pointer register\n"
+    "sp       - stack pointer register\n"
+    "flags    - the flags register\n"
+    "arg{1-6} - integer argument passing registers.\n";
+}
+
+static const char *
 BreakpointIDHelpTextCallback ()
 {
     return "Breakpoint ID's consist major and minor numbers;  the major number "
@@ -715,6 +802,33 @@ FormatHelpTextCallback ()
             sstr.Printf("'%c' or ", format_char);
         
         sstr.Printf ("\"%s\"", FormatManager::GetFormatAsCString(f));
+    }
+    
+    sstr.Flush();
+    
+    std::string data = sstr.GetString();
+    
+    help_text_ptr = new char[data.length()+1];
+    
+    data.copy(help_text_ptr, data.length());
+    
+    return help_text_ptr;
+}
+
+static const char *
+LanguageTypeHelpTextCallback ()
+{
+    static char* help_text_ptr = NULL;
+    
+    if (help_text_ptr)
+        return help_text_ptr;
+    
+    StreamString sstr;
+    sstr << "One of the following languages:\n";
+    
+    for (unsigned int l = eLanguageTypeUnknown; l < eNumLanguageTypes; ++l)
+    {
+        sstr << "  " << LanguageRuntime::GetNameForLanguageType(static_cast<LanguageType>(l)) << "\n";
     }
     
     sstr.Flush();
@@ -846,14 +960,16 @@ CommandObjectParsed::Execute (const char *args_string, CommandReturnObject &resu
                 cmd_args.ReplaceArgumentAtIndex (i, m_interpreter.ProcessEmbeddedScriptCommands (tmp_str));
         }
 
-        if (!CheckFlags(result))
-            return false;
-            
-        if (!ParseOptions (cmd_args, result))
-            return false;
+        if (CheckRequirements(result))
+        {
+            if (ParseOptions (cmd_args, result))
+            {
+                // Call the command-specific version of 'Execute', passing it the already processed arguments.
+                handled = DoExecute (cmd_args, result);
+            }
+        }
 
-        // Call the command-specific version of 'Execute', passing it the already processed arguments.
-        handled = DoExecute (cmd_args, result);
+        Cleanup();
     }
     return handled;
 }
@@ -874,10 +990,10 @@ CommandObjectRaw::Execute (const char *args_string, CommandReturnObject &result)
     }
     if (!handled)
     {
-        if (!CheckFlags(result))
-            return false;
-        else
+        if (CheckRequirements(result))
             handled = DoExecute (args_string, result);
+        
+        Cleanup();
     }
     return handled;
 }
@@ -900,6 +1016,7 @@ CommandObject::ArgumentTableEntry
 CommandObject::g_arguments_data[] =
 {
     { eArgTypeAddress, "address", CommandCompletions::eNoCompletion, { NULL, false }, "A valid address in the target program's execution space." },
+    { eArgTypeAddressOrExpression, "address-expression", CommandCompletions::eNoCompletion, { NULL, false }, "An expression that resolves to an address." },
     { eArgTypeAliasName, "alias-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of an abbreviation (alias) for a debugger command." },
     { eArgTypeAliasOptions, "options-for-aliased-command", CommandCompletions::eNoCompletion, { NULL, false }, "Command options to be used as part of an alias (abbreviation) definition.  (See 'help commands alias' for more information.)" },
     { eArgTypeArchitecture, "arch", CommandCompletions::eArchitectureCompletion, { arch_helper, true }, "The architecture name, e.g. i386 or x86_64." },
@@ -910,6 +1027,8 @@ CommandObject::g_arguments_data[] =
     { eArgTypeClassName, "class-name", CommandCompletions::eNoCompletion, { NULL, false }, "Then name of a class from the debug information in the program." },
     { eArgTypeCommandName, "cmd-name", CommandCompletions::eNoCompletion, { NULL, false }, "A debugger command (may be multiple words), without any options or arguments." },
     { eArgTypeCount, "count", CommandCompletions::eNoCompletion, { NULL, false }, "An unsigned integer." },
+    { eArgTypeDirectoryName, "directory", CommandCompletions::eDiskDirectoryCompletion, { NULL, false }, "A directory name." },
+    { eArgTypeDisassemblyFlavor, "disassembly-flavor", CommandCompletions::eNoCompletion, { NULL, false }, "A disassembly flavor recognized by your disassembly plugin.  Currently the only valid options are \"att\" and \"intel\" for Intel targets" },
     { eArgTypeEndAddress, "end-address", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeExpression, "expr", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeExpressionPath, "expr-path", CommandCompletions::eNoCompletion, { ExprPathHelpTextCallback, true }, NULL },
@@ -919,9 +1038,10 @@ CommandObject::g_arguments_data[] =
     { eArgTypeFrameIndex, "frame-index", CommandCompletions::eNoCompletion, { NULL, false }, "Index into a thread's list of frames." },
     { eArgTypeFullName, "fullname", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeFunctionName, "function-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a function." },
+    { eArgTypeFunctionOrSymbol, "function-or-symbol", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a function or symbol." },
     { eArgTypeGDBFormat, "gdb-format", CommandCompletions::eNoCompletion, { GDBFormatHelpTextCallback, true }, NULL },
     { eArgTypeIndex, "index", CommandCompletions::eNoCompletion, { NULL, false }, "An index into a list." },
-    { eArgTypeLanguage, "language", CommandCompletions::eNoCompletion, { NULL, false }, "A source language name." },
+    { eArgTypeLanguage, "language", CommandCompletions::eNoCompletion, { LanguageTypeHelpTextCallback, true }, NULL },
     { eArgTypeLineNum, "linenum", CommandCompletions::eNoCompletion, { NULL, false }, "Line number in a source file." },
     { eArgTypeLogCategory, "log-category", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a category within a log channel, e.g. all (try \"log list\" to see a list of all channels and their categories." },
     { eArgTypeLogChannel, "log-channel", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a log channel, e.g. process.gdb-remote (try \"log list\" to see a list of all channels and their categories)." },
@@ -933,7 +1053,6 @@ CommandObject::g_arguments_data[] =
     { eArgTypeOffset, "offset", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeOldPathPrefix, "old-path-prefix", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeOneLiner, "one-line-command", CommandCompletions::eNoCompletion, { NULL, false }, "A command that is entered as a single line of text." },
-    { eArgTypePath, "path", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypePermissionsNumber, "perms-numeric", CommandCompletions::eNoCompletion, { NULL, false }, "Permissions given as an octal number (e.g. 755)." },
     { eArgTypePermissionsString, "perms=string", CommandCompletions::eNoCompletion, { NULL, false }, "Permissions given as a string value (e.g. rw-r-xr--)." },
     { eArgTypePid, "pid", CommandCompletions::eNoCompletion, { NULL, false }, "The process ID number." },
@@ -943,7 +1062,7 @@ CommandObject::g_arguments_data[] =
     { eArgTypePythonFunction, "python-function", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a Python function." },
     { eArgTypePythonScript, "python-script", CommandCompletions::eNoCompletion, { NULL, false }, "Source code written in Python." },
     { eArgTypeQueueName, "queue-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of the thread queue." },
-    { eArgTypeRegisterName, "register-name", CommandCompletions::eNoCompletion, { NULL, false }, "A register name." },
+    { eArgTypeRegisterName, "register-name", CommandCompletions::eNoCompletion, { RegisterNameHelpTextCallback, true }, NULL },
     { eArgTypeRegularExpression, "regular-expression", CommandCompletions::eNoCompletion, { NULL, false }, "A regular expression." },
     { eArgTypeRunArgs, "run-args", CommandCompletions::eNoCompletion, { NULL, false }, "Arguments to be passed to the target program when it starts executing." },
     { eArgTypeRunMode, "run-mode", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
