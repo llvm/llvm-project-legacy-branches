@@ -1204,13 +1204,13 @@ ScanFormatDescriptor (const char* var_name_begin,
         *var_name_final = *percent_position;
         std::string format_name(*var_name_final+1, var_name_end-*var_name_final-1);
         if (log)
-            log->Printf("ScanFormatDescriptor] parsing %s as a format descriptor", format_name.c_str());
+            log->Printf("[ScanFormatDescriptor] parsing %s as a format descriptor", format_name.c_str());
         if ( !FormatManager::GetFormatFromCString(format_name.c_str(),
                                                   true,
                                                   *custom_format) )
         {
             if (log)
-                log->Printf("ScanFormatDescriptor] %s is an unknown format", format_name.c_str());
+                log->Printf("[ScanFormatDescriptor] %s is an unknown format", format_name.c_str());
             
             switch (format_name.front())
             {
@@ -1232,6 +1232,12 @@ ScanFormatDescriptor (const char* var_name_begin,
                 case 'T': // if this is a 'T', print the type
                     *val_obj_display = ValueObject::eValueObjectRepresentationStyleType;
                     break;
+                case 'N': // if this is a 'N', print the name
+                    *val_obj_display = ValueObject::eValueObjectRepresentationStyleName;
+                    break;
+                case '>': // if this is a '>', print the name
+                    *val_obj_display = ValueObject::eValueObjectRepresentationStyleExpressionPath;
+                    break;
                 default:
                     if (log)
                         log->Printf("ScanFormatDescriptor] %s is an error, leaving the previous value alone", format_name.c_str());
@@ -1242,12 +1248,12 @@ ScanFormatDescriptor (const char* var_name_begin,
         else
         {
             if (log)
-                log->Printf("ScanFormatDescriptor] will display value for this VO");
+                log->Printf("[ScanFormatDescriptor] will display value for this VO");
             *val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
         }
     }
     if (log)
-        log->Printf("ScanFormatDescriptor] final format description outcome: custom_format = %d, val_obj_display = %d",
+        log->Printf("[ScanFormatDescriptor] final format description outcome: custom_format = %d, val_obj_display = %d",
                     *custom_format,
                     *val_obj_display);
     return true;
@@ -1469,10 +1475,9 @@ FormatPromptRecurse
                                 {
                                     do_deref_pointer = true;
                                     var_name_begin++;
+                                    if (log)
+                                        log->Printf("[Debugger::FormatPrompt] found a deref, new string is: %s",var_name_begin);
                                 }
-                                
-                                if (log)
-                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
                                 
                                 if (*var_name_begin == 's')
                                 {
@@ -1481,17 +1486,16 @@ FormatPromptRecurse
                                     if (!valobj)
                                         break;
                                     var_name_begin++;
+                                    if (log)
+                                        log->Printf("[Debugger::FormatPrompt] found a synthetic, new string is: %s",var_name_begin);
                                 }
-                                
-                                if (log)
-                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
                                 
                                 // should be a 'v' by now
                                 if (*var_name_begin != 'v')
                                     break;
                                 
                                 if (log)
-                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
+                                    log->Printf("[Debugger::FormatPrompt] string I am working with: %s",var_name_begin);
                                                                 
                                 ValueObject::ExpressionPathAftermath what_next = (do_deref_pointer ?
                                                                                   ValueObject::eExpressionPathAftermathDereference : ValueObject::eExpressionPathAftermathNothing);
@@ -1803,6 +1807,24 @@ FormatPromptRecurse
                                                 }
                                             }
                                         }
+                                        else if (::strncmp(var_name_begin, "script:", strlen("script:")) == 0)
+                                        {
+                                            var_name_begin += ::strlen("script:");
+                                            std::string script_name(var_name_begin,var_name_end);
+                                            ScriptInterpreter* script_interpreter = process->GetTarget().GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
+                                            if (script_interpreter)
+                                            {
+                                                std::string script_output;
+                                                Error script_error;
+                                                if (script_interpreter->RunScriptFormatKeyword(script_name.c_str(), process,script_output,script_error) && script_error.Success())
+                                                {
+                                                    s.Printf("%s", script_output.c_str());
+                                                    var_success = true;
+                                                }
+                                                else
+                                                    s.Printf("<error: %s>",script_error.AsCString());
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1872,6 +1894,24 @@ FormatPromptRecurse
                                                 }
                                             }
                                         }
+                                        else if (::strncmp(var_name_begin, "script:", strlen("script:")) == 0)
+                                        {
+                                            var_name_begin += ::strlen("script:");
+                                            std::string script_name(var_name_begin,var_name_end);
+                                            ScriptInterpreter* script_interpreter = thread->GetProcess()->GetTarget().GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
+                                            if (script_interpreter)
+                                            {
+                                                std::string script_output;
+                                                Error script_error;
+                                                if (script_interpreter->RunScriptFormatKeyword(script_name.c_str(), thread,script_output,script_error) && script_error.Success())
+                                                {
+                                                    s.Printf("%s", script_output.c_str());
+                                                    var_success = true;
+                                                }
+                                                else
+                                                    s.Printf("<error: %s>",script_error.AsCString());
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1911,6 +1951,24 @@ FormatPromptRecurse
                                         {
                                             s.PutCString (arch.GetArchitectureName());
                                             var_success = true;
+                                        }
+                                    }
+                                    else if (::strncmp(var_name_begin, "script:", strlen("script:")) == 0)
+                                    {
+                                        var_name_begin += ::strlen("script:");
+                                        std::string script_name(var_name_begin,var_name_end);
+                                        ScriptInterpreter* script_interpreter = target->GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
+                                        if (script_interpreter)
+                                        {
+                                            std::string script_output;
+                                            Error script_error;
+                                            if (script_interpreter->RunScriptFormatKeyword(script_name.c_str(), target,script_output,script_error) && script_error.Success())
+                                            {
+                                                s.Printf("%s", script_output.c_str());
+                                                var_success = true;
+                                            }
+                                            else
+                                                s.Printf("<error: %s>",script_error.AsCString());
                                         }
                                     }
                                 }
@@ -2018,6 +2076,24 @@ FormatPromptRecurse
                                                     if (reg_info)
                                                         var_success = true;
                                                 }
+                                            }
+                                        }
+                                        else if (::strncmp(var_name_begin, "script:", strlen("script:")) == 0)
+                                        {
+                                            var_name_begin += ::strlen("script:");
+                                            std::string script_name(var_name_begin,var_name_end);
+                                            ScriptInterpreter* script_interpreter = frame->GetThread()->GetProcess()->GetTarget().GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
+                                            if (script_interpreter)
+                                            {
+                                                std::string script_output;
+                                                Error script_error;
+                                                if (script_interpreter->RunScriptFormatKeyword(script_name.c_str(), frame,script_output,script_error) && script_error.Success())
+                                                {
+                                                    s.Printf("%s", script_output.c_str());
+                                                    var_success = true;
+                                                }
+                                                else
+                                                    s.Printf("<error: %s>",script_error.AsCString());
                                             }
                                         }
                                     }

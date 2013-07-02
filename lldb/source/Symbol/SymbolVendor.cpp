@@ -35,21 +35,14 @@ SymbolVendor*
 SymbolVendor::FindPlugin (const lldb::ModuleSP &module_sp, lldb_private::Stream *feedback_strm)
 {
     std::unique_ptr<SymbolVendor> instance_ap;
-    //----------------------------------------------------------------------
-    // We currently only have one debug symbol parser...
-    //----------------------------------------------------------------------
     SymbolVendorCreateInstance create_callback;
+
     for (size_t idx = 0; (create_callback = PluginManager::GetSymbolVendorCreateCallbackAtIndex(idx)) != NULL; ++idx)
     {
         instance_ap.reset(create_callback(module_sp, feedback_strm));
 
         if (instance_ap.get())
         {
-            // TODO: make sure this symbol vendor is what we want. We
-            // currently are just returning the first one we find, but
-            // we may want to call this function only when we have our
-            // main executable module and then give all symbol vendor
-            // plug-ins a chance to compete for who wins.
             return instance_ap.release();
         }
     }
@@ -84,7 +77,7 @@ SymbolVendor::~SymbolVendor()
 }
 
 //----------------------------------------------------------------------
-// Add a represantion given an object file.
+// Add a represention given an object file.
 //----------------------------------------------------------------------
 void
 SymbolVendor::AddSymbolFileRepresentation(const ObjectFileSP &objfile_sp)
@@ -352,6 +345,21 @@ SymbolVendor::FindTypes (const SymbolContext& sc, const ConstString &name, const
     return 0;
 }
 
+size_t
+SymbolVendor::GetTypes (SymbolContextScope *sc_scope,
+                        uint32_t type_mask,
+                        lldb_private::TypeList &type_list)
+{
+    ModuleSP module_sp(GetModule());
+    if (module_sp)
+    {
+        lldb_private::Mutex::Locker locker(module_sp->GetMutex());
+        if (m_sym_file_ap.get())
+            return m_sym_file_ap->GetTypes (sc_scope, type_mask, type_list);
+    }
+    return 0;
+}
+
 ClangNamespaceDecl
 SymbolVendor::FindNamespace(const SymbolContext& sc, const ConstString &name, const ClangNamespaceDecl *parent_namespace_decl)
 {
@@ -429,6 +437,36 @@ SymbolVendor::GetCompileUnitAtIndex(size_t idx)
     return cu_sp;
 }
 
+Symtab *
+SymbolVendor::GetSymtab ()
+{
+    ModuleSP module_sp(GetModule());
+    if (module_sp)
+    {
+        ObjectFile *objfile = module_sp->GetObjectFile();
+        if (objfile)
+        {
+            // Get symbol table from unified section list.
+            return objfile->GetSymtab (ObjectFile::eSymtabFromUnifiedSectionList);
+        }
+    }
+    return NULL;
+}
+
+void
+SymbolVendor::ClearSymtab()
+{
+    ModuleSP module_sp(GetModule());
+    if (module_sp)
+    {
+        ObjectFile *objfile = module_sp->GetObjectFile();
+        if (objfile)
+        {
+            // Clear symbol table from unified section list.
+            objfile->ClearSymtab (ObjectFile::eSymtabFromUnifiedSectionList);
+        }
+    }
+}
 
 //------------------------------------------------------------------
 // PluginInterface protocol

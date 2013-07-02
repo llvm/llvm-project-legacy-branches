@@ -260,7 +260,7 @@ ProcessGDBRemote::BuildDynamicRegisterInfo (bool force)
          ++reg_num)
     {
         const int packet_len = ::snprintf (packet, sizeof(packet), "qRegisterInfo%x", reg_num);
-        assert (packet_len < sizeof(packet));
+        assert (packet_len < (int)sizeof(packet));
         StringExtractorGDBRemote response;
         if (m_gdb_comm.SendPacketAndWaitForResponse(packet, packet_len, response, false))
         {
@@ -744,8 +744,14 @@ ProcessGDBRemote::ConnectToDebugserver (const char *connect_url)
                 m_gdb_comm.SetConnection (conn_ap.release());
                 break;
             }
+            else if (error.WasInterrupted())
+            {
+                // If we were interrupted, don't keep retrying.
+                break;
+            }
+            
             retry_count++;
-
+            
             if (retry_count >= max_retry_count)
                 break;
 
@@ -1308,7 +1314,24 @@ ProcessGDBRemote::UpdateThreadList (ThreadList &old_thread_list, ThreadList &new
             tid_t tid = m_thread_ids[i];
             ThreadSP thread_sp (old_thread_list_copy.RemoveThreadByProtocolID(tid, false));
             if (!thread_sp)
+            {
                 thread_sp.reset (new ThreadGDBRemote (*this, tid));
+                if (log && log->GetMask().Test(GDBR_LOG_VERBOSE))
+                    log->Printf(
+                            "ProcessGDBRemote::%s Making new thread: %p for thread ID: 0x%" PRIx64 ".\n",
+                            __FUNCTION__,
+                            thread_sp.get(),
+                            thread_sp->GetID());
+            }
+            else
+            {
+                if (log && log->GetMask().Test(GDBR_LOG_VERBOSE))
+                    log->Printf(
+                           "ProcessGDBRemote::%s Found old thread: %p for thread ID: 0x%" PRIx64 ".\n",
+                           __FUNCTION__,
+                           thread_sp.get(),
+                           thread_sp->GetID());
+            }
             new_thread_list.AddThread(thread_sp);
         }
     }
@@ -1397,6 +1420,13 @@ ProcessGDBRemote::SetThreadStopInfo (StringExtractor& stop_packet)
                     {
                         // Create the thread if we need to
                         thread_sp.reset (new ThreadGDBRemote (*this, tid));
+                        Log *log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_THREAD));
+                        if (log && log->GetMask().Test(GDBR_LOG_VERBOSE))
+                            log->Printf ("ProcessGDBRemote::%s Adding new thread: %p for thread ID: 0x%" PRIx64 ".\n",
+                                         __FUNCTION__,
+                                         thread_sp.get(),
+                                         thread_sp->GetID());
+                                         
                         m_thread_list_real.AddThread(thread_sp);
                     }
                     gdb_thread = static_cast<ThreadGDBRemote *> (thread_sp.get());
@@ -1936,7 +1966,7 @@ ProcessGDBRemote::DoReadMemory (addr_t addr, void *buf, size_t size, Error &erro
 
     char packet[64];
     const int packet_len = ::snprintf (packet, sizeof(packet), "m%" PRIx64 ",%" PRIx64, (uint64_t)addr, (uint64_t)size);
-    assert (packet_len + 1 < sizeof(packet));
+    assert (packet_len + 1 < (int)sizeof(packet));
     StringExtractorGDBRemote response;
     if (m_gdb_comm.SendPacketAndWaitForResponse(packet, packet_len, response, true))
     {
@@ -3072,7 +3102,7 @@ public:
                 output_strm.Printf ("  packet: %s\n", packet_cstr);
                 std::string &response_str = response.GetStringRef();
                 
-                if (strcmp(packet_cstr, "qGetProfileData") == 0)
+                if (strstr(packet_cstr, "qGetProfileData") != NULL)
                 {
                     response_str = process->GetGDBRemote().HarmonizeThreadIdsForProfileData(process, response);
                 }

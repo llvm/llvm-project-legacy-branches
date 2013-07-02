@@ -71,7 +71,6 @@ RNBRemote::RNBRemote () :
     m_rx_packets(),
     m_rx_partial_data(),
     m_rx_pthread(0),
-    m_breakpoints(),
     m_max_payload_size(DEFAULT_GDB_REMOTE_PROTOCOL_BUFSIZE - 4),
     m_extended_mode(false),
     m_noack_mode(false),
@@ -782,6 +781,29 @@ RNBRemote::ThreadFunctionReadRemoteData(void *arg)
 }
 
 
+// If we fail to get back a valid CPU type for the remote process,
+// make a best guess for the CPU type based on the currently running
+// debugserver binary -- the debugger may not handle the case of an
+// un-specified process CPU type correctly.
+
+static cpu_type_t
+best_guess_cpu_type ()
+{
+#if defined (__arm__)
+    return CPU_TYPE_ARM;
+#elif defined (__i386__) || defined (__x86_64__)
+    if (sizeof (char*) == 8)
+    {
+        return CPU_TYPE_X86_64;
+    }
+    else
+    {
+        return CPU_TYPE_I386;
+    }
+#endif
+    return 0;
+}
+
 
 /* Read the bytes in STR which are GDB Remote Protocol binary encoded bytes
  (8-bit bytes).
@@ -1134,6 +1156,12 @@ RNBRemote::InitializeRegisters (bool force)
     else
     {
         uint32_t cpu_type = DNBProcessGetCPUType (pid);
+        if (cpu_type == 0)
+        {
+            DNBLog ("Unable to get the process cpu_type, making a best guess.");
+            cpu_type = best_guess_cpu_type ();
+        }
+
         DNBLogThreadedIf (LOG_RNB_PROC, "RNBRemote::%s() getting gdb registers(%s)", __FUNCTION__, m_arch.c_str());
 #if defined (__i386__) || defined (__x86_64__)
         if (cpu_type == CPU_TYPE_X86_64)
@@ -1527,7 +1555,6 @@ get_value (std::string &line)
     }
     return value;
 }
-
 
 extern void FileLogCallback(void *baton, uint32_t flags, const char *format, va_list args);
 extern void ASLLogCallback(void *baton, uint32_t flags, const char *format, va_list args);
@@ -3252,32 +3279,16 @@ RNBRemote::HandlePacket_z (const char *p)
         {
             case '0':   // set software breakpoint
             case '1':   // set hardware breakpoint
-            {
-                // gdb can send multiple Z packets for the same address and
-                // these calls must be ref counted.
-                bool hardware = (break_type == '1');
+                {
+                    // gdb can send multiple Z packets for the same address and
+                    // these calls must be ref counted.
+                    bool hardware = (break_type == '1');
 
-                // Check if we currently have a breakpoint already set at this address
-                BreakpointMapIter pos = m_breakpoints.find(addr);
-                if (pos != m_breakpoints.end())
-                {
-                    // We do already have a breakpoint at this address, increment
-                    // its reference count and return OK
-                    pos->second.Retain();
-                    return SendPacket ("OK");
-                }
-                else
-                {
-                    // We do NOT already have a breakpoint at this address, So lets
-                    // create one.
-                    nub_break_t break_id = DNBBreakpointSet (pid, addr, byte_size, hardware);
-                    if (NUB_BREAK_ID_IS_VALID(break_id))
+                    if (DNBBreakpointSet (pid, addr, byte_size, hardware))
                     {
                         // We successfully created a breakpoint, now lets full out
                         // a ref count structure with the breakID and add it to our
                         // map.
-                        Breakpoint rnbBreakpoint(break_id);
-                        m_breakpoints[addr] = rnbBreakpoint;
                         return SendPacket ("OK");
                     }
                     else
@@ -3286,43 +3297,23 @@ RNBRemote::HandlePacket_z (const char *p)
                         return SendPacket ("E09");
                     }
                 }
-            }
                 break;
 
             case '2':   // set write watchpoint
             case '3':   // set read watchpoint
             case '4':   // set access watchpoint
-            {
-                bool hardware = true;
-                uint32_t watch_flags = 0;
-                if (break_type == '2')
-                    watch_flags = WATCH_TYPE_WRITE;
-                else if (break_type == '3')
-                    watch_flags = WATCH_TYPE_READ;
-                else
-                    watch_flags = WATCH_TYPE_READ | WATCH_TYPE_WRITE;
+                {
+                    bool hardware = true;
+                    uint32_t watch_flags = 0;
+                    if (break_type == '2')
+                        watch_flags = WATCH_TYPE_WRITE;
+                    else if (break_type == '3')
+                        watch_flags = WATCH_TYPE_READ;
+                    else
+                        watch_flags = WATCH_TYPE_READ | WATCH_TYPE_WRITE;
 
-                // Check if we currently have a watchpoint already set at this address
-                BreakpointMapIter pos = m_watchpoints.find(addr);
-                if (pos != m_watchpoints.end())
-                {
-                    // We do already have a watchpoint at this address, increment
-                    // its reference count and return OK
-                    pos->second.Retain();
-                    return SendPacket ("OK");
-                }
-                else
-                {
-                    // We do NOT already have a watchpoint at this address, So lets
-                    // create one.
-                    nub_watch_t watch_id = DNBWatchpointSet (pid, addr, byte_size, watch_flags, hardware);
-                    if (NUB_WATCH_ID_IS_VALID(watch_id))
+                    if (DNBWatchpointSet (pid, addr, byte_size, watch_flags, hardware))
                     {
-                        // We successfully created a watchpoint, now lets full out
-                        // a ref count structure with the watch_id and add it to our
-                        // map.
-                        Breakpoint rnbWatchpoint(watch_id);
-                        m_watchpoints[addr] = rnbWatchpoint;
                         return SendPacket ("OK");
                     }
                     else
@@ -3331,7 +3322,6 @@ RNBRemote::HandlePacket_z (const char *p)
                         return SendPacket ("E09");
                     }
                 }
-            }
                 break;
 
             default:
@@ -3345,83 +3335,27 @@ RNBRemote::HandlePacket_z (const char *p)
         {
             case '0':   // remove software breakpoint
             case '1':   // remove hardware breakpoint
-            {
-                // gdb can send multiple z packets for the same address and
-                // these calls must be ref counted.
-                BreakpointMapIter pos = m_breakpoints.find(addr);
-                if (pos != m_breakpoints.end())
+                if (DNBBreakpointClear (pid, addr))
                 {
-                    // We currently have a breakpoint at address ADDR. Decrement
-                    // its reference count, and it that count is now zero we
-                    // can clear the breakpoint.
-                    pos->second.Release();
-                    if (pos->second.RefCount() == 0)
-                    {
-                        if (DNBBreakpointClear (pid, pos->second.BreakID()))
-                        {
-                            m_breakpoints.erase(pos);
-                            return SendPacket ("OK");
-                        }
-                        else
-                        {
-                            return SendPacket ("E08");
-                        }
-                    }
-                    else
-                    {
-                        // We still have references to this breakpoint don't
-                        // delete it, just decrementing the reference count
-                        // is enough.
-                        return SendPacket ("OK");
-                    }
+                    return SendPacket ("OK");
                 }
                 else
                 {
-                    // We don't know about any breakpoints at this address
                     return SendPacket ("E08");
                 }
-            }
                 break;
 
             case '2':   // remove write watchpoint
             case '3':   // remove read watchpoint
             case '4':   // remove access watchpoint
-            {
-                // gdb can send multiple z packets for the same address and
-                // these calls must be ref counted.
-                BreakpointMapIter pos = m_watchpoints.find(addr);
-                if (pos != m_watchpoints.end())
+                if (DNBWatchpointClear (pid, addr))
                 {
-                    // We currently have a watchpoint at address ADDR. Decrement
-                    // its reference count, and it that count is now zero we
-                    // can clear the watchpoint.
-                    pos->second.Release();
-                    if (pos->second.RefCount() == 0)
-                    {
-                        if (DNBWatchpointClear (pid, pos->second.BreakID()))
-                        {
-                            m_watchpoints.erase(pos);
-                            return SendPacket ("OK");
-                        }
-                        else
-                        {
-                            return SendPacket ("E08");
-                        }
-                    }
-                    else
-                    {
-                        // We still have references to this watchpoint don't
-                        // delete it, just decrementing the reference count
-                        // is enough.
-                        return SendPacket ("OK");
-                    }
+                    return SendPacket ("OK");
                 }
                 else
                 {
-                    // We don't know about any watchpoints at this address
                     return SendPacket ("E08");
                 }
-            }
                 break;
 
             default:
@@ -4070,6 +4004,12 @@ RNBRemote::HandlePacket_qProcessInfo (const char *p)
     }
     
     cpu_type_t cputype = DNBProcessGetCPUType (pid);
+    if (cputype == 0)
+    {
+        DNBLog ("Unable to get the process cpu_type, making a best guess.");
+        cputype = best_guess_cpu_type();
+    }
+
     if (cputype != 0)
     {
         rep << "cputype:" << std::hex << cputype << ";";

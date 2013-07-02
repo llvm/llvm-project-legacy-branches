@@ -18,6 +18,7 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Host/Endian.h"
+#include "llvm/Support/Compiler.h"
 
 #include "ProcessPOSIX.h"
 #include "ProcessMonitor.h"
@@ -326,20 +327,20 @@ static uint32_t value_regs = LLDB_INVALID_REGNUM;
       eFormatHex, { kind1, kind2, kind3, kind4, fpu_##reg }, NULL, NULL }
 
 #define DEFINE_FP(reg, i)                                          \
-    { #reg#i, NULL, FP_SIZE, FPR_OFFSET(reg[i]), eEncodingVector,  \
-      eFormatVectorOfUInt8,                                        \
+    { #reg#i, NULL, FP_SIZE, LLVM_EXTENSION FPR_OFFSET(reg[i]),    \
+      eEncodingVector, eFormatVectorOfUInt8,                       \
       { gcc_dwarf_fpu_##reg##i, gcc_dwarf_fpu_##reg##i,            \
         LLDB_INVALID_REGNUM, gdb_fpu_##reg##i, fpu_##reg##i }, NULL, NULL }
 
 #define DEFINE_XMM(reg, i)                                         \
-    { #reg#i, NULL, XMM_SIZE, FPR_OFFSET(reg[i]), eEncodingVector, \
-      eFormatVectorOfUInt8,                                        \
+    { #reg#i, NULL, XMM_SIZE, LLVM_EXTENSION FPR_OFFSET(reg[i]),   \
+      eEncodingVector, eFormatVectorOfUInt8,                       \
       { gcc_dwarf_fpu_##reg##i, gcc_dwarf_fpu_##reg##i,            \
         LLDB_INVALID_REGNUM, gdb_fpu_##reg##i, fpu_##reg##i }, NULL, NULL }
 
 #define DEFINE_YMM(reg, i)                                         \
-    { #reg#i, NULL, YMM_SIZE, YMM_OFFSET(reg[i]), eEncodingVector, \
-      eFormatVectorOfUInt8,                                        \
+    { #reg#i, NULL, YMM_SIZE, LLVM_EXTENSION YMM_OFFSET(reg[i]),   \
+      eEncodingVector, eFormatVectorOfUInt8,                       \
       { gcc_dwarf_fpu_##reg##i, gcc_dwarf_fpu_##reg##i,            \
         LLDB_INVALID_REGNUM, gdb_fpu_##reg##i, fpu_##reg##i }, NULL, NULL }
 
@@ -1244,6 +1245,15 @@ RegisterContext_x86_64::IsWatchpointVacant(uint32_t hw_index)
 
     assert(hw_index < NumSupportedHardwareWatchpoints());
 
+    if (m_watchpoints_initialized == false)
+    {
+        // Reset the debug status and debug control registers
+        RegisterValue zero_bits = RegisterValue(uint64_t(0));
+        if (!WriteRegister(dr6, zero_bits) || !WriteRegister(dr7, zero_bits))
+            assert(false && "Could not initialize watchpoint registers");
+        m_watchpoints_initialized = true;
+    }
+
     if (ReadRegister(dr7, value))
     {
         uint64_t val = value.GetAsUInt64();
@@ -1312,15 +1322,6 @@ RegisterContext_x86_64::SetHardwareWatchpointWithIndex(addr_t addr, size_t size,
 
     if (read == false && write == false)
         return false;
-
-    if (m_watchpoints_initialized == false)
-    {
-        // Reset the debug status and debug control registers
-        RegisterValue zero_bits = RegisterValue(uint64_t(0));
-        if (!WriteRegister(dr6, zero_bits) || !WriteRegister(dr7, zero_bits))
-            return false;
-        m_watchpoints_initialized = true;
-    }
 
     if (!IsWatchpointVacant(hw_index))
         return false;
@@ -1391,6 +1392,15 @@ bool
 RegisterContext_x86_64::IsWatchpointHit(uint32_t hw_index)
 {
     bool is_hit = false;
+
+    if (m_watchpoints_initialized == false)
+    {
+        // Reset the debug status and debug control registers
+        RegisterValue zero_bits = RegisterValue(uint64_t(0));
+        if (!WriteRegister(dr6, zero_bits) || !WriteRegister(dr7, zero_bits))
+            assert(false && "Could not initialize watchpoint registers");
+        m_watchpoints_initialized = true;
+    }
 
     if (hw_index < NumSupportedHardwareWatchpoints())
     {

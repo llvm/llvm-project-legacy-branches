@@ -30,6 +30,7 @@
 #include "Plugins/Disassembler/llvm/DisassemblerLLVMC.h"
 #include "Plugins/Instruction/ARM/EmulateInstructionARM.h"
 #include "Plugins/SymbolVendor/MacOSX/SymbolVendorMacOSX.h"
+#include "Plugins/SymbolVendor/ELF/SymbolVendorELF.h"
 #include "Plugins/ObjectContainer/BSD-Archive/ObjectContainerBSDArchive.h"
 #include "Plugins/ObjectFile/ELF/ObjectFileELF.h"
 #include "Plugins/SymbolFile/DWARF/SymbolFileDWARF.h"
@@ -99,6 +100,7 @@ lldb_private::Initialize ()
         DisassemblerLLVMC::Initialize();
         ObjectContainerBSDArchive::Initialize();
         ObjectFileELF::Initialize();
+        SymbolVendorELF::Initialize();
         SymbolFileDWARF::Initialize();
         SymbolFileSymtab::Initialize();
         UnwindAssemblyInstEmulation::Initialize();
@@ -178,6 +180,7 @@ lldb_private::Terminate ()
     DisassemblerLLVMC::Terminate();
     ObjectContainerBSDArchive::Terminate();
     ObjectFileELF::Terminate();
+    SymbolVendorELF::Terminate();
     SymbolFileDWARF::Terminate();
     SymbolFileSymtab::Terminate();
     UnwindAssembly_x86::Terminate();
@@ -362,6 +365,10 @@ lldb_private::GetSectionTypeAsCString (SectionType sect_type)
     case eSectionTypeDWARFDebugPubTypes: return "dwarf-pubtypes";
     case eSectionTypeDWARFDebugRanges: return "dwarf-ranges";
     case eSectionTypeDWARFDebugStr: return "dwarf-str";
+    case eSectionTypeELFSymbolTable: return "elf-symbol-table";
+    case eSectionTypeELFDynamicSymbols: return "elf-dynamic-symbols";
+    case eSectionTypeELFRelocationEntries: return "elf-relocation-entries";
+    case eSectionTypeELFDynamicLinkInfo: return "elf-dynamic-link-info";
     case eSectionTypeDWARFAppleNames: return "apple-names";
     case eSectionTypeDWARFAppleTypes: return "apple-types";
     case eSectionTypeDWARFAppleNamespaces: return "apple-namespaces";

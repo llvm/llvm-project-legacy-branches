@@ -87,7 +87,7 @@ BreakpointResolverFileLine::SearchCallback
     while (sc_list.GetSize() > 0)
     {
         SymbolContextList tmp_sc_list;
-        int current_idx = 0;
+        unsigned current_idx = 0;
         SymbolContext sc;
         bool first_entry = true;
         
@@ -235,7 +235,7 @@ BreakpointResolverFileLine::GetDepth()
 void
 BreakpointResolverFileLine::GetDescription (Stream *s)
 {
-    s->Printf ("file ='%s', line = %u", m_file_spec.GetFilename().AsCString(), m_line_number);
+    s->Printf ("file = '%s', line = %u", m_file_spec.GetPath().c_str(), m_line_number);
 }
 
 void

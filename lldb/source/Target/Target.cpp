@@ -564,6 +564,7 @@ Target::CreateWatchpoint(lldb::addr_t addr, size_t size, const ClangASTType *typ
         error.SetErrorString("process is not alive");
         return wp_sp;
     }
+    
     if (addr == LLDB_INVALID_ADDRESS || size == 0)
     {
         if (size == 0)
@@ -571,6 +572,11 @@ Target::CreateWatchpoint(lldb::addr_t addr, size_t size, const ClangASTType *typ
         else
             error.SetErrorStringWithFormat("invalid watch address: %" PRIu64, addr);
         return wp_sp;
+    }
+    
+    if (!LLDB_WATCH_TYPE_IS_VALID(kind))
+    {
+        error.SetErrorStringWithFormat ("invalid watchpoint type: %d", kind);
     }
 
     // Currently we only support one watchpoint per address, with total number
@@ -588,10 +594,13 @@ Target::CreateWatchpoint(lldb::addr_t addr, size_t size, const ClangASTType *typ
             (matched_sp->WatchpointRead() ? LLDB_WATCH_TYPE_READ : 0) |
             (matched_sp->WatchpointWrite() ? LLDB_WATCH_TYPE_WRITE : 0);
         // Return the existing watchpoint if both size and type match.
-        if (size == old_size && kind == old_type) {
+        if (size == old_size && kind == old_type)
+        {
             wp_sp = matched_sp;
             wp_sp->SetEnabled(false, notify);
-        } else {
+        }
+        else
+        {
             // Nil the matched watchpoint; we will be creating a new one.
             m_process_sp->DisableWatchpoint(matched_sp.get(), notify);
             m_watchpoint_list.Remove(matched_sp->GetID(), true);
@@ -773,6 +782,7 @@ Target::RemoveAllWatchpoints (bool end_to_end)
             return false;
     }
     m_watchpoint_list.RemoveAll (true);
+    m_last_created_watchpoint.reset();
     return true; // Success!
 }
 
@@ -940,6 +950,10 @@ Target::RemoveWatchpointByID (lldb::watch_id_t watch_id)
     if (log)
         log->Printf ("Target::%s (watch_id = %i)\n", __FUNCTION__, watch_id);
 
+    WatchpointSP watch_to_remove_sp = m_watchpoint_list.FindByID(watch_id);
+    if (watch_to_remove_sp == m_last_created_watchpoint)
+        m_last_created_watchpoint.reset();
+        
     if (DisableWatchpointByID (watch_id))
     {
         m_watchpoint_list.Remove(watch_id, true);
@@ -1186,7 +1200,7 @@ Target::ModuleIsExcludedForNonModuleSpecificSearches (const FileSpec &module_fil
         // black list.
         if (num_modules > 0)
         {
-            for (int i  = 0; i < num_modules; i++)
+            for (size_t i  = 0; i < num_modules; i++)
             {
                 if (!ModuleIsExcludedForNonModuleSpecificSearches (matchingModules.GetModuleAtIndex(i)))
                     return false;
@@ -1766,6 +1780,15 @@ Target::GetDefaultExecutableSearchPaths ()
     return FileSpecList();
 }
 
+FileSpecList
+Target::GetDefaultDebugFileSearchPaths ()
+{
+    TargetPropertiesSP properties_sp(Target::GetGlobalProperties());
+    if (properties_sp)
+        return properties_sp->GetDebugFileSearchPaths();
+    return FileSpecList();
+}
+
 ArchSpec
 Target::GetDefaultArchitecture ()
 {
@@ -2296,6 +2319,7 @@ g_properties[] =
       "and the second is where the remainder of the original build hierarchy is rooted on the local system.  "
       "Each element of the array is checked in order and the first one that results in a match wins." },
     { "exec-search-paths"                  , OptionValue::eTypeFileSpecList, false, 0                       , NULL, NULL, "Executable search paths to use when locating executable files whose paths don't match the local file system." },
+    { "debug-file-search-paths"            , OptionValue::eTypeFileSpecList, false, 0                       , NULL, NULL, "List of directories to be searched when locating debug symbol files." },
     { "max-children-count"                 , OptionValue::eTypeSInt64    , false, 256                       , NULL, NULL, "Maximum number of children to expand in any level of depth." },
     { "max-string-summary-length"          , OptionValue::eTypeSInt64    , false, 1024                      , NULL, NULL, "Maximum number of characters to show when using %s in summary strings." },
     { "max-memory-read-size"               , OptionValue::eTypeSInt64    , false, 1024                      , NULL, NULL, "Maximum number of bytes that 'memory read' will fetch before --force must be specified." },
@@ -2331,6 +2355,7 @@ enum
     ePropertySkipPrologue,
     ePropertySourceMap,
     ePropertyExecutableSearchPaths,
+    ePropertyDebugFileSearchPaths,
     ePropertyMaxChildrenCount,
     ePropertyMaxSummaryLength,
     ePropertyMaxMemReadSize,
@@ -2603,6 +2628,15 @@ FileSpecList &
 TargetProperties::GetExecutableSearchPaths ()
 {
     const uint32_t idx = ePropertyExecutableSearchPaths;
+    OptionValueFileSpecList *option_value = m_collection_sp->GetPropertyAtIndexAsOptionValueFileSpecList (NULL, false, idx);
+    assert(option_value);
+    return option_value->GetCurrentValue();
+}
+
+FileSpecList &
+TargetProperties::GetDebugFileSearchPaths ()
+{
+    const uint32_t idx = ePropertyDebugFileSearchPaths;
     OptionValueFileSpecList *option_value = m_collection_sp->GetPropertyAtIndexAsOptionValueFileSpecList (NULL, false, idx);
     assert(option_value);
     return option_value->GetCurrentValue();

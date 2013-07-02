@@ -3294,10 +3294,6 @@ public:
         return m_thread_list;
     }
     
-    // This is obsoleted and will be removed very soon.
-    uint32_t
-    GetNextThreadIndexID ();
-    
     uint32_t
     GetNextThreadIndexID (uint64_t thread_id);
     
@@ -3530,81 +3526,12 @@ public:
     ReadWriteLock &
     GetRunLock ()
     {
-        // The "m_private_run_lock" causes problems for other platforms
-        // right now, so we are leaving this in for Apple builds only
-        // until we can get the kinks worked out.
         if (Host::GetCurrentThread() == m_private_state_thread)
             return m_private_run_lock;
         else
             return m_public_run_lock;
     }
     
-    //------------------------------------------------------------------
-    // This is a cache of reserved and available memory address ranges
-    // for a single modification ID (see m_mod_id).  It's meant for use
-    // by IRMemoryMap, but to stick with the process.  These memory
-    // ranges happen to be unallocated in the underlying process, but we
-    // make no guarantee that at a future modification ID they won't be
-    // gone.  This is only useful if the underlying process can't
-    // allocate memory.
-    //
-    // When a memory space is determined to be available it is
-    // registered as reserved at the current modification.  If it is
-    // freed later, it is added to the free list if the modification ID
-    // hasn't changed.  Then clients can simply query the free list for
-    // the size they want.
-    //------------------------------------------------------------------
-    class ReservationCache
-    {
-    public:
-        ReservationCache (Process &process);
-        
-        //------------------------------------------------------------------
-        // Mark that a particular range of addresses is in use.  Adds it
-        // to the reserved map, implicitly tying it to the current
-        // modification ID.
-        //------------------------------------------------------------------
-        void
-        Reserve (lldb::addr_t addr, size_t size);
-        
-        //------------------------------------------------------------------
-        // Mark that a range is no longer in use.  If it's found in the
-        // reservation list, that means that the modification ID hasn't
-        // changed since it was reserved, so it can be safely added to the
-        // free list.
-        //------------------------------------------------------------------
-        void
-        Unreserve (lldb::addr_t addr);
-        
-        //------------------------------------------------------------------
-        // Try to find an unused range of the given size in the free list.
-        //------------------------------------------------------------------
-        lldb::addr_t
-        Find (size_t size);
-    private:
-        //------------------------------------------------------------------
-        // Clear all lists if the modification ID has changed.
-        //------------------------------------------------------------------
-        void CheckModID();
-        
-        typedef std::map <lldb::addr_t, size_t> ReservedMap;
-        typedef std::vector <lldb::addr_t> FreeList;
-        typedef std::map <size_t, FreeList> FreeMap;
-        
-        ReservedMap     m_reserved_cache;
-        FreeMap         m_free_cache;
-        
-        Process        &m_process;
-        ProcessModID    m_mod_id;
-    };
-    
-    ReservationCache &
-    GetReservationCache ()
-    {
-        return m_reservation_cache;
-    }
-private:
-    ReservationCache m_reservation_cache;
 protected:
     //------------------------------------------------------------------
     // NextEventAction provides a way to register an action on the next
@@ -3827,7 +3754,7 @@ protected:
     AppendSTDERR (const char *s, size_t len);
     
     void
-    BroadcastAsyncProfileData(const char *s, size_t len);
+    BroadcastAsyncProfileData(const std::string &one_profile_data);
     
     static void
     STDIOReadThreadBytesReceived (void *baton, const void *src, size_t src_len);

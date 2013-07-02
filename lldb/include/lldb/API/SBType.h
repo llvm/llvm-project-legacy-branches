@@ -93,6 +93,9 @@ public:
     bool
     IsFunctionType ();
     
+    bool
+    IsPolymorphicClass ();
+    
     lldb::SBType
     GetPointerType();
     
@@ -235,6 +238,8 @@ public:
     
 private:
     std::unique_ptr<lldb_private::TypeListImpl> m_opaque_ap;
+    friend class SBModule;
+    friend class SBCompileUnit;
 };
     
 

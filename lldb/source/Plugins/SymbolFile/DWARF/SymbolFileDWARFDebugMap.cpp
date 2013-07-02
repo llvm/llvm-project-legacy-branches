@@ -9,6 +9,9 @@
 
 #include "SymbolFileDWARFDebugMap.h"
 
+#include "DWARFDebugAranges.h"
+
+#include "lldb/Core/RangeMap.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/PluginManager.h"
@@ -72,9 +75,9 @@ SymbolFileDWARFDebugMap::CompileUnitInfo::GetFileRangeMap(SymbolFileDWARFDebugMa
     {
         for (auto comp_unit_info : cu_infos)
         {
-            Symtab *exe_symtab = exe_symfile->GetObjectFile()->GetSymtab();
+            Symtab *exe_symtab = exe_symfile->GetObjectFile()->GetSymtab(ObjectFile::eSymtabFromUnifiedSectionList);
             ModuleSP oso_module_sp (oso_objfile->GetModule());
-            Symtab *oso_symtab = oso_objfile->GetSymtab();
+            Symtab *oso_symtab = oso_objfile->GetSymtab(ObjectFile::eSymtabFromUnifiedSectionList);
             
             ///const uint32_t fun_resolve_flags = SymbolContext::Module | eSymbolContextCompUnit | eSymbolContextFunction;
             //SectionList *oso_sections = oso_objfile->Sections();
@@ -166,7 +169,7 @@ SymbolFileDWARFDebugMap::CompileUnitInfo::GetFileRangeMap(SymbolFileDWARFDebugMa
             
             exe_symfile->FinalizeOSOFileRanges (this);
             // We don't need the symbols anymore for the .o files
-            oso_objfile->ClearSymtab();
+            oso_objfile->ClearSymtab(ObjectFile::eSymtabFromUnifiedSectionList);
         }
     }
     return file_range_map;
@@ -327,7 +330,7 @@ SymbolFileDWARFDebugMap::InitOSO()
     // these files exist and also contain valid DWARF. If we get any of that
     // then we return the abilities of the first N_OSO's DWARF.
 
-    Symtab* symtab = m_obj_file->GetSymtab();
+    Symtab* symtab = m_obj_file->GetSymtab(ObjectFile::eSymtabFromUnifiedSectionList);
     if (symtab)
     {
         Log *log (LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_MAP));
@@ -774,7 +777,7 @@ uint32_t
 SymbolFileDWARFDebugMap::ResolveSymbolContext (const Address& exe_so_addr, uint32_t resolve_scope, SymbolContext& sc)
 {
     uint32_t resolved_flags = 0;
-    Symtab* symtab = m_obj_file->GetSymtab();
+    Symtab* symtab = m_obj_file->GetSymtab(ObjectFile::eSymtabFromUnifiedSectionList);
     if (symtab)
     {
         const addr_t exe_file_addr = exe_so_addr.GetFileAddress();
@@ -1119,6 +1122,43 @@ SymbolFileDWARFDebugMap::FindFunctions (const RegularExpression& regex, bool inc
 
     return sc_list.GetSize() - initial_size;
 }
+
+size_t
+SymbolFileDWARFDebugMap::GetTypes (SymbolContextScope *sc_scope,
+                                   uint32_t type_mask,
+                                   TypeList &type_list)
+{
+    Timer scoped_timer (__PRETTY_FUNCTION__,
+                        "SymbolFileDWARFDebugMap::GetTypes (type_mask = 0x%8.8x)",
+                        type_mask);
+    
+    
+    uint32_t initial_size = type_list.GetSize();
+    SymbolFileDWARF *oso_dwarf = NULL;
+    if (sc_scope)
+    {
+        SymbolContext sc;
+        sc_scope->CalculateSymbolContext(&sc);
+        
+        CompileUnitInfo *cu_info = GetCompUnitInfo (sc);
+        if (cu_info)
+        {
+            oso_dwarf = GetSymbolFileByCompUnitInfo (cu_info);
+            if (oso_dwarf)
+                oso_dwarf->GetTypes (sc_scope, type_mask, type_list);
+        }
+    }
+    else
+    {
+        uint32_t oso_idx = 0;
+        while ((oso_dwarf = GetSymbolFileByOSOIndex (oso_idx++)) != NULL)
+        {
+            oso_dwarf->GetTypes (sc_scope, type_mask, type_list);
+        }
+    }
+    return type_list.GetSize() - initial_size;
+}
+
 
 TypeSP
 SymbolFileDWARFDebugMap::FindDefinitionTypeForDWARFDeclContext (const DWARFDeclContext &die_decl_ctx)
@@ -1505,4 +1545,30 @@ SymbolFileDWARFDebugMap::LinkOSOLineTable (SymbolFileDWARF *oso_dwarf, LineTable
     return NULL;
 }
 
+size_t
+SymbolFileDWARFDebugMap::AddOSOARanges (SymbolFileDWARF* dwarf2Data, DWARFDebugAranges* debug_aranges)
+{
+    size_t num_line_entries_added = 0;
+    if (debug_aranges && dwarf2Data)
+    {
+        CompileUnitInfo *compile_unit_info = GetCompileUnitInfo(dwarf2Data);
+        if (compile_unit_info)
+        {
+            const FileRangeMap &file_range_map = compile_unit_info->GetFileRangeMap(this);
+            for (size_t idx = 0;
+                 idx < file_range_map.GetSize();
+                 idx++)
+            {
+                const FileRangeMap::Entry* entry = file_range_map.GetEntryAtIndex(idx);
+                if (entry)
+                {
+                    printf ("[0x%16.16" PRIx64 " - 0x%16.16" PRIx64 ")\n", entry->GetRangeBase(), entry->GetRangeEnd());
+                    debug_aranges->AppendRange(dwarf2Data->GetID(), entry->GetRangeBase(), entry->GetRangeEnd());
+                    num_line_entries_added++;
+                }
+            }
+        }
+    }
+    return num_line_entries_added;
+}
 

@@ -18,6 +18,7 @@
 #include "lldb/Core/RangeMap.h"
 #include "lldb/Core/UserID.h"
 #include "lldb/Core/VMRange.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include <limits.h>
 
 namespace lldb_private {
@@ -31,8 +32,10 @@ public:
 
     SectionList();
 
-    virtual
     ~SectionList();
+
+    bool
+    Copy (SectionList* dest_section_list);
 
     size_t
     AddSection (const lldb::SectionSP& section_sp);
@@ -78,6 +81,10 @@ public:
     bool
     ReplaceSection (lldb::user_id_t sect_id, const lldb::SectionSP& section_sp, uint32_t depth = UINT32_MAX);
 
+    // Warning, this can be slow as it's removing items from a std::vector.
+    bool
+    DeleteSection (size_t idx);
+
     lldb::SectionSP
     GetSectionAtIndex (size_t idx) const;
 
@@ -88,6 +95,13 @@ public:
     void
     Finalize ();
 
+    // Each time Finalize() is called with changes, revision id increments.
+    uint32_t
+    GetRevisionID() const
+    {
+        return m_revision_id;
+    }
+
     void
     Clear ()
     {
@@ -95,6 +109,8 @@ public:
     }
 
 protected:
+    bool        m_changed;
+    uint32_t    m_revision_id;
     collection  m_sections;
 };
 
@@ -108,6 +124,7 @@ class Section :
 public:
     // Create a root section (one that has no parent)
     Section (const lldb::ModuleSP &module_sp,
+             ObjectFile *obj_file,
              lldb::user_id_t sect_id,
              const ConstString &name,
              lldb::SectionType sect_type,
@@ -120,6 +137,7 @@ public:
     // Create a section that is a child of parent_section_sp
     Section (const lldb::SectionSP &parent_section_sp,    // NULL for top level sections, non-NULL for child sections
              const lldb::ModuleSP &module_sp,
+             ObjectFile *obj_file,
              lldb::user_id_t sect_id,
              const ConstString &name,
              lldb::SectionType sect_type,
@@ -272,11 +290,24 @@ public:
         m_children.Finalize();
     }
 
+    ObjectFile *
+    GetObjectFile ()
+    {
+        return m_obj_file;
+    }
+    const ObjectFile *
+    GetObjectFile () const 
+    {
+        return m_obj_file;
+    }
+
+
 protected:
 
+    ObjectFile      *m_obj_file;        // The object file that data for this section should be read from
+    lldb::SectionType m_type;           // The type of this section
     lldb::SectionWP m_parent_wp;        // Weak pointer to parent section
     ConstString     m_name;             // Name of this section
-    lldb::SectionType m_type;           // The type of this section
     lldb::addr_t    m_file_addr;        // The absolute file virtual address range of this section if m_parent == NULL,
                                         // offset from parent file virtual address if m_parent != NULL
     lldb::addr_t    m_byte_size;        // Size in bytes that this section will occupy in memory at runtime

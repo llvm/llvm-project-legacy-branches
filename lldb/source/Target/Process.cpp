@@ -996,7 +996,6 @@ Process::Process(Target &target, Listener &listener) :
     ProcessProperties (false),
     UserID (LLDB_INVALID_PROCESS_ID),
     Broadcaster (&(target.GetDebugger()), "lldb.process"),
-    m_reservation_cache (*this),
     m_target (target),
     m_public_state (eStateUnloaded),
     m_private_state (eStateUnloaded),
@@ -1564,6 +1563,8 @@ Process::UpdateThreadListIfNeeded ()
                         new_thread_list = real_thread_list;
                     }
                 }
+                
+                m_thread_list_real.Update(real_thread_list);
                 m_thread_list.Update (new_thread_list);
                 m_thread_list.SetStopID (stop_id);
             }
@@ -1578,15 +1579,6 @@ Process::CreateOSPluginThread (lldb::tid_t tid, lldb::addr_t context)
     if (os)
         return os->CreateThread(tid, context);
     return ThreadSP();
-}
-
-
-
-// This is obsoleted. Staged removal for Xcode.
-uint32_t
-Process::GetNextThreadIndexID ()
-{
-    return ++m_thread_index_id;
 }
 
 uint32_t
@@ -1707,10 +1699,7 @@ Process::SetPrivateState (StateType new_state)
 
     const StateType old_state = m_private_state.GetValueNoLock ();
     state_changed = old_state != new_state;
-    // This code is left commented out in case we ever need to control
-    // the private process state with another run lock. Right now it doesn't
-    // seem like we need to do this, but if we ever do, we can uncomment and
-    // use this code.
+
     const bool old_state_is_stopped = StateIsStoppedState(old_state, false);
     const bool new_state_is_stopped = StateIsStoppedState(new_state, false);
     if (old_state_is_stopped != new_state_is_stopped)
@@ -2007,12 +1996,10 @@ Process::GetBreakpointSiteList() const
 void
 Process::DisableAllBreakpointSites ()
 {
-    m_breakpoint_site_list.SetEnabledForAll (false);
-    size_t num_sites = m_breakpoint_site_list.GetSize();
-    for (size_t i = 0; i < num_sites; i++)
-    {
-        DisableBreakpointSite (m_breakpoint_site_list.GetByIndex(i).get());
-    }
+    m_breakpoint_site_list.ForEach([this](BreakpointSite *bp_site) -> void {
+//        bp_site->SetEnabled(true);
+        DisableBreakpointSite(bp_site);
+    });
 }
 
 Error
@@ -2116,29 +2103,26 @@ size_t
 Process::RemoveBreakpointOpcodesFromBuffer (addr_t bp_addr, size_t size, uint8_t *buf) const
 {
     size_t bytes_removed = 0;
-    addr_t intersect_addr;
-    size_t intersect_size;
-    size_t opcode_offset;
-    size_t idx;
-    BreakpointSiteSP bp_sp;
     BreakpointSiteList bp_sites_in_range;
 
     if (m_breakpoint_site_list.FindInRange (bp_addr, bp_addr + size, bp_sites_in_range))
     {
-        for (idx = 0; (bp_sp = bp_sites_in_range.GetByIndex(idx)); ++idx)
-        {
-            if (bp_sp->GetType() == BreakpointSite::eSoftware)
+        bp_sites_in_range.ForEach([bp_addr, size, buf, &bytes_removed](BreakpointSite *bp_site) -> void {
+            if (bp_site->GetType() == BreakpointSite::eSoftware)
             {
-                if (bp_sp->IntersectsRange(bp_addr, size, &intersect_addr, &intersect_size, &opcode_offset))
+                addr_t intersect_addr;
+                size_t intersect_size;
+                size_t opcode_offset;
+                if (bp_site->IntersectsRange(bp_addr, size, &intersect_addr, &intersect_size, &opcode_offset))
                 {
                     assert(bp_addr <= intersect_addr && intersect_addr < bp_addr + size);
                     assert(bp_addr < intersect_addr + intersect_size && intersect_addr + intersect_size <= bp_addr + size);
-                    assert(opcode_offset + intersect_size <= bp_sp->GetByteSize());
+                    assert(opcode_offset + intersect_size <= bp_site->GetByteSize());
                     size_t buf_offset = intersect_addr - bp_addr;
-                    ::memcpy(buf + buf_offset, bp_sp->GetSavedOpcodeBytes() + opcode_offset, intersect_size);
+                    ::memcpy(buf + buf_offset, bp_site->GetSavedOpcodeBytes() + opcode_offset, intersect_size);
                 }
             }
-        }
+        });
     }
     return bytes_removed;
 }
@@ -2596,64 +2580,73 @@ Process::WriteMemory (addr_t addr, const void *buf, size_t size, Error &error)
     // (enabled software breakpoints) any software traps (breakpoints) that we
     // may have placed in our tasks memory.
 
-    BreakpointSiteList::collection::const_iterator iter = m_breakpoint_site_list.GetMap()->lower_bound (addr);
-    BreakpointSiteList::collection::const_iterator end =  m_breakpoint_site_list.GetMap()->end();
-
-    if (iter == end || iter->second->GetLoadAddress() > addr + size)
-        return WriteMemoryPrivate (addr, buf, size, error);
-
-    BreakpointSiteList::collection::const_iterator pos;
-    size_t bytes_written = 0;
-    addr_t intersect_addr = 0;
-    size_t intersect_size = 0;
-    size_t opcode_offset = 0;
-    const uint8_t *ubuf = (const uint8_t *)buf;
-
-    for (pos = iter; pos != end; ++pos)
+    BreakpointSiteList bp_sites_in_range;
+    
+    if (m_breakpoint_site_list.FindInRange (addr, addr + size, bp_sites_in_range))
     {
-        BreakpointSiteSP bp;
-        bp = pos->second;
-
-        assert(bp->IntersectsRange(addr, size, &intersect_addr, &intersect_size, &opcode_offset));
-        assert(addr <= intersect_addr && intersect_addr < addr + size);
-        assert(addr < intersect_addr + intersect_size && intersect_addr + intersect_size <= addr + size);
-        assert(opcode_offset + intersect_size <= bp->GetByteSize());
-
-        // Check for bytes before this breakpoint
-        const addr_t curr_addr = addr + bytes_written;
-        if (intersect_addr > curr_addr)
+        // No breakpoint sites overlap
+        if (bp_sites_in_range.IsEmpty())
+            return WriteMemoryPrivate (addr, buf, size, error);
+        else
         {
-            // There are some bytes before this breakpoint that we need to
-            // just write to memory
-            size_t curr_size = intersect_addr - curr_addr;
-            size_t curr_bytes_written = WriteMemoryPrivate (curr_addr, 
-                                                            ubuf + bytes_written, 
-                                                            curr_size, 
-                                                            error);
-            bytes_written += curr_bytes_written;
-            if (curr_bytes_written != curr_size)
-            {
-                // We weren't able to write all of the requested bytes, we
-                // are done looping and will return the number of bytes that
-                // we have written so far.
-                break;
-            }
-        }
+            const uint8_t *ubuf = (const uint8_t *)buf;
+            uint64_t bytes_written = 0;
 
-        // Now write any bytes that would cover up any software breakpoints
-        // directly into the breakpoint opcode buffer
-        ::memcpy(bp->GetSavedOpcodeBytes() + opcode_offset, ubuf + bytes_written, intersect_size);
-        bytes_written += intersect_size;
+            bp_sites_in_range.ForEach([this, addr, size, &bytes_written, &ubuf, &error](BreakpointSite *bp) -> void {
+                
+                if (error.Success())
+                {
+                    addr_t intersect_addr;
+                    size_t intersect_size;
+                    size_t opcode_offset;
+                    const bool intersects = bp->IntersectsRange(addr, size, &intersect_addr, &intersect_size, &opcode_offset);
+                    assert(intersects);
+                    assert(addr <= intersect_addr && intersect_addr < addr + size);
+                    assert(addr < intersect_addr + intersect_size && intersect_addr + intersect_size <= addr + size);
+                    assert(opcode_offset + intersect_size <= bp->GetByteSize());
+                    
+                    // Check for bytes before this breakpoint
+                    const addr_t curr_addr = addr + bytes_written;
+                    if (intersect_addr > curr_addr)
+                    {
+                        // There are some bytes before this breakpoint that we need to
+                        // just write to memory
+                        size_t curr_size = intersect_addr - curr_addr;
+                        size_t curr_bytes_written = WriteMemoryPrivate (curr_addr,
+                                                                        ubuf + bytes_written,
+                                                                        curr_size,
+                                                                        error);
+                        bytes_written += curr_bytes_written;
+                        if (curr_bytes_written != curr_size)
+                        {
+                            // We weren't able to write all of the requested bytes, we
+                            // are done looping and will return the number of bytes that
+                            // we have written so far.
+                            if (error.Success())
+                                error.SetErrorToGenericError();
+                        }
+                    }
+                    // Now write any bytes that would cover up any software breakpoints
+                    // directly into the breakpoint opcode buffer
+                    ::memcpy(bp->GetSavedOpcodeBytes() + opcode_offset, ubuf + bytes_written, intersect_size);
+                    bytes_written += intersect_size;
+                }
+            });
+            
+            if (bytes_written < size)
+                bytes_written += WriteMemoryPrivate (addr + bytes_written,
+                                                     ubuf + bytes_written,
+                                                     size - bytes_written,
+                                                     error);
+        }
+    }
+    else
+    {
+        return WriteMemoryPrivate (addr, buf, size, error);
     }
 
     // Write any remaining bytes after the last breakpoint if we have any left
-    if (bytes_written < size)
-        bytes_written += WriteMemoryPrivate (addr + bytes_written, 
-                                             ubuf + bytes_written, 
-                                             size - bytes_written, 
-                                             error);
-                                             
-    return bytes_written;
+    return 0; //bytes_written;
 }
 
 size_t
@@ -3222,7 +3215,7 @@ Process::CompleteAttach ()
     size_t num_modules = target_modules.GetSize();
     ModuleSP new_executable_module_sp;
     
-    for (int i = 0; i < num_modules; i++)
+    for (size_t i = 0; i < num_modules; i++)
     {
         ModuleSP module_sp (target_modules.GetModuleAtIndexUnlocked (i));
         if (module_sp && module_sp->IsExecutable())
@@ -4404,10 +4397,10 @@ Process::AppendSTDERR (const char * s, size_t len)
 }
 
 void
-Process::BroadcastAsyncProfileData(const char *s, size_t len)
+Process::BroadcastAsyncProfileData(const std::string &one_profile_data)
 {
     Mutex::Locker locker (m_profile_data_comm_mutex);
-    m_profile_data.push_back(s);
+    m_profile_data.push_back(one_profile_data);
     BroadcastEventIfUnique (eBroadcastBitProfileData, new ProcessEventData (shared_from_this(), GetState()));
 }
 
@@ -4417,8 +4410,9 @@ Process::GetAsyncProfileData (char *buf, size_t buf_size, Error &error)
     Mutex::Locker locker(m_profile_data_comm_mutex);
     if (m_profile_data.empty())
         return 0;
-
-    size_t bytes_available = m_profile_data.front().size();
+    
+    std::string &one_profile_data = m_profile_data.front();
+    size_t bytes_available = one_profile_data.size();
     if (bytes_available > 0)
     {
         Log *log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
@@ -4426,13 +4420,13 @@ Process::GetAsyncProfileData (char *buf, size_t buf_size, Error &error)
             log->Printf ("Process::GetProfileData (buf = %p, size = %" PRIu64 ")", buf, (uint64_t)buf_size);
         if (bytes_available > buf_size)
         {
-            memcpy(buf, m_profile_data.front().data(), buf_size);
-            m_profile_data.front().erase(0, buf_size);
+            memcpy(buf, one_profile_data.c_str(), buf_size);
+            one_profile_data.erase(0, buf_size);
             bytes_available = buf_size;
         }
         else
         {
-            memcpy(buf, m_profile_data.front().data(), bytes_available);
+            memcpy(buf, one_profile_data.c_str(), bytes_available);
             m_profile_data.erase(m_profile_data.begin());
         }
     }
@@ -4533,7 +4527,7 @@ Process::ProcessInputReaderCallback (void *baton,
         break;
         
     case eInputReaderInterrupt:
-        process->Halt ();
+        process->SendAsyncInterrupt();
         break;
             
     case eInputReaderEndOfFile:
@@ -5591,61 +5585,4 @@ Process::DidExec ()
     m_memory_cache.Clear(true);
     DoDidExec();
     CompleteAttach ();
-}
-
-Process::ReservationCache::ReservationCache (Process &process) : m_process(process)
-{
-    m_mod_id = process.GetModID();
-}
-
-void
-Process::ReservationCache::Reserve (lldb::addr_t addr, size_t size)
-{
-    CheckModID();
-    m_reserved_cache[addr] = size;
-}
-
-void
-Process::ReservationCache::Unreserve (lldb::addr_t addr)
-{
-    CheckModID();
-    ReservedMap::iterator iter = m_reserved_cache.find(addr);
-    
-    if (iter != m_reserved_cache.end())
-    {
-        size_t size = iter->second;
-        m_reserved_cache.erase(iter);
-        m_free_cache[size].push_back(addr);
-    }
-}
-
-lldb::addr_t
-Process::ReservationCache::Find (size_t size)
-{
-    CheckModID();
-    lldb::addr_t ret = LLDB_INVALID_ADDRESS;
-    FreeMap::iterator map_iter = m_free_cache.find(size);
-    if (map_iter != m_free_cache.end())
-    {
-        if (!map_iter->second.empty())
-        {
-            ret = map_iter->second.back();
-            map_iter->second.pop_back();
-            m_reserved_cache[ret] = size;
-        }
-    }
-    
-    return ret;
-}
-
-void
-Process::ReservationCache::CheckModID()
-{
-    if (m_mod_id != m_process.GetModID())
-    {
-        // wipe all our caches, they're invalid
-        m_reserved_cache.clear();
-        m_free_cache.clear();
-        m_mod_id = m_process.GetModID();
-    }
 }

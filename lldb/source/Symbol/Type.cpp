@@ -33,6 +33,33 @@
 using namespace lldb;
 using namespace lldb_private;
 
+class TypeAppendVisitor
+{
+public:
+    TypeAppendVisitor(TypeListImpl &type_list) :
+        m_type_list(type_list)
+    {
+    }
+    
+    bool
+    operator() (const lldb::TypeSP& type)
+    {
+        m_type_list.Append(TypeImplSP(new TypeImpl(type)));
+        return true;
+    }
+    
+private:
+    TypeListImpl &m_type_list;
+};
+
+void
+TypeListImpl::Append (const lldb_private::TypeList &type_list)
+{
+    TypeAppendVisitor cb(*this);
+    type_list.ForEach(cb);
+}
+
+
 Type *
 SymbolFileType::GetType ()
 {
@@ -982,3 +1009,10 @@ TypeImpl::GetDescription (lldb_private::Stream &strm,
     return true;
 }
 
+ConstString
+TypeImpl::GetName ()
+{
+    if (m_clang_ast_type.IsValid())
+        return m_clang_ast_type.GetConstQualifiedTypeName();
+    return ConstString();
+}

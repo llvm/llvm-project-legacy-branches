@@ -334,77 +334,79 @@ GetTypeForCache (ValueObject& valobj,
     return ConstString();
 }
 
-#define USE_CACHE 1
 lldb::TypeSummaryImplSP
 FormatManager::GetSummaryFormat (ValueObject& valobj,
                                  lldb::DynamicValueType use_dynamic)
 {
     TypeSummaryImplSP retval;
-#if USE_CACHE
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     ConstString valobj_type(GetTypeForCache(valobj, use_dynamic));
     if (valobj_type)
     {
         if (log)
-            log->Printf("[FormatManager::GetSummaryFormat] Looking into cache for type %s", valobj_type.AsCString("<invalid>"));
+            log->Printf("\n\n[FormatManager::GetSummaryFormat] Looking into cache for type %s", valobj_type.AsCString("<invalid>"));
         if (m_format_cache.GetSummary(valobj_type,retval))
+        {
+            if (log)
+            {
+                log->Printf("[FormatManager::GetSummaryFormat] Cache search success. Returning.");
+                if (log->GetDebug())
+                    log->Printf("[FormatManager::GetSummaryFormat] Cache hits: %llu - Cache Misses: %llu", m_format_cache.GetCacheHits(), m_format_cache.GetCacheMisses());
+            }
             return retval;
+        }
         if (log)
             log->Printf("[FormatManager::GetSummaryFormat] Cache search failed. Going normal route");
     }
-#endif
     retval = m_categories_map.GetSummaryFormat(valobj, use_dynamic);
-#if USE_CACHE
     if (valobj_type)
     {
         if (log)
             log->Printf("[FormatManager::GetSummaryFormat] Caching %p for type %s",retval.get(),valobj_type.AsCString("<invalid>"));
         m_format_cache.SetSummary(valobj_type,retval);
     }
-#ifdef LLDB_CONFIGURATION_DEBUG
-    if (log)
+    if (log && log->GetDebug())
         log->Printf("[FormatManager::GetSummaryFormat] Cache hits: %llu - Cache Misses: %llu", m_format_cache.GetCacheHits(), m_format_cache.GetCacheMisses());
-#endif
-#endif
     return retval;
 }
 
 #ifndef LLDB_DISABLE_PYTHON
 lldb::SyntheticChildrenSP
 FormatManager::GetSyntheticChildren (ValueObject& valobj,
-                      lldb::DynamicValueType use_dynamic)
+                                     lldb::DynamicValueType use_dynamic)
 {
     SyntheticChildrenSP retval;
-#if USE_CACHE
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     ConstString valobj_type(GetTypeForCache(valobj, use_dynamic));
     if (valobj_type)
     {
         if (log)
-            log->Printf("[FormatManager::GetSyntheticChildren] Looking into cache for type %s\n", valobj_type.AsCString("<invalid>"));
+            log->Printf("\n\n[FormatManager::GetSyntheticChildren] Looking into cache for type %s", valobj_type.AsCString("<invalid>"));
         if (m_format_cache.GetSynthetic(valobj_type,retval))
+        {
+            if (log)
+            {
+                log->Printf("[FormatManager::GetSyntheticChildren] Cache search success. Returning.");
+                if (log->GetDebug())
+                    log->Printf("[FormatManager::GetSyntheticChildren] Cache hits: %llu - Cache Misses: %llu", m_format_cache.GetCacheHits(), m_format_cache.GetCacheMisses());
+            }
             return retval;
+        }
         if (log)
-            log->Printf("[FormatManager::GetSyntheticChildren] Cache search failed. Going normal route\n");
+            log->Printf("[FormatManager::GetSyntheticChildren] Cache search failed. Going normal route");
     }
-#endif
     retval = m_categories_map.GetSyntheticChildren(valobj, use_dynamic);
-#if USE_CACHE
     if (valobj_type)
     {
         if (log)
-            log->Printf("[FormatManager::GetSyntheticChildren] Caching %p for type %s\n",retval.get(),valobj_type.AsCString("<invalid>"));
+            log->Printf("[FormatManager::GetSyntheticChildren] Caching %p for type %s",retval.get(),valobj_type.AsCString("<invalid>"));
         m_format_cache.SetSynthetic(valobj_type,retval);
     }
-#ifdef LLDB_CONFIGURATION_DEBUG
-    if (log)
+    if (log && log->GetDebug())
         log->Printf("[FormatManager::GetSyntheticChildren] Cache hits: %llu - Cache Misses: %llu", m_format_cache.GetCacheHits(), m_format_cache.GetCacheMisses());
-#endif
-#endif
     return retval;
 }
 #endif
-#undef USE_CACHE
 
 FormatManager::FormatManager() :
     m_format_cache(),
@@ -690,9 +692,7 @@ FormatManager::LoadSystemFormatters()
     TypeCategoryImpl::SharedPointer sys_category_sp = GetCategory(m_system_category_name);
     
     sys_category_sp->GetSummaryNavigator()->Add(ConstString("char *"), string_format);
-    sys_category_sp->GetSummaryNavigator()->Add(ConstString("const char *"), string_format);
     sys_category_sp->GetSummaryNavigator()->Add(ConstString("unsigned char *"), string_format);
-    sys_category_sp->GetSummaryNavigator()->Add(ConstString("const unsigned char *"), string_format);
     sys_category_sp->GetRegexSummaryNavigator()->Add(any_size_char_arr, string_array_format);
     
     lldb::TypeSummaryImplSP ostype_summary(new StringSummaryFormat(TypeSummaryImpl::Flags().SetCascades(false)
@@ -709,16 +709,12 @@ FormatManager::LoadSystemFormatters()
 #ifndef LLDB_DISABLE_PYTHON
     // FIXME because of a bug in the FormatNavigator we need to add a summary for both X* and const X* (<rdar://problem/12717717>)
     AddCXXSummary(sys_category_sp, lldb_private::formatters::Char16StringSummaryProvider, "char16_t * summary provider", ConstString("char16_t *"), string_flags);
-    AddCXXSummary(sys_category_sp, lldb_private::formatters::Char16StringSummaryProvider, "char16_t * summary provider", ConstString("const char16_t *"), string_flags);
     
     AddCXXSummary(sys_category_sp, lldb_private::formatters::Char32StringSummaryProvider, "char32_t * summary provider", ConstString("char32_t *"), string_flags);
-    AddCXXSummary(sys_category_sp, lldb_private::formatters::Char32StringSummaryProvider, "char32_t * summary provider", ConstString("const char32_t *"), string_flags);
     
     AddCXXSummary(sys_category_sp, lldb_private::formatters::WCharStringSummaryProvider, "wchar_t * summary provider", ConstString("wchar_t *"), string_flags);
-    AddCXXSummary(sys_category_sp, lldb_private::formatters::WCharStringSummaryProvider, "wchar_t * summary provider", ConstString("const wchar_t *"), string_flags);
     
     AddCXXSummary(sys_category_sp, lldb_private::formatters::Char16StringSummaryProvider, "unichar * summary provider", ConstString("unichar *"), string_flags);
-    AddCXXSummary(sys_category_sp, lldb_private::formatters::Char16StringSummaryProvider, "unichar * summary provider", ConstString("const unichar *"), string_flags);
     
     TypeSummaryImpl::Flags widechar_flags;
     widechar_flags.SetDontShowValue(true)

@@ -765,8 +765,8 @@ GDBRemoteCommunicationClient::SendContinuePacketAndWaitForResponse
                         while ((found = input.find(end_delimiter, pos)) != std::string::npos)
                         {
                             StringExtractorGDBRemote profileDataExtractor(input.substr(pos, found).c_str());
-                            const std::string& profile_data = HarmonizeThreadIdsForProfileData(process, profileDataExtractor);
-                            process->BroadcastAsyncProfileData (profile_data.c_str(), profile_data.length());
+                            std::string profile_data = HarmonizeThreadIdsForProfileData(process, profileDataExtractor);
+                            process->BroadcastAsyncProfileData (profile_data);
                             
                             pos = found + end_delimiter_len;
                         }
@@ -1329,7 +1329,7 @@ GDBRemoteCommunicationClient::SendAttach
     {
         char packet[64];
         const int packet_len = ::snprintf (packet, sizeof(packet), "vAttach;%" PRIx64, pid);
-        assert (packet_len < sizeof(packet));
+        assert (packet_len < (int)sizeof(packet));
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
             if (response.IsErrorResponse())
@@ -1360,7 +1360,7 @@ GDBRemoteCommunicationClient::AllocateMemory (size_t size, uint32_t permissions)
                                            permissions & lldb::ePermissionsReadable ? "r" : "",
                                            permissions & lldb::ePermissionsWritable ? "w" : "",
                                            permissions & lldb::ePermissionsExecutable ? "x" : "");
-        assert (packet_len < sizeof(packet));
+        assert (packet_len < (int)sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
@@ -1383,7 +1383,7 @@ GDBRemoteCommunicationClient::DeallocateMemory (addr_t addr)
         m_supports_alloc_dealloc_memory = eLazyBoolYes;
         char packet[64];
         const int packet_len = ::snprintf(packet, sizeof(packet), "_m%" PRIx64, (uint64_t)addr);
-        assert (packet_len < sizeof(packet));
+        assert (packet_len < (int)sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
@@ -1409,7 +1409,7 @@ GDBRemoteCommunicationClient::Detach (bool keep_stopped)
         {
             char packet[64];
             const int packet_len = ::snprintf(packet, sizeof(packet), "qSupportsDetachAndStayStopped:");
-            assert (packet_len < sizeof(packet));
+            assert (packet_len < (int)sizeof(packet));
             StringExtractorGDBRemote response;
             if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
             {
@@ -1454,7 +1454,7 @@ GDBRemoteCommunicationClient::GetMemoryRegionInfo (lldb::addr_t addr,
         m_supports_memory_region_info = eLazyBoolYes;
         char packet[64];
         const int packet_len = ::snprintf(packet, sizeof(packet), "qMemoryRegionInfo:%" PRIx64, (uint64_t)addr);
-        assert (packet_len < sizeof(packet));
+        assert (packet_len < (int)sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
@@ -1557,7 +1557,7 @@ GDBRemoteCommunicationClient::GetWatchpointSupportInfo (uint32_t &num)
     {
         char packet[64];
         const int packet_len = ::snprintf(packet, sizeof(packet), "qWatchpointSupportInfo:");
-        assert (packet_len < sizeof(packet));
+        assert (packet_len < (int)sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
@@ -1704,7 +1704,7 @@ GDBRemoteCommunicationClient::SetDisableASLR (bool enable)
 {
     char packet[32];
     const int packet_len = ::snprintf (packet, sizeof (packet), "QSetDisableASLR:%i", enable ? 1 : 0);
-    assert (packet_len < sizeof(packet));
+    assert (packet_len < (int)sizeof(packet));
     StringExtractorGDBRemote response;
     if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
     {
@@ -1787,7 +1787,7 @@ GDBRemoteCommunicationClient::GetProcessInfo (lldb::pid_t pid, ProcessInstanceIn
     {
         char packet[32];
         const int packet_len = ::snprintf (packet, sizeof (packet), "qProcessInfoPID:%" PRIu64, pid);
-        assert (packet_len < sizeof(packet));
+        assert (packet_len < (int)sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
@@ -2002,7 +2002,7 @@ GDBRemoteCommunicationClient::GetUserName (uint32_t uid, std::string &name)
     {
         char packet[32];
         const int packet_len = ::snprintf (packet, sizeof (packet), "qUserName:%i", uid);
-        assert (packet_len < sizeof(packet));
+        assert (packet_len < (int)sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
@@ -2032,7 +2032,7 @@ GDBRemoteCommunicationClient::GetGroupName (uint32_t gid, std::string &name)
     {
         char packet[32];
         const int packet_len = ::snprintf (packet, sizeof (packet), "qGroupName:%i", gid);
-        assert (packet_len < sizeof(packet));
+        assert (packet_len < (int)sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
@@ -2199,7 +2199,7 @@ GDBRemoteCommunicationClient::SetCurrentThread (uint64_t tid)
         packet_len = ::snprintf (packet, sizeof(packet), "Hg-1");
     else
         packet_len = ::snprintf (packet, sizeof(packet), "Hg%" PRIx64, tid);
-    assert (packet_len + 1 < sizeof(packet));
+    assert (packet_len + 1 < (int)sizeof(packet));
     StringExtractorGDBRemote response;
     if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
     {
@@ -2225,7 +2225,7 @@ GDBRemoteCommunicationClient::SetCurrentThreadForRun (uint64_t tid)
     else
         packet_len = ::snprintf (packet, sizeof(packet), "Hc%" PRIx64, tid);
 
-    assert (packet_len + 1 < sizeof(packet));
+    assert (packet_len + 1 < (int)sizeof(packet));
     StringExtractorGDBRemote response;
     if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
     {
@@ -2253,7 +2253,7 @@ GDBRemoteCommunicationClient::GetThreadStopInfo (lldb::tid_t tid, StringExtracto
     {
         char packet[256];
         int packet_len = ::snprintf(packet, sizeof(packet), "qThreadStopInfo%" PRIx64, tid);
-        assert (packet_len < sizeof(packet));
+        assert (packet_len < (int)sizeof(packet));
         if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
         {
             if (response.IsNormalResponse())
@@ -2293,7 +2293,7 @@ GDBRemoteCommunicationClient::SendGDBStoppointTypePacket (GDBStoppointType type,
                                        addr, 
                                        length);
 
-    assert (packet_len + 1 < sizeof(packet));
+    assert (packet_len + 1 < (int)sizeof(packet));
     StringExtractorGDBRemote response;
     if (SendPacketAndWaitForResponse(packet, packet_len, response, true))
     {

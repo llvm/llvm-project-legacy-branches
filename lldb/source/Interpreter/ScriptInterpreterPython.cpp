@@ -58,6 +58,10 @@ static ScriptInterpreter::SWIGPythonMightHaveChildrenSynthProviderInstance g_swi
 static ScriptInterpreter::SWIGPythonCallCommand g_swig_call_command = NULL;
 static ScriptInterpreter::SWIGPythonCallModuleInit g_swig_call_module_init = NULL;
 static ScriptInterpreter::SWIGPythonCreateOSPlugin g_swig_create_os_plugin = NULL;
+static ScriptInterpreter::SWIGPythonScriptKeyword_Process g_swig_run_script_keyword_process = NULL;
+static ScriptInterpreter::SWIGPythonScriptKeyword_Thread g_swig_run_script_keyword_thread = NULL;
+static ScriptInterpreter::SWIGPythonScriptKeyword_Target g_swig_run_script_keyword_target = NULL;
+static ScriptInterpreter::SWIGPythonScriptKeyword_Frame g_swig_run_script_keyword_frame = NULL;
 
 // these are the Pythonic implementations of the required callbacks
 // these are scripting-language specific, which is why they belong here
@@ -115,7 +119,6 @@ LLDBSwigPythonCallCommand (const char *python_function_name,
                            const char *session_dictionary_name,
                            lldb::DebuggerSP& debugger,
                            const char* args,
-                           std::string& err_msg,
                            lldb_private::CommandReturnObject& cmd_retobj);
 
 extern "C" bool
@@ -127,6 +130,30 @@ extern "C" void*
 LLDBSWIGPythonCreateOSPlugin (const char *python_class_name,
                               const char *session_dictionary_name,
                               const lldb::ProcessSP& process_sp);
+
+extern "C" bool
+LLDBSWIGPythonRunScriptKeywordProcess (const char* python_function_name,
+                                       const char* session_dictionary_name,
+                                       lldb::ProcessSP& process,
+                                       std::string& output);
+
+extern "C" bool
+LLDBSWIGPythonRunScriptKeywordThread (const char* python_function_name,
+                                      const char* session_dictionary_name,
+                                      lldb::ThreadSP& thread,
+                                      std::string& output);
+
+extern "C" bool
+LLDBSWIGPythonRunScriptKeywordTarget (const char* python_function_name,
+                                      const char* session_dictionary_name,
+                                      lldb::TargetSP& target,
+                                      std::string& output);
+
+extern "C" bool
+LLDBSWIGPythonRunScriptKeywordFrame (const char* python_function_name,
+                                     const char* session_dictionary_name,
+                                     lldb::StackFrameSP& frame,
+                                     std::string& output);
 
 static int
 _check_and_flush (FILE *stream)
@@ -543,7 +570,7 @@ ScriptInterpreterPython::~ScriptInterpreterPython ()
         Locker locker(this,
                       ScriptInterpreterPython::Locker::AcquireLock,
                       ScriptInterpreterPython::Locker::FreeLock);
-        Py_DECREF ((PyObject*)m_new_sysout);
+        Py_XDECREF ((PyObject*)m_new_sysout);
     }
 }
 
@@ -792,10 +819,10 @@ ScriptInterpreterPython::ExecuteOneLine (const char *command, CommandReturnObjec
                                 PythonInputReaderManager py_input(options.GetEnableIO() ? this : NULL);
                                 pvalue = PyObject_CallObject (pfunc, pargs);
                             }
-                            Py_DECREF (pargs);
+                            Py_XDECREF (pargs);
                             if (pvalue != NULL)
                             {
-                                Py_DECREF (pvalue);
+                                Py_XDECREF (pvalue);
                                 success = true;
                             }
                             else if (options.GetMaskoutErrors() && PyErr_Occurred ())
@@ -1063,7 +1090,7 @@ ScriptInterpreterPython::ExecuteOneLineWithReturn (const char *in_string,
 
         if (locals != NULL
             && should_decrement_locals)
-            Py_DECREF (locals);
+            Py_XDECREF (locals);
 
         if (py_return != NULL)
         {
@@ -1154,7 +1181,7 @@ ScriptInterpreterPython::ExecuteOneLineWithReturn (const char *in_string,
                     break;
                 }
             }
-            Py_DECREF (py_return);
+            Py_XDECREF (py_return);
             if (success)
                 ret_success = true;
             else
@@ -1227,10 +1254,10 @@ ScriptInterpreterPython::ExecuteMultipleLines (const char *in_string, const Exec
                 if (py_return != NULL)
                 {
                     success = true;
-                    Py_DECREF (py_return);
+                    Py_XDECREF (py_return);
                 }
                 if (locals && should_decrement_locals)
-                    Py_DECREF (locals);
+                    Py_XDECREF (locals);
             }
         }
     }
@@ -2580,6 +2607,147 @@ ReadPythonBacktrace (PyObject* py_backtrace)
 }
 
 bool
+ScriptInterpreterPython::RunScriptFormatKeyword (const char* impl_function,
+                                                 Process* process,
+                                                 std::string& output,
+                                                 Error& error)
+{
+    bool ret_val;
+    if (!process)
+    {
+        error.SetErrorString("no process");
+        return false;
+    }
+    if (!impl_function || !impl_function[0])
+    {
+        error.SetErrorString("no function to execute");
+        return false;
+    }
+    if (!g_swig_run_script_keyword_process)
+    {
+        error.SetErrorString("internal helper function missing");
+        return false;
+    }
+    {
+        ProcessSP process_sp(process->shared_from_this());
+        Locker py_lock(this);
+        ret_val = g_swig_run_script_keyword_process (impl_function, m_dictionary_name.c_str(), process_sp, output);
+        if (!ret_val)
+            error.SetErrorString("python script evaluation failed");
+    }
+    return ret_val;
+}
+
+bool
+ScriptInterpreterPython::RunScriptFormatKeyword (const char* impl_function,
+                                                 Thread* thread,
+                                                 std::string& output,
+                                                 Error& error)
+{
+    bool ret_val;
+    if (!thread)
+    {
+        error.SetErrorString("no thread");
+        return false;
+    }
+    if (!impl_function || !impl_function[0])
+    {
+        error.SetErrorString("no function to execute");
+        return false;
+    }
+    if (!g_swig_run_script_keyword_thread)
+    {
+        error.SetErrorString("internal helper function missing");
+        return false;
+    }
+    {
+        ThreadSP thread_sp(thread->shared_from_this());
+        Locker py_lock(this);
+        ret_val = g_swig_run_script_keyword_thread (impl_function, m_dictionary_name.c_str(), thread_sp, output);
+        if (!ret_val)
+            error.SetErrorString("python script evaluation failed");
+    }
+    return ret_val;
+}
+
+bool
+ScriptInterpreterPython::RunScriptFormatKeyword (const char* impl_function,
+                                                 Target* target,
+                                                 std::string& output,
+                                                 Error& error)
+{
+    bool ret_val;
+    if (!target)
+    {
+        error.SetErrorString("no thread");
+        return false;
+    }
+    if (!impl_function || !impl_function[0])
+    {
+        error.SetErrorString("no function to execute");
+        return false;
+    }
+    if (!g_swig_run_script_keyword_thread)
+    {
+        error.SetErrorString("internal helper function missing");
+        return false;
+    }
+    {
+        TargetSP target_sp(target->shared_from_this());
+        Locker py_lock(this);
+        ret_val = g_swig_run_script_keyword_target (impl_function, m_dictionary_name.c_str(), target_sp, output);
+        if (!ret_val)
+            error.SetErrorString("python script evaluation failed");
+    }
+    return ret_val;
+}
+
+bool
+ScriptInterpreterPython::RunScriptFormatKeyword (const char* impl_function,
+                                                 StackFrame* frame,
+                                                 std::string& output,
+                                                 Error& error)
+{
+    bool ret_val;
+    if (!frame)
+    {
+        error.SetErrorString("no frame");
+        return false;
+    }
+    if (!impl_function || !impl_function[0])
+    {
+        error.SetErrorString("no function to execute");
+        return false;
+    }
+    if (!g_swig_run_script_keyword_thread)
+    {
+        error.SetErrorString("internal helper function missing");
+        return false;
+    }
+    {
+        StackFrameSP frame_sp(frame->shared_from_this());
+        Locker py_lock(this);
+        ret_val = g_swig_run_script_keyword_frame (impl_function, m_dictionary_name.c_str(), frame_sp, output);
+        if (!ret_val)
+            error.SetErrorString("python script evaluation failed");
+    }
+    return ret_val;
+}
+
+uint64_t replace_all(std::string& str, const std::string& oldStr, const std::string& newStr)
+{
+    size_t pos = 0;
+    uint64_t matches = 0;
+    while((pos = str.find(oldStr, pos)) != std::string::npos)
+    {
+        matches++;
+        str.replace(pos, oldStr.length(), newStr);
+        pos += newStr.length();
+    }
+    return matches;
+}
+
+bool
 ScriptInterpreterPython::LoadScriptingModule (const char* pathname,
                                               bool can_reload,
                                               bool init_session,
@@ -2626,13 +2794,14 @@ ScriptInterpreterPython::LoadScriptingModule (const char* pathname,
                  target_file.GetFileType() == FileSpec::eFileTypeRegular ||
                  target_file.GetFileType() == FileSpec::eFileTypeSymbolicLink)
         {
-            const char* directory = target_file.GetDirectory().GetCString();
+            std::string directory(target_file.GetDirectory().GetCString());
+            replace_all(directory,"'","\\'");
             
             // now make sure that Python has "directory" in the search path
             StreamString command_stream;
             command_stream.Printf("if not (sys.path.__contains__('%s')):\n    sys.path.insert(1,'%s');\n\n",
-                                  directory,
-                                  directory);
+                                  directory.c_str(),
+                                  directory.c_str());
             bool syspath_retval = ExecuteMultipleLines(command_stream.GetData(), ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false).SetSetLLDBGlobals(false));
             if (!syspath_retval)
             {
@@ -2658,14 +2827,25 @@ ScriptInterpreterPython::LoadScriptingModule (const char* pathname,
         
         // check if the module is already import-ed
         command_stream.Clear();
-        command_stream.Printf("sys.getrefcount(%s)",basename.c_str());
+        command_stream.Printf("sys.modules.__contains__('%s')",basename.c_str());
+        bool does_contain = false;
         int refcount = 0;
-        // this call will fail if the module does not exist (because the parameter to it is not a string
-        // but an actual Python module object, which is non-existant if the module was not imported before)
-        bool was_imported = (ExecuteOneLineWithReturn(command_stream.GetData(),
-                                                      ScriptInterpreterPython::eScriptReturnTypeInt,
-                                                      &refcount,
-                                                      ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false).SetSetLLDBGlobals(false)) && refcount > 0);
+        // this call will succeed if the module was ever imported in any Debugger in the lifetime of the process
+        // in which this LLDB framework is living
+        bool was_imported_globally = (ExecuteOneLineWithReturn(command_stream.GetData(),
+                                                               ScriptInterpreterPython::eScriptReturnTypeBool,
+                                                               &does_contain,
+                                                               ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false).SetSetLLDBGlobals(false)) && does_contain);
+        // this call will fail if the module was not imported in this Debugger before
+        command_stream.Clear();
+        command_stream.Printf("sys.getrefcount(%s)",basename.c_str());
+        bool was_imported_locally = (ExecuteOneLineWithReturn(command_stream.GetData(),
+                                                              ScriptInterpreterPython::eScriptReturnTypeInt,
+                                                              &refcount,
+                                                              ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false).SetSetLLDBGlobals(false)) && refcount > 0);
+        
+        bool was_imported = (was_imported_globally || was_imported_locally);
+        
         if (was_imported == true && can_reload == false)
         {
             error.SetErrorString("module already imported");
@@ -2674,10 +2854,17 @@ ScriptInterpreterPython::LoadScriptingModule (const char* pathname,
 
         // now actually do the import
         command_stream.Clear();
+        
         if (was_imported)
-            command_stream.Printf("reload(%s)",basename.c_str());
+        {
+            if (!was_imported_locally)
+                command_stream.Printf("import %s ; reload(%s)",basename.c_str(),basename.c_str());
+            else
+                command_stream.Printf("reload(%s)",basename.c_str());
+        }
         else
             command_stream.Printf("import %s",basename.c_str());
+        
         bool import_retval = ExecuteMultipleLines(command_stream.GetData(), ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false).SetSetLLDBGlobals(false).SetMaskoutErrors(false));
         PyObject* py_error = PyErr_Occurred(); // per Python docs: "you do not need to Py_DECREF()" the return of this function
         
@@ -2784,7 +2971,7 @@ ScriptInterpreterPython::RunScriptBasedCommand(const char* impl_function,
         return false;
     }
     
-    bool ret_val;
+    bool ret_val = false;
     
     std::string err_msg;
 
@@ -2809,12 +2996,11 @@ ScriptInterpreterPython::RunScriptBasedCommand(const char* impl_function,
                                              m_dictionary_name.c_str(),
                                              debugger_sp,
                                              args,
-                                             err_msg,
                                              cmd_retobj);
     }
 
     if (!ret_val)
-        error.SetErrorString(err_msg.c_str());
+        error.SetErrorString("unable to execute script function");
     else
         error.Clear();
     
@@ -2880,6 +3066,10 @@ ScriptInterpreterPython::InitializeInterpreter (SWIGInitCallback python_swig_ini
     g_swig_call_command = LLDBSwigPythonCallCommand;
     g_swig_call_module_init = LLDBSwigPythonCallModuleInit;
     g_swig_create_os_plugin = LLDBSWIGPythonCreateOSPlugin;
+    g_swig_run_script_keyword_process = LLDBSWIGPythonRunScriptKeywordProcess;
+    g_swig_run_script_keyword_thread = LLDBSWIGPythonRunScriptKeywordThread;
+    g_swig_run_script_keyword_target = LLDBSWIGPythonRunScriptKeywordTarget;
+    g_swig_run_script_keyword_frame = LLDBSWIGPythonRunScriptKeywordFrame;
 }
 
 void

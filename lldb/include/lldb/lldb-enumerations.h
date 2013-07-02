@@ -518,6 +518,10 @@ namespace lldb {
         eSectionTypeDWARFAppleTypes,
         eSectionTypeDWARFAppleNamespaces,
         eSectionTypeDWARFAppleObjC,
+        eSectionTypeELFSymbolTable,       // Elf SHT_SYMTAB section
+        eSectionTypeELFDynamicSymbols,    // Elf SHT_DYNSYM section
+        eSectionTypeELFRelocationEntries, // Elf SHT_REL or SHT_REL section
+        eSectionTypeELFDynamicLinkInfo,   // Elf SHT_DYNAMIC section
         eSectionTypeEHFrame,
         eSectionTypeOther
         
@@ -613,7 +617,7 @@ namespace lldb {
         eTypeClassOther             = (1u << 31),
         // Define a mask that can be used for any type when finding types
         eTypeClassAny               = (0xffffffffu)
-    }TypeClass;
+    } TypeClass;
 
     typedef enum TemplateArgumentKind
     {

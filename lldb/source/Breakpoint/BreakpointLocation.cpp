@@ -319,6 +319,7 @@ BreakpointLocation::ConditionSaysStop (ExecutionContext &exe_ctx, Error &error)
         {
             ret = false;
             error.SetErrorString("Expression did not return a result");
+            return false;
         }
         
         result_value_sp = result_variable_sp->GetValueObject();
@@ -481,9 +482,6 @@ BreakpointLocation::ResolveBreakpointSite ()
 
     Process *process = m_owner.GetTarget().GetProcessSP().get();
     if (process == NULL)
-        return false;
-
-    if (m_owner.GetTarget().GetSectionLoadList().IsEmpty())
         return false;
 
     lldb::break_id_t new_id = process->CreateBreakpointSite (shared_from_this(), false);

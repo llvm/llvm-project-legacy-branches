@@ -861,7 +861,7 @@ FindObjCMethodDeclsWithOrigin (unsigned int current_id,
         
         clang::Selector sel = decl_name.getObjCSelector();
         
-        int num_args = sel.getNumArgs();
+        unsigned num_args = sel.getNumArgs();
         
         for (unsigned i = 0;
              i != num_args;
@@ -1741,6 +1741,10 @@ NameSearchContext::AddFunDecl (void *type)
     
     m_function_types.insert(type);
     
+    const bool isInlineSpecified = false;
+    const bool hasWrittenPrototype = true;
+    const bool isConstexprSpecified = false;
+
     clang::FunctionDecl *func_decl = FunctionDecl::Create (*m_ast_source.m_ast_context,
                                                            const_cast<DeclContext*>(m_decl_context),
                                                            SourceLocation(),
@@ -1749,10 +1753,10 @@ NameSearchContext::AddFunDecl (void *type)
                                                            QualType::getFromOpaquePtr(type),
                                                            NULL,
                                                            SC_Static,
-                                                           SC_Static,
-                                                           false,
-                                                           true);
-    
+                                                           isInlineSpecified,
+                                                           hasWrittenPrototype,
+                                                           isConstexprSpecified);
+
     // We have to do more than just synthesize the FunctionDecl.  We have to
     // synthesize ParmVarDecls for all of the FunctionDecl's arguments.  To do
     // this, we raid the function's FunctionProtoType for types.
@@ -1818,7 +1822,15 @@ NameSearchContext::AddTypeDecl(void *type)
     {
         QualType qual_type = QualType::getFromOpaquePtr(type);
 
-        if (const TagType *tag_type = qual_type->getAs<TagType>())
+        if (const TypedefType *typedef_type = llvm::dyn_cast<TypedefType>(qual_type))
+        {
+            TypedefNameDecl *typedef_name_decl = typedef_type->getDecl();
+            
+            m_decls.push_back(typedef_name_decl);
+            
+            return (NamedDecl*)typedef_name_decl;
+        }
+        else if (const TagType *tag_type = qual_type->getAs<TagType>())
         {
             TagDecl *tag_decl = tag_type->getDecl();
             
@@ -1833,14 +1845,6 @@ NameSearchContext::AddTypeDecl(void *type)
             m_decls.push_back((NamedDecl*)interface_decl);
             
             return (NamedDecl*)interface_decl;
-        }
-        else if (const TypedefType *typedef_type = qual_type->getAs<TypedefType>())
-        {
-            TypedefNameDecl *typedef_name_decl = typedef_type->getDecl();
-            
-            m_decls.push_back(typedef_name_decl);
-            
-            return (NamedDecl*)typedef_name_decl;
         }
     }
     return NULL;

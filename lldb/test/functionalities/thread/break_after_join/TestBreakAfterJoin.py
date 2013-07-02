@@ -21,6 +21,7 @@ class BreakpointAfterJoinTestCase(TestBase):
         self.breakpoint_after_join_test()
 
     @expectedFailureDarwin("llvm.org/pr15824") # thread states not properly maintained
+    @skipIfLinux # Causes hangs (llvm.org/pr16170) when run using "make check"
     @dwarf_test
     def test_with_dwarf(self):
         """Test breakpoint handling after a thread join."""
@@ -43,7 +44,7 @@ class BreakpointAfterJoinTestCase(TestBase):
 
         # The breakpoint list should show 1 location.
         self.expect("breakpoint list -f", "Breakpoint location shown correctly",
-            substrs = ["1: file ='main.cpp', line = %d, locations = 1" % self.breakpoint])
+            substrs = ["1: file = 'main.cpp', line = %d, locations = 1" % self.breakpoint])
 
         # Run the program.
         self.runCmd("run", RUN_SUCCEEDED)

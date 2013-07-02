@@ -127,8 +127,8 @@ Host::GetEnvironment (StringList &env)
 }
 
 bool
-Host::GetOSVersion(uint32_t &major, 
-                   uint32_t &minor, 
+Host::GetOSVersion(uint32_t &major,
+                   uint32_t &minor,
                    uint32_t &update)
 {
     struct utsname un;
@@ -137,10 +137,8 @@ Host::GetOSVersion(uint32_t &major,
     if (uname(&un) < 0)
         return false;
 
-    // We expect the FreeBSD OS version string in the following formats:
-    //  <n>-<string>, <n>.<n>-<string> or <n>.<n>.<n>-<string>.
-    // We should get one digit value as minimum.
-    return (sscanf(un.release, "%u.%u.%u", &major, &minor, &update) > 0);
+    status = sscanf(un.release, "%u.%u", &major, &minor);
+    return status == 2;
 }
 
 // The posix_spawn() and posix_spawnp() functions first appeared in FreeBSD 8.0.
@@ -392,7 +390,7 @@ GetFreeBSDProcessArgs (const ProcessInstanceInfoMatch *match_info_ptr,
             {
                 process_info.GetExecutableFile().SetFile(cstr, false);
 
-                if (!(match_info_ptr == NULL || 
+                if (!(match_info_ptr == NULL ||
                     NameMatches (process_info.GetExecutableFile().GetFilename().GetCString(),
                                  match_info_ptr->GetNameMatchType(),
                                  match_info_ptr->GetProcessInfo().GetName())))
@@ -417,7 +415,7 @@ GetFreeBSDProcessArgs (const ProcessInstanceInfoMatch *match_info_ptr,
                         return true;
                 }
             }
-        } 
+        }
     }
     return false;
 }
@@ -440,7 +438,7 @@ GetFreeBSDProcessUserAndGroup(ProcessInstanceInfo &process_info)
     struct kinfo_proc proc_kinfo;
     size_t proc_kinfo_size;
 
-    if (process_info.ProcessIDIsValid()) 
+    if (process_info.ProcessIDIsValid())
     {
         int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID,
             (int)process_info.GetProcessID() };

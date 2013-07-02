@@ -237,7 +237,8 @@ POSIXThread::Notify(const ProcessMessage &message)
 {
     Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
     if (log)
-        log->Printf ("POSIXThread::%s () message kind = '%s'", __FUNCTION__, message.PrintKind());
+        log->Printf ("POSIXThread::%s () message kind = '%s' for tid %" PRIu64,
+                     __FUNCTION__, message.PrintKind(), GetID());
 
     switch (message.GetKind())
     {
@@ -407,15 +408,16 @@ POSIXThread::WatchNotify(const ProcessMessage &message)
         const WatchpointList &wp_list = target.GetWatchpointList();
         lldb::WatchpointSP wp_sp = wp_list.FindByAddress(wp_monitor_addr);
 
-        if (wp_sp)
-            SetStopInfo (StopInfo::CreateStopReasonWithWatchpointID(*this,
-                                                                    wp_sp->GetID()));
+        assert(wp_sp.get() && "No watchpoint found");
+        SetStopInfo (StopInfo::CreateStopReasonWithWatchpointID(*this,
+                                                                wp_sp->GetID()));
     }
 }
 
 void
 POSIXThread::TraceNotify(const ProcessMessage &message)
 {
+#ifndef __FreeBSD__
     RegisterContextPOSIX* reg_ctx = GetRegisterContextPOSIX();
     if (reg_ctx)
     {
@@ -430,6 +432,7 @@ POSIXThread::TraceNotify(const ProcessMessage &message)
             }
         }
     }
+#endif
     SetStopInfo (StopInfo::CreateStopReasonToTrace(*this));
 }
 
@@ -467,9 +470,12 @@ POSIXThread::CrashNotify(const ProcessMessage &message)
 
     Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
     if (log)
-        log->Printf ("POSIXThread::%s () signo = %i, reason = '%s'", __FUNCTION__, signo, message.PrintCrashReason());
+        log->Printf ("POSIXThread::%s () signo = %i, reason = '%s'",
+                     __FUNCTION__, signo, message.PrintCrashReason());
 
-    SetStopInfo (lldb::StopInfoSP(new POSIXCrashStopInfo(*this, signo, message.GetCrashReason())));
+    SetStopInfo (lldb::StopInfoSP(new POSIXCrashStopInfo(*this, signo,
+                                                         message.GetCrashReason(),
+                                                         message.GetFaultAddress())));
     SetResumeSignal(signo);
 }
 
@@ -482,13 +488,13 @@ POSIXThread::ThreadNotify(const ProcessMessage &message)
 unsigned
 POSIXThread::GetRegisterIndexFromOffset(unsigned offset)
 {
-    unsigned reg;
+    unsigned reg = LLDB_INVALID_REGNUM;
     ArchSpec arch = Host::GetArchitecture();
 
     switch (arch.GetCore())
     {
     default:
-        assert(false && "CPU type not supported!");
+        llvm_unreachable("CPU type not supported!");
         break;
 
     case ArchSpec::eCore_x86_32_i386:

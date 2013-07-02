@@ -1693,6 +1693,10 @@ ValueObject::DumpPrintableRepresentation(Stream& s,
     
     {
         const char *cstr = NULL;
+        
+         // this is a local stream that we are using to ensure that the data pointed to by cstr survives
+        // long enough for us to copy it to its destination - it is necessary to have this temporary storage
+        // area for cases where our desired output is not backed by some other longer-term storage
         StreamString strm;
 
         if (custom_format != eFormatInvalid)
@@ -1723,6 +1727,15 @@ ValueObject::DumpPrintableRepresentation(Stream& s,
                 
             case eValueObjectRepresentationStyleType:
                 cstr = GetTypeName().AsCString();
+                break;
+                
+            case eValueObjectRepresentationStyleName:
+                cstr = GetName().AsCString();
+                break;
+                
+            case eValueObjectRepresentationStyleExpressionPath:
+                GetExpressionPath(strm, false);
+                cstr = strm.GetString().c_str();
                 break;
         }
         
@@ -2792,7 +2805,7 @@ ValueObject::GetValueForExpressionPath_Impl(const char* expression_cstr,
             }
             case '[':
             {
-                if (!root_clang_type_info.Test(ClangASTContext::eTypeIsArray) && !root_clang_type_info.Test(ClangASTContext::eTypeIsPointer)) // if this is not a T[] nor a T*
+                if (!root_clang_type_info.Test(ClangASTContext::eTypeIsArray) && !root_clang_type_info.Test(ClangASTContext::eTypeIsPointer) && !root_clang_type_info.Test(ClangASTContext::eTypeIsVector)) // if this is not a T[] nor a T*
                 {
                     if (!root_clang_type_info.Test(ClangASTContext::eTypeIsScalar)) // if this is not even a scalar...
                     {
@@ -2914,7 +2927,7 @@ ValueObject::GetValueForExpressionPath_Impl(const char* expression_cstr,
                         {
                             if (ClangASTType::GetMinimumLanguage(root->GetClangAST(),
                                                                  root->GetClangType()) == eLanguageTypeObjC
-                                && ClangASTContext::IsPointerType(ClangASTType::GetPointeeType(root->GetClangType())) == false
+                                && pointee_clang_type_info.AllClear(ClangASTContext::eTypeIsPointer)
                                 && root->HasSyntheticValue()
                                 && options.m_no_synthetic_children == false)
                             {
@@ -2937,7 +2950,7 @@ ValueObject::GetValueForExpressionPath_Impl(const char* expression_cstr,
                             }
                         }
                     }
-                    else if (ClangASTContext::IsScalarType(root_clang_type))
+                    else if (root_clang_type_info.Test(ClangASTContext::eTypeIsScalar))
                     {
                         root = root->GetSyntheticBitFieldChild(index, index, true);
                         if (!root.get())
@@ -2953,6 +2966,23 @@ ValueObject::GetValueForExpressionPath_Impl(const char* expression_cstr,
                             *reason_to_stop = ValueObject::eExpressionPathScanEndReasonBitfieldRangeOperatorMet;
                             *final_result = ValueObject::eExpressionPathEndResultTypeBitfield;
                             return root;
+                        }
+                    }
+                    else if (root_clang_type_info.Test(ClangASTContext::eTypeIsVector))
+                    {
+                        root = root->GetChildAtIndex(index, true);
+                        if (!root.get())
+                        {
+                            *first_unparsed = expression_cstr;
+                            *reason_to_stop = ValueObject::eExpressionPathScanEndReasonNoSuchChild;
+                            *final_result = ValueObject::eExpressionPathEndResultTypeInvalid;
+                            return ValueObjectSP();
+                        }
+                        else
+                        {
+                            *first_unparsed = end+1; // skip ]
+                            *final_result = ValueObject::eExpressionPathEndResultTypePlain;
+                            continue;
                         }
                     }
                     else if (options.m_no_synthetic_children == false)

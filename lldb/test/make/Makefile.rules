@@ -16,6 +16,7 @@
 # FRAMEWORK_INCLUDES (Darwin only) :=
 # CFLAGS_EXTRAS :=
 # LD_EXTRAS :=
+# SPLIT_DEBUG_SYMBOLS := YES
 #
 # And test/functionalities/archives/Makefile:
 # MAKE_DSYM := NO
@@ -79,6 +80,10 @@ else
 	ifeq "$(ARCH)" "i386"
 	    override ARCH := $(subst i386,32,$(ARCH))
 	endif
+
+	ifeq "$(SPLIT_DEBUG_SYMBOLS)" "YES"
+		DSYM = $(EXE).debug
+	endif
 endif
 
 CFLAGS ?= -g -O0
@@ -117,8 +122,16 @@ cxx_linker = $(if $(findstring clang,$(1)), $(subst clang,clang++,$(1)), $(if $(
 ifeq (1,$(USE_LIBSTDCPP))
 	# Clang requires an extra flag: -stdlib=libstdc++
 	ifneq (,$(findstring clang,$(CC)))
-		CFLAGS += -stdlib=libstdc++
+		CXXFLAGS += -stdlib=libstdc++
 		LDFLAGS += -stdlib=libstdc++
+	endif
+endif
+
+ifeq (1,$(USE_LIBCPP))
+	# Clang requires an extra flag: -stdlib=libstdc++
+	ifneq (,$(findstring clang,$(CC)))
+		CXXFLAGS += -stdlib=libc++
+		LDFLAGS += -stdlib=libc++
 	endif
 endif
 
@@ -221,11 +234,18 @@ endif
 #----------------------------------------------------------------------
 # Make the dSYM file from the executable if $(MAKE_DSYM) != "NO"
 #----------------------------------------------------------------------
+$(DSYM) : $(EXE)
 ifeq "$(OS)" "Darwin"
 ifneq "$(MAKE_DSYM)" "NO"
 ifeq "$(DYLIB_ONLY)" ""
-$(DSYM) : $(EXE)
 	$(DS) $(DSFLAGS) -o "$(DSYM)" "$(EXE)"
+endif
+endif
+else
+ifeq "$(SPLIT_DEBUG_SYMBOLS)" "YES"
+ifeq "$(DYLIB_ONLY)" ""
+	objcopy --only-keep-debug "$(EXE)" "$(DSYM)"
+	objcopy --strip-debug --add-gnu-debuglink="$(DSYM)" "$(EXE)" "$(EXE)"
 endif
 endif
 endif
@@ -271,6 +291,10 @@ endif
 endif
 else
 	$(LD) $(LDFLAGS) $(DYLIB_OBJECTS) -shared -o "$(DYLIB_FILENAME)"
+ifeq "$(SPLIT_DEBUG_SYMBOLS)" "YES"
+	objcopy --only-keep-debug "$(DYLIB_FILENAME)" "$(DYLIB_FILENAME).debug"
+	objcopy --strip-debug --add-gnu-debuglink="$(DYLIB_FILENAME).debug" "$(DYLIB_FILENAME)" "$(DYLIB_FILENAME)"
+endif
 endif
 
 #----------------------------------------------------------------------
@@ -332,9 +356,9 @@ dsym:	$(DSYM)
 all:	$(EXE) $(DSYM)
 clean::
 ifeq "$(DYLIB_NAME)" ""
-	rm -rf "$(EXE)" "$(DSYM)" $(OBJECTS) $(PREREQS) $(ARCHIVE_NAME) $(ARCHIVE_OBJECTS)
+	rm -rf "$(EXE)" "$(DSYM)" $(OBJECTS) $(PREREQS) $(ARCHIVE_NAME) $(ARCHIVE_OBJECTS) *.d.[0-9] *.d.[0-9][0-9] *.d.[0-9][0-9][0-9] *.d.[0-9][0-9][0-9][0-9] *.d.[0-9][0-9][0-9][0-9][0-9]
 else
-	rm -rf "$(EXE)" "$(DSYM)" $(OBJECTS) $(PREREQS) $(ARCHIVE_NAME) $(ARCHIVE_OBJECTS) $(DYLIB_OBJECTS) $(DYLIB_PREREQS) $(DYLIB_FILENAME) $(DYLIB_FILENAME).dSYM
+	rm -rf "$(EXE)" "$(DSYM)" $(OBJECTS) $(PREREQS) $(ARCHIVE_NAME) $(ARCHIVE_OBJECTS) $(DYLIB_OBJECTS) $(DYLIB_PREREQS) $(DYLIB_FILENAME) $(DYLIB_FILENAME).dSYM $(DYLIB_FILENAME).debug *.d.[0-9] *.d.[0-9][0-9] *.d.[0-9][0-9][0-9] *.d.[0-9][0-9][0-9][0-9] *.d.[0-9][0-9][0-9][0-9][0-9]
 endif
 
 #----------------------------------------------------------------------

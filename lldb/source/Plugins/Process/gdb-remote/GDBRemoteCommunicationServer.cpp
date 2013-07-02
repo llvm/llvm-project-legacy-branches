@@ -247,7 +247,7 @@ GDBRemoteCommunicationServer::SendErrorResponse (uint8_t err)
 {
     char packet[16];
     int packet_len = ::snprintf (packet, sizeof(packet), "E%2.2x", err);
-    assert (packet_len < sizeof(packet));
+    assert (packet_len < (int)sizeof(packet));
     return SendPacketNoLock (packet, packet_len);
 }
 

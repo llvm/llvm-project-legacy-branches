@@ -80,7 +80,8 @@ validCategories = {
 'expression':'Tests related to the expression parser',
 'objc':'Tests related to the Objective-C programming language support',
 'pyapi':'Tests related to the Python API',
-'basic_process': 'Basic process execution sniff tests.'
+'basic_process': 'Basic process execution sniff tests.',
+'cmdline' : 'Tests related to the LLDB command-line interface'
 }
 
 # The test suite.
@@ -101,7 +102,7 @@ just_do_benchmarks_test = False
 # Use @dsym_test or @dwarf_test decorators, defined in lldbtest.py, to mark a test
 # as a dsym or dwarf test.  Use '-N dsym' or '-N dwarf' to exclude dsym or dwarf
 # tests from running.
-dont_do_dsym_test = "linux" in sys.platform
+dont_do_dsym_test = "linux" in sys.platform or "freebsd" in sys.platform
 dont_do_dwarf_test = False
 
 # The blacklist is optional (-b blacklistFile) and allows a central place to skip
@@ -330,6 +331,9 @@ def unique_string_match(yourentry,list):
 			candidate = item
 	return candidate
 
+class ArgParseNamespace(object):
+    pass
+
 def parseOptionsAndInitTestdirs():
     """Initialize the list of directories containing our unittest scripts.
 
@@ -442,7 +446,14 @@ def parseOptionsAndInitTestdirs():
 
     group = parser.add_argument_group('Test directories')
     group.add_argument('args', metavar='test-dir', nargs='*', help='Specify a list of directory names to search for test modules named after Test*.py (test discovery). If empty, search from the current working directory instead.')
-    args = parser.parse_args()
+
+    args = ArgParseNamespace()
+
+    if ('LLDB_TEST_ARGUMENTS' in os.environ):
+        print "Arguments passed through environment: '%s'" % os.environ['LLDB_TEST_ARGUMENTS']
+        args = parser.parse_args([sys.argv[0]].__add__(os.environ['LLDB_TEST_ARGUMENTS'].split()),namespace=args)
+
+    args = parser.parse_args(namespace=args)
 
     platform_system = platform.system()
     platform_machine = platform.machine()
@@ -457,7 +468,7 @@ def parseOptionsAndInitTestdirs():
     
     # only print the args if being verbose (and parsable is off)
     if args.v and not args.q:
-        print args
+        print sys.argv
 
     if args.h:
         do_help = True
@@ -1221,6 +1232,7 @@ if not noHeaders:
 
 if not os.path.isdir(sdir_name):
     os.mkdir(sdir_name)
+where_to_save_session = os.getcwd()
 fname = os.path.join(sdir_name, "TestStarted")
 with open(fname, "w") as f:
     print >> f, "Test started at: %s\n" % timestamp_started
@@ -1467,6 +1479,8 @@ for ia in range(len(archs) if iterArchs else 1):
             def hardMarkAsSkipped(self,test):
                 getattr(test, test._testMethodName).__func__.__unittest_skip__ = True
                 getattr(test, test._testMethodName).__func__.__unittest_skip_why__ = "test case does not fall in any category of interest for this run"
+                test.__class__.__unittest_skip__ = True
+                test.__class__.__unittest_skip_why__ = "test case does not fall in any category of interest for this run"
 
             def startTest(self, test):
                 if self.shouldSkipBecauseOfCategories(test):
@@ -1581,6 +1595,7 @@ if useCategories and len(failuresPerCategory) > 0:
     for category in failuresPerCategory:
         sys.stderr.write("%s - %d\n" % (category,failuresPerCategory[category]))
 
+os.chdir(where_to_save_session)
 fname = os.path.join(sdir_name, "TestFinished")
 with open(fname, "w") as f:
     print >> f, "Test finished at: %s\n" % datetime.datetime.now().strftime("%Y-%m-%d-%H_%M_%S")

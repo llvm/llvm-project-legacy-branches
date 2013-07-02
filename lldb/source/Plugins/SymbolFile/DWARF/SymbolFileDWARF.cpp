@@ -235,6 +235,193 @@ SymbolFileDWARF::GetTypeList ()
     return m_obj_file->GetModule()->GetTypeList();
 
 }
+void
+SymbolFileDWARF::GetTypes (DWARFCompileUnit* cu,
+                           const DWARFDebugInfoEntry *die,
+                           dw_offset_t min_die_offset,
+                           dw_offset_t max_die_offset,
+                           uint32_t type_mask,
+                           TypeSet &type_set)
+{
+    if (cu)
+    {
+        if (die)
+        {
+            const dw_offset_t die_offset = die->GetOffset();
+            
+            if (die_offset >= max_die_offset)
+                return;
+            
+            if (die_offset >= min_die_offset)
+            {
+                const dw_tag_t tag = die->Tag();
+                
+                bool add_type = false;
+
+                switch (tag)
+                {
+                    case DW_TAG_array_type:         add_type = (type_mask & eTypeClassArray         ) != 0; break;
+                    case DW_TAG_unspecified_type:
+                    case DW_TAG_base_type:          add_type = (type_mask & eTypeClassBuiltin       ) != 0; break;
+                    case DW_TAG_class_type:         add_type = (type_mask & eTypeClassClass         ) != 0; break;
+                    case DW_TAG_structure_type:     add_type = (type_mask & eTypeClassStruct        ) != 0; break;
+                    case DW_TAG_union_type:         add_type = (type_mask & eTypeClassUnion         ) != 0; break;
+                    case DW_TAG_enumeration_type:   add_type = (type_mask & eTypeClassEnumeration   ) != 0; break;
+                    case DW_TAG_subroutine_type:
+                    case DW_TAG_subprogram:
+                    case DW_TAG_inlined_subroutine: add_type = (type_mask & eTypeClassFunction      ) != 0; break;
+                    case DW_TAG_pointer_type:       add_type = (type_mask & eTypeClassPointer       ) != 0; break;
+                    case DW_TAG_rvalue_reference_type:
+                    case DW_TAG_reference_type:     add_type = (type_mask & eTypeClassReference     ) != 0; break;
+                    case DW_TAG_typedef:            add_type = (type_mask & eTypeClassTypedef       ) != 0; break;
+                    case DW_TAG_ptr_to_member_type: add_type = (type_mask & eTypeClassMemberPointer ) != 0; break;
+                }
+
+                if (add_type)
+                {
+                    const bool assert_not_being_parsed = true;
+                    Type *type = ResolveTypeUID (cu, die, assert_not_being_parsed);
+                    if (type)
+                    {
+                        if (type_set.find(type) == type_set.end())
+                            type_set.insert(type);
+                    }
+                }
+            }
+            
+            for (const DWARFDebugInfoEntry *child_die = die->GetFirstChild();
+                 child_die != NULL;
+                 child_die = child_die->GetSibling())
+            {
+                GetTypes (cu, child_die, min_die_offset, max_die_offset, type_mask, type_set);
+            }
+        }
+    }
+}
+
+size_t
+SymbolFileDWARF::GetTypes (SymbolContextScope *sc_scope,
+                           uint32_t type_mask,
+                           TypeList &type_list)
+
+{
+    TypeSet type_set;
+    
+    CompileUnit *comp_unit = NULL;
+    DWARFCompileUnit* dwarf_cu = NULL;
+    if (sc_scope)
+        comp_unit = sc_scope->CalculateSymbolContextCompileUnit();
+
+    if (comp_unit)
+    {
+        dwarf_cu = GetDWARFCompileUnit(comp_unit);
+        if (dwarf_cu == 0)
+            return 0;
+        GetTypes (dwarf_cu,
+                  dwarf_cu->DIE(),
+                  dwarf_cu->GetOffset(),
+                  dwarf_cu->GetNextCompileUnitOffset(),
+                  type_mask,
+                  type_set);
+    }
+    else
+    {
+        DWARFDebugInfo* info = DebugInfo();
+        if (info)
+        {
+            const size_t num_cus = info->GetNumCompileUnits();
+            for (size_t cu_idx=0; cu_idx<num_cus; ++cu_idx)
+            {
+                dwarf_cu = info->GetCompileUnitAtIndex(cu_idx);
+                if (dwarf_cu)
+                {
+                    GetTypes (dwarf_cu,
+                              dwarf_cu->DIE(),
+                              0,
+                              UINT32_MAX,
+                              type_mask,
+                              type_set);
+                }
+            }
+        }
+    }
+//    if (m_using_apple_tables)
+//    {
+//        DWARFMappedHash::MemoryTable *apple_types = m_apple_types_ap.get();
+//        if (apple_types)
+//        {
+//            apple_types->ForEach([this, &type_set, apple_types, type_mask](const DWARFMappedHash::DIEInfoArray &die_info_array) -> bool {
+//
+//                for (auto die_info: die_info_array)
+//                {
+//                    bool add_type = TagMatchesTypeMask (type_mask, 0);
+//                    if (!add_type)
+//                    {
+//                        dw_tag_t tag = die_info.tag;
+//                        if (tag == 0)
+//                        {
+//                            const DWARFDebugInfoEntry *die = DebugInfo()->GetDIEPtr(die_info.offset, NULL);
+//                            tag = die->Tag();
+//                        }
+//                        add_type = TagMatchesTypeMask (type_mask, tag);
+//                    }
+//                    if (add_type)
+//                    {
+//                        Type *type = ResolveTypeUID(die_info.offset);
+//                        
+//                        if (type_set.find(type) == type_set.end())
+//                            type_set.insert(type);
+//                    }
+//                }
+//                return true; // Keep iterating
+//            });
+//        }
+//    }
+//    else
+//    {
+//        if (!m_indexed)
+//            Index ();
+//        
+//        m_type_index.ForEach([this, &type_set, type_mask](const char *name, uint32_t die_offset) -> bool {
+//            
+//            bool add_type = TagMatchesTypeMask (type_mask, 0);
+//
+//            if (!add_type)
+//            {
+//                const DWARFDebugInfoEntry *die = DebugInfo()->GetDIEPtr(die_offset, NULL);
+//                if (die)
+//                {
+//                    const dw_tag_t tag = die->Tag();
+//                    add_type = TagMatchesTypeMask (type_mask, tag);
+//                }
+//            }
+//            
+//            if (add_type)
+//            {
+//                Type *type = ResolveTypeUID(die_offset);
+//                
+//                if (type_set.find(type) == type_set.end())
+//                    type_set.insert(type);
+//            }
+//            return true; // Keep iterating
+//        });
+//    }
+    
+    std::set<clang_type_t> clang_type_set;
+    size_t num_types_added = 0;
+    for (Type *type : type_set)
+    {
+        clang_type_t clang_type = type->GetClangForwardType();
+        if (clang_type_set.find(clang_type) == clang_type_set.end())
+        {
+            clang_type_set.insert(clang_type);
+            type_list.Insert (type->shared_from_this());
+            ++num_types_added;
+        }
+    }
+    return num_types_added;
+}
+
 
 //----------------------------------------------------------------------
 // Gets the first parent that is a lexical block, function or inlined
@@ -356,7 +543,7 @@ SymbolFileDWARF::InitializeObject()
     ModuleSP module_sp (m_obj_file->GetModule());
     if (module_sp)
     {
-        const SectionList *section_list = m_obj_file->GetSectionList();
+        const SectionList *section_list = module_sp->GetUnifiedSectionList();
 
         const Section* section = section_list->FindSectionByName(GetDWARFMachOSegmentName ()).get();
 
@@ -517,8 +704,9 @@ SymbolFileDWARF::GetCachedSectionData (uint32_t got_flag, SectionType sect_type,
 {
     if (m_flags.IsClear (got_flag))
     {
+        ModuleSP module_sp (m_obj_file->GetModule());
         m_flags.Set (got_flag);
-        const SectionList *section_list = m_obj_file->GetSectionList();
+        const SectionList *section_list = module_sp->GetUnifiedSectionList();
         if (section_list)
         {
             SectionSP section_sp (section_list->FindSectionByType(sect_type, true));
@@ -867,7 +1055,8 @@ SymbolFileDWARF::ParseCompileUnitFunction (const SymbolContext& sc, DWARFCompile
         lldb::addr_t highest_func_addr = func_ranges.GetMaxRangeEnd (0);
         if (lowest_func_addr != LLDB_INVALID_ADDRESS && lowest_func_addr <= highest_func_addr)
         {
-            func_range.GetBaseAddress().ResolveAddressUsingFileSections (lowest_func_addr, m_obj_file->GetSectionList());
+            ModuleSP module_sp (m_obj_file->GetModule());
+            func_range.GetBaseAddress().ResolveAddressUsingFileSections (lowest_func_addr, module_sp->GetUnifiedSectionList());
             if (func_range.GetBaseAddress().IsValid())
                 func_range.SetByteSize(highest_func_addr - lowest_func_addr);
         }
@@ -4534,7 +4723,7 @@ SymbolFileDWARF::GetObjCClassSymbol (const ConstString &objc_class_name)
     Symbol *objc_class_symbol = NULL;
     if (m_obj_file)
     {
-        Symtab *symtab = m_obj_file->GetSymtab();
+        Symtab *symtab = m_obj_file->GetSymtab (ObjectFile::eSymtabFromUnifiedSectionList);
         if (symtab)
         {
             objc_class_symbol = symtab->FindFirstSymbolWithNameAndType (objc_class_name, 
@@ -5551,7 +5740,8 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                         break;
 
                     case DW_TAG_unspecified_type:
-                        if (strcmp(type_name_cstr, "nullptr_t") == 0)
+                        if (strcmp(type_name_cstr, "nullptr_t") == 0 ||
+                            strcmp(type_name_cstr, "decltype(nullptr)") == 0 )
                         {
                             resolve_state = Type::eResolveStateFull;
                             clang_type = ast.getASTContext()->NullPtrTy.getAsOpaquePtr();
@@ -7242,13 +7432,12 @@ SymbolFileDWARF::ParseVariableDIE
                         bool linked_oso_file_addr = false;
                         if (is_external && location_DW_OP_addr == 0)
                         {
-                            
                             // we have a possible uninitialized extern global
                             ConstString const_name(mangled ? mangled : name);
                             ObjectFile *debug_map_objfile = debug_map_symfile->GetObjectFile();
                             if (debug_map_objfile)
                             {
-                                Symtab *debug_map_symtab = debug_map_objfile->GetSymtab();
+                                Symtab *debug_map_symtab = debug_map_objfile->GetSymtab(ObjectFile::eSymtabFromUnifiedSectionList);
                                 if (debug_map_symtab)
                                 {
                                     Symbol *exe_symbol = debug_map_symtab->FindFirstSymbolWithNameAndType (const_name,

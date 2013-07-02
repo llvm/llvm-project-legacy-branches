@@ -23,6 +23,7 @@
 
 class SymbolFileDWARF;
 class DWARFCompileUnit;
+class DWARFDebugAranges;
 class DWARFDebugInfoEntry;
 class DWARFDeclContext;
 class DebugMapModule;
@@ -85,9 +86,12 @@ public:
     virtual uint32_t        FindFunctions (const lldb_private::RegularExpression& regex, bool include_inlines, bool append, lldb_private::SymbolContextList& sc_list);
     virtual uint32_t        FindTypes (const lldb_private::SymbolContext& sc, const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, lldb_private::TypeList& types);
     virtual lldb_private::ClangNamespaceDecl
-            FindNamespace (const lldb_private::SymbolContext& sc, 
-                           const lldb_private::ConstString &name,
-                           const lldb_private::ClangNamespaceDecl *parent_namespace_decl);
+                            FindNamespace (const lldb_private::SymbolContext& sc,
+                                           const lldb_private::ConstString &name,
+                                           const lldb_private::ClangNamespaceDecl *parent_namespace_decl);
+    virtual size_t          GetTypes (lldb_private::SymbolContextScope *sc_scope,
+                                      uint32_t type_mask,
+                                      lldb_private::TypeList &type_list);
 
 
     //------------------------------------------------------------------
@@ -125,6 +129,7 @@ protected:
         kNumFlags
     };
 
+    friend class DWARFCompileUnit;
     friend class SymbolFileDWARF;
     friend class DebugMapModule;
     struct OSOInfo
@@ -406,6 +411,10 @@ protected:
     lldb_private::LineTable *
     LinkOSOLineTable (SymbolFileDWARF *oso_symfile,
                       lldb_private::LineTable *line_table);
+    
+    size_t
+    AddOSOARanges (SymbolFileDWARF* dwarf2Data,
+                   DWARFDebugAranges* debug_aranges);
 };
 
 #endif // #ifndef SymbolFileDWARF_SymbolFileDWARFDebugMap_h_

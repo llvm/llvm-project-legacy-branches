@@ -18,6 +18,8 @@
 #include "lldb/Symbol/TaggedASTType.h"
 #include "llvm/Pass.h"
 
+#include <map>
+
 namespace llvm {
     class BasicBlock;
     class CallInst;
@@ -235,8 +237,7 @@ private:
     ///     be determined); false otherwise.
     //------------------------------------------------------------------
     bool 
-    ResolveFunctionPointers (llvm::Module &llvm_module,
-                             llvm::Function &llvm_function);
+    ResolveFunctionPointers (llvm::Module &llvm_module);
     
     //------------------------------------------------------------------
     /// A function-level pass to take the generated global value
@@ -307,7 +308,7 @@ private:
     CreateResultVariable (llvm::Function &llvm_function);
     
     //------------------------------------------------------------------
-    /// A function-level pass to find Objective-C constant strings and
+    /// A module-level pass to find Objective-C constant strings and
     /// transform them to calls to CFStringCreateWithBytes.
     //------------------------------------------------------------------
 
@@ -321,32 +322,21 @@ private:
     ///     The constant C string inside the NSString.  This will be
     ///     passed as the bytes argument to CFStringCreateWithBytes.
     ///
-    /// @param[in] FirstEntryInstruction
-    ///     An instruction early in the execution of the function.
-    ///     When this function synthesizes a call to 
-    ///     CFStringCreateWithBytes, it places the call before this
-    ///     instruction.  The instruction should come before all 
-    ///     uses of the NSString.
-    ///
     /// @return
     ///     True on success; false otherwise
     //------------------------------------------------------------------
     bool 
     RewriteObjCConstString (llvm::GlobalVariable *NSStr,
-                            llvm::GlobalVariable *CStr,
-                            llvm::Instruction *FirstEntryInstruction);    
+                            llvm::GlobalVariable *CStr);    
     
     //------------------------------------------------------------------
     /// The top-level pass implementation
-    ///
-    /// @param[in] llvm_function
-    ///     The function currently being processed.
     ///
     /// @return
     ///     True on success; false otherwise
     //------------------------------------------------------------------
     bool 
-    RewriteObjCConstStrings (llvm::Function &llvm_function);
+    RewriteObjCConstStrings ();
 
     //------------------------------------------------------------------
     /// A basic block-level pass to find all Objective-C method calls and
@@ -654,15 +644,13 @@ private:
     lldb_private::ConstString               m_result_name;              ///< The name of the result variable ($0, $1, ...)
     lldb_private::TypeFromParser            m_result_type;              ///< The type of the result variable.
     llvm::Module                           *m_module;                   ///< The module being processed, or NULL if that has not been determined yet.
-    std::unique_ptr<llvm::DataLayout>        m_target_data;              ///< The target data for the module being processed, or NULL if there is no module.
+    std::unique_ptr<llvm::DataLayout>       m_target_data;              ///< The target data for the module being processed, or NULL if there is no module.
     lldb_private::ClangExpressionDeclMap   *m_decl_map;                 ///< The DeclMap containing the Decls 
     StaticDataAllocator                     m_data_allocator;           ///< The allocator to use for constant strings
-    lldb_private::IRMemoryMap              &m_memory_map;               ///< The memory map to pass to the IR interpreter
     llvm::Constant                         *m_CFStringCreateWithBytes;  ///< The address of the function CFStringCreateWithBytes, cast to the appropriate function pointer type
     llvm::Constant                         *m_sel_registerName;         ///< The address of the function sel_registerName, cast to the appropriate function pointer type
     lldb_private::Stream                   *m_error_stream;             ///< If non-NULL, the stream on which errors should be printed
     
-    bool                                    m_has_side_effects;         ///< True if the function's result cannot be simply determined statically
     llvm::StoreInst                        *m_result_store;             ///< If non-NULL, the store instruction that writes to the result variable.  If m_has_side_effects is true, this is NULL.
     bool                                    m_result_is_pointer;        ///< True if the function's result in the AST is a pointer (see comments in ASTResultSynthesizer::SynthesizeBodyResult)
     
@@ -688,10 +676,26 @@ private:
     /// @return
     ///     True on success; false otherwise
     //------------------------------------------------------------------
-    static bool 
+    
+    class FunctionValueCache {
+    public:
+        typedef std::function <llvm::Value *(llvm::Function *)> Maker;
+
+        FunctionValueCache (Maker const &maker);
+        ~FunctionValueCache ();
+        llvm::Value *GetValue (llvm::Function *function);
+    private:
+        Maker const m_maker;
+        typedef std::map<llvm::Function *, llvm::Value *> FunctionValueMap;
+        FunctionValueMap m_values;
+    };
+    
+    FunctionValueCache m_entry_instruction_finder;
+    
+    static bool
     UnfoldConstant (llvm::Constant *old_constant, 
-                    llvm::Value *new_constant, 
-                    llvm::Instruction *first_entry_inst);
+                    FunctionValueCache &value_maker,
+                    FunctionValueCache &entry_instruction_finder);
     
     //------------------------------------------------------------------
     /// Construct a reference to m_reloc_placeholder with a given type

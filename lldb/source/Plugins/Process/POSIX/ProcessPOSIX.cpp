@@ -76,13 +76,12 @@ ProcessPOSIX::ProcessPOSIX(Target& target, Listener &listener)
       m_monitor(NULL),
       m_module(NULL),
       m_message_mutex (Mutex::eMutexTypeRecursive),
-      m_in_limbo(false),
       m_exit_now(false)
 {
     // FIXME: Putting this code in the ctor and saving the byte order in a
     // member variable is a hack to avoid const qual issues in GetByteOrder.
 	lldb::ModuleSP module = GetTarget().GetExecutableModule();
-	if (module != NULL && module->GetObjectFile() != NULL)
+	if (module && module->GetObjectFile())
 		m_byte_order = module->GetObjectFile()->GetByteOrder();
 }
 
@@ -257,18 +256,9 @@ ProcessPOSIX::DoResume()
 {
     StateType state = GetPrivateState();
 
-    assert(state == eStateStopped || state == eStateCrashed);
+    assert(state == eStateStopped);
 
-    // We are about to resume a thread that will cause the process to exit so
-    // set our exit status now.  Do not change our state if the inferior
-    // crashed.
-    if (state == eStateStopped) 
-    {
-        if (m_in_limbo)
-            SetExitStatus(m_exit_status, NULL);
-        else
-            SetPrivateState(eStateRunning);
-    }
+    SetPrivateState(eStateRunning);
 
     bool did_resume = false;
     uint32_t thread_count = m_thread_list.GetSize(false);
@@ -395,7 +385,6 @@ ProcessPOSIX::SendMessage(const ProcessMessage &message)
         thread->SetState(eStateStopped);
         if (message.GetTID() == GetID())
         {
-            m_in_limbo = true;
             m_exit_status = message.GetExitStatus();
             if (m_exit_now)
             {

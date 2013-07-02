@@ -40,6 +40,7 @@ USEDLIBS = lldbAPI.a \
 	lldbPluginLanguageRuntimeObjCAppleObjCRuntime.a \
 	lldbPluginObjectContainerBSDArchive.a \
 	lldbPluginObjectFileELF.a \
+	lldbPluginSymbolVendorELF.a \
 	lldbPluginObjectFilePECOFF.a \
 	lldbPluginOperatingSystemPython.a \
 	lldbPluginPlatformGDBServer.a \
@@ -80,7 +81,8 @@ endif
 include $(LLDB_LEVEL)/../../Makefile.config
 
 LINK_COMPONENTS := $(TARGETS_TO_BUILD) asmparser bitreader bitwriter codegen \
-                   instrumentation ipo irreader selectiondag jit mc mcjit linker
+                   instrumentation ipo irreader selectiondag jit mc mcjit \
+                   linker option
 
 ifeq ($(HOST_OS),Darwin)
   USEDLIBS += lldbHostMacOSX.a \
@@ -100,7 +102,7 @@ ifeq ($(HOST_OS),Linux)
               lldbPluginDynamicLoaderMacOSX.a
 endif
 
-ifeq ($(HOST_OS),FreeBSD)
+ifneq (,$(filter $(HOST_OS), FreeBSD GNU/kFreeBSD))
   USEDLIBS += lldbHostFreeBSD.a \
               lldbPluginProcessPOSIX.a \
               lldbPluginProcessFreeBSD.a
@@ -133,7 +135,7 @@ ifeq ($(HOST_OS),Darwin)
     endif
 endif
 
-ifeq ($(HOST_OS), $(filter $(HOST_OS), Linux GNU))
+ifeq ($(HOST_OS), $(filter $(HOST_OS), Linux GNU GNU/kFreeBSD))
     # Include everything from the .a's into the shared library.
     ProjLibsOptions := -Wl,--whole-archive $(ProjLibsOptions) \
                        -Wl,--no-whole-archive

@@ -108,9 +108,6 @@ public:
     GetSyntax ();
 
     const char *
-    Translate ();
-
-    const char *
     GetCommandName ();
 
     void
@@ -129,7 +126,7 @@ public:
     // the Command object from the Command dictionary (aliases have their own
     // deletion scheme, so they do not need to care about this)
     virtual bool
-    IsRemovable() const { return false; }
+    IsRemovable () const { return false; }
     
     bool
     IsAlias () { return m_is_alias; }
@@ -160,10 +157,11 @@ public:
     {
     }
 
+    void
+    GenerateHelpText (CommandReturnObject &result);
+
     virtual void
-    GenerateHelpText (CommandReturnObject &result)
-    {
-    }
+    GenerateHelpText (Stream &result);
 
     // this is needed in order to allow the SBCommand class to
     // transparently try and load subcommands - it will fail on

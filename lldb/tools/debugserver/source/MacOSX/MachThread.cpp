@@ -31,7 +31,6 @@ MachThread::MachThread (MachProcess *process, uint64_t unique_thread_id, thread_
     m_seq_id (GetSequenceID()),
     m_state (eStateUnloaded),
     m_state_mutex (PTHREAD_MUTEX_RECURSIVE),
-    m_break_id (INVALID_NUB_BREAK_ID),
     m_suspend_count (0),
     m_stop_exception (),
     m_arch_ap (DNBArchProtocol::Create (this)),
@@ -361,13 +360,12 @@ MachThread::Dump(uint32_t index)
     default:                        thread_run_state = "???"; break;
     }
 
-    DNBLogThreaded("[%3u] #%3u tid: 0x%8.8" PRIx64 ", pc: 0x%16.16" PRIx64 ", sp: 0x%16.16" PRIx64 ", breakID: %3d, user: %d.%6.6d, system: %d.%6.6d, cpu: %2d, policy: %2d, run_state: %2d (%s), flags: %2d, suspend_count: %2d (current %2d), sleep_time: %d",
+    DNBLogThreaded("[%3u] #%3u tid: 0x%8.8" PRIx64 ", pc: 0x%16.16" PRIx64 ", sp: 0x%16.16" PRIx64 ", user: %d.%6.6d, system: %d.%6.6d, cpu: %2d, policy: %2d, run_state: %2d (%s), flags: %2d, suspend_count: %2d (current %2d), sleep_time: %d",
         index,
         m_seq_id,
         m_unique_id,
         GetPC(INVALID_NUB_ADDRESS),
         GetSP(INVALID_NUB_ADDRESS),
-        m_break_id,
         m_basic_info.user_time.seconds,      m_basic_info.user_time.microseconds,
         m_basic_info.system_time.seconds,    m_basic_info.system_time.microseconds,
         m_basic_info.cpu_usage,
@@ -406,35 +404,23 @@ MachThread::ThreadWillResume(const DNBThreadResumeAction *thread_action, bool ot
     m_stop_exception.Clear();
 }
 
-nub_break_t
+DNBBreakpoint *
 MachThread::CurrentBreakpoint()
 {
-    return m_process->Breakpoints().FindIDByAddress(GetPC());
+    return m_process->Breakpoints().FindByAddress(GetPC());
 }
 
 bool
 MachThread::ShouldStop(bool &step_more)
 {
     // See if this thread is at a breakpoint?
-    nub_break_t breakID = CurrentBreakpoint();
+    DNBBreakpoint *bp = CurrentBreakpoint();
 
-    if (NUB_BREAK_ID_IS_VALID(breakID))
+    if (bp)
     {
         // This thread is sitting at a breakpoint, ask the breakpoint
         // if we should be stopping here.
-        if (Process()->Breakpoints().ShouldStop(ProcessID(), ThreadID(), breakID))
-            return true;
-        else
-        {
-            // The breakpoint said we shouldn't stop, but we may have gotten
-            // a signal or the user may have requested to stop in some other
-            // way. Stop if we have a valid exception (this thread won't if
-            // another thread was the reason this process stopped) and that
-            // exception, is NOT a breakpoint exception (a common case would
-            // be a SIGINT signal).
-            if (GetStopException().IsValid() && !GetStopException().IsBreakpoint())
-                return true;
-        }
+        return true;
     }
     else
     {
@@ -467,18 +453,7 @@ MachThread::ShouldStop(bool &step_more)
 bool
 MachThread::IsStepping()
 {
-#if ENABLE_AUTO_STEPPING_OVER_BP
-    // Return true if this thread is currently being stepped.
-    // MachThread::ThreadWillResume currently determines this by looking if we
-    // have been asked to single step, or if we are at a breakpoint instruction
-    // and have been asked to resume. In the latter case we need to disable the
-    // breakpoint we are at, single step, re-enable and continue.
-    nub_state_t state = GetState();
-    return ((state == eStateStepping) ||
-            (state == eStateRunning && NUB_BREAK_ID_IS_VALID(CurrentBreakpoint())));
-#else
     return GetState() == eStateStepping;
-#endif
 }
 
 
@@ -507,52 +482,10 @@ MachThread::ThreadDidStop()
     // Update the basic information for a thread
     MachThread::GetBasicInfo(m_mach_port_number, &m_basic_info);
 
-#if ENABLE_AUTO_STEPPING_OVER_BP
-    // See if we were at a breakpoint when we last resumed that we disabled,
-    // re-enable it.
-    nub_break_t breakID = CurrentBreakpoint();
-
-    if (NUB_BREAK_ID_IS_VALID(breakID))
-    {
-        m_process->EnableBreakpoint(breakID);
-        if (m_basic_info.suspend_count > 0)
-        {
-            SetState(eStateSuspended);
-        }
-        else
-        {
-            // If we last were at a breakpoint and we single stepped, our state
-            // will be "running" to indicate we need to continue after stepping
-            // over the breakpoint instruction. If we step over a breakpoint
-            // instruction, we need to stop.
-            if (GetState() == eStateRunning)
-            {
-                // Leave state set to running so we will continue automatically
-                // from this breakpoint
-            }
-            else
-            {
-                SetState(eStateStopped);
-            }
-        }
-    }
-    else
-    {
-        if (m_basic_info.suspend_count > 0)
-        {
-            SetState(eStateSuspended);
-        }
-        else
-        {
-            SetState(eStateStopped);
-        }
-    }
-#else
     if (m_basic_info.suspend_count > 0)
         SetState(eStateSuspended);
     else
         SetState(eStateStopped);
-#endif
     return true;
 }
 

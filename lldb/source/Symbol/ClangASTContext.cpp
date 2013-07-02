@@ -1874,7 +1874,7 @@ ClangASTContext::AddMethodToCXXRecordType
     
     llvm::SmallVector<ParmVarDecl *, 12> params;
     
-    for (int param_index = 0;
+    for (unsigned param_index = 0;
          param_index < num_params;
          ++param_index)
     {
@@ -2817,7 +2817,7 @@ ClangASTContext::AddMethodToObjCObjectType (ASTContext *ast,
     {
         llvm::SmallVector<ParmVarDecl *, 12> params;
             
-        for (int param_index = 0; param_index < num_args; ++param_index)
+        for (unsigned param_index = 0; param_index < num_args; ++param_index)
         {
             params.push_back (ParmVarDecl::Create (*ast,
                                                    objc_method_decl,
@@ -2996,6 +2996,11 @@ ClangASTContext::GetTypeInfo
                 break;
 
             case clang::BuiltinType::ObjCSel:
+                if (ast && pointee_or_element_clang_type)
+                    *pointee_or_element_clang_type = ast->CharTy.getAsOpaquePtr();
+                builtin_type_flags |= eTypeIsPointer | eTypeIsObjC;
+                break;
+
             case clang::BuiltinType::Bool:
             case clang::BuiltinType::Char_U:
             case clang::BuiltinType::UChar:
@@ -3384,6 +3389,19 @@ ClangASTContext::GetNumDirectBaseClasses (clang::ASTContext *ast, clang_type_t c
             }
             break;
             
+        case clang::Type::ObjCObjectPointer:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const ObjCObjectPointerType *objc_class_type = qual_type->getAsObjCInterfacePointerType();
+                if (objc_class_type)
+                {
+                    ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterfaceDecl();
+                    if (class_interface_decl && class_interface_decl->getSuperClass())
+                        count = 1;
+                }
+            }
+            break;
+
         case clang::Type::ObjCObject:
         case clang::Type::ObjCInterface:
             if (GetCompleteQualType (ast, qual_type))
@@ -3498,6 +3516,20 @@ ClangASTContext::GetNumFields (clang::ASTContext *ast, clang_type_t clang_type)
             count = ClangASTContext::GetNumFields(ast, cast<clang::ParenType>(qual_type)->desugar().getAsOpaquePtr());
             break;
             
+        case clang::Type::ObjCObjectPointer:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const ObjCObjectPointerType *objc_class_type = qual_type->getAsObjCInterfacePointerType();
+                if (objc_class_type)
+                {
+                    ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterfaceDecl();
+                    
+                    if (class_interface_decl)
+                        count = class_interface_decl->ivar_size();
+                }
+            }
+            break;
+        
         case clang::Type::ObjCObject:
         case clang::Type::ObjCInterface:
             if (GetCompleteQualType (ast, qual_type))
@@ -3550,12 +3582,33 @@ ClangASTContext::GetDirectBaseClassAtIndex (clang::ASTContext *ast,
                             {
                                 const ASTRecordLayout &record_layout = ast->getASTRecordLayout(cxx_record_decl);
                                 const CXXRecordDecl *base_class_decl = cast<CXXRecordDecl>(base_class->getType()->getAs<RecordType>()->getDecl());
-//                                if (base_class->isVirtual())
-//                                    *bit_offset_ptr = record_layout.getVBaseClassOffset(base_class_decl).getQuantity() * 8;
-//                                else
+                                if (base_class->isVirtual())
+                                    *bit_offset_ptr = record_layout.getVBaseClassOffset(base_class_decl).getQuantity() * 8;
+                                else
                                     *bit_offset_ptr = record_layout.getBaseClassOffset(base_class_decl).getQuantity() * 8;
                             }
                             return base_class->getType().getAsOpaquePtr();
+                        }
+                    }
+                }
+            }
+            break;
+
+        case clang::Type::ObjCObjectPointer:
+            if (idx == 0 && GetCompleteQualType (ast, qual_type))
+            {
+                const ObjCObjectPointerType *objc_class_type = qual_type->getAsObjCInterfacePointerType();
+                if (objc_class_type)
+                {
+                    ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterfaceDecl();
+                    if (class_interface_decl)
+                    {
+                        ObjCInterfaceDecl *superclass_interface_decl = class_interface_decl->getSuperClass();
+                        if (superclass_interface_decl)
+                        {
+                            if (bit_offset_ptr)
+                                *bit_offset_ptr = 0;
+                            return ast->getObjCInterfaceType(superclass_interface_decl).getAsOpaquePtr();
                         }
                     }
                 }
@@ -3675,10 +3728,69 @@ ClangASTContext::GetVirtualBaseClassAtIndex (clang::ASTContext *ast,
     return NULL;
 }
 
+static clang_type_t
+GetObjCFieldAtIndex (clang::ASTContext *ast,
+                     ObjCInterfaceDecl * class_interface_decl,
+                     size_t idx,
+                     std::string& name,
+                     uint64_t *bit_offset_ptr,
+                     uint32_t *bitfield_bit_size_ptr,
+                     bool *is_bitfield_ptr)
+{
+    if (class_interface_decl)
+    {
+        if (idx < (class_interface_decl->ivar_size()))
+        {
+            ObjCInterfaceDecl::ivar_iterator ivar_pos, ivar_end = class_interface_decl->ivar_end();
+            uint32_t ivar_idx = 0;
+            
+            for (ivar_pos = class_interface_decl->ivar_begin(); ivar_pos != ivar_end; ++ivar_pos, ++ivar_idx)
+            {
+                if (ivar_idx == idx)
+                {
+                    const ObjCIvarDecl* ivar_decl = *ivar_pos;
+                    
+                    QualType ivar_qual_type(ivar_decl->getType());
+                    
+                    name.assign(ivar_decl->getNameAsString());
+                    
+                    if (bit_offset_ptr)
+                    {
+                        const ASTRecordLayout &interface_layout = ast->getASTObjCInterfaceLayout(class_interface_decl);
+                        *bit_offset_ptr = interface_layout.getFieldOffset (ivar_idx);
+                    }
+                    
+                    const bool is_bitfield = ivar_pos->isBitField();
+                    
+                    if (bitfield_bit_size_ptr)
+                    {
+                        *bitfield_bit_size_ptr = 0;
+                        
+                        if (is_bitfield && ast)
+                        {
+                            Expr *bitfield_bit_size_expr = ivar_pos->getBitWidth();
+                            llvm::APSInt bitfield_apsint;
+                            if (bitfield_bit_size_expr && bitfield_bit_size_expr->EvaluateAsInt(bitfield_apsint, *ast))
+                            {
+                                *bitfield_bit_size_ptr = bitfield_apsint.getLimitedValue();
+                            }
+                        }
+                    }
+                    if (is_bitfield_ptr)
+                        *is_bitfield_ptr = is_bitfield;
+                    
+                    return ivar_qual_type.getAsOpaquePtr();
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
 clang_type_t
-ClangASTContext::GetFieldAtIndex (clang::ASTContext *ast, 
+ClangASTContext::GetFieldAtIndex (clang::ASTContext *ast,
                                   clang_type_t clang_type,
-                                  size_t idx, 
+                                  size_t idx,
                                   std::string& name,
                                   uint64_t *bit_offset_ptr,
                                   uint32_t *bitfield_bit_size_ptr,
@@ -3739,6 +3851,18 @@ ClangASTContext::GetFieldAtIndex (clang::ASTContext *ast,
             }
             break;
             
+        case clang::Type::ObjCObjectPointer:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const ObjCObjectPointerType *objc_class_type = qual_type->getAsObjCInterfacePointerType();
+                if (objc_class_type)
+                {
+                    ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterfaceDecl();
+                    return GetObjCFieldAtIndex(ast, class_interface_decl, idx, name, bit_offset_ptr, bitfield_bit_size_ptr, is_bitfield_ptr);
+                }
+            }
+            break;
+            
         case clang::Type::ObjCObject:
         case clang::Type::ObjCInterface:
             if (GetCompleteQualType (ast, qual_type))
@@ -3748,54 +3872,7 @@ ClangASTContext::GetFieldAtIndex (clang::ASTContext *ast,
                 if (objc_class_type)
                 {
                     ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
-                    
-                    if (class_interface_decl)
-                    {
-                        if (idx < (class_interface_decl->ivar_size()))
-                        {
-                            ObjCInterfaceDecl::ivar_iterator ivar_pos, ivar_end = class_interface_decl->ivar_end();
-                            uint32_t ivar_idx = 0;
-
-                            for (ivar_pos = class_interface_decl->ivar_begin(); ivar_pos != ivar_end; ++ivar_pos, ++ivar_idx)
-                            {
-                                if (ivar_idx == idx)
-                                {
-                                    const ObjCIvarDecl* ivar_decl = *ivar_pos;
-                                    
-                                    QualType ivar_qual_type(ivar_decl->getType());
-                                    
-                                    name.assign(ivar_decl->getNameAsString());
-
-                                    if (bit_offset_ptr)
-                                    {
-                                        const ASTRecordLayout &interface_layout = ast->getASTObjCInterfaceLayout(class_interface_decl);
-                                        *bit_offset_ptr = interface_layout.getFieldOffset (ivar_idx);
-                                    }
-                                    
-                                    const bool is_bitfield = ivar_pos->isBitField();
-                                    
-                                    if (bitfield_bit_size_ptr)
-                                    {
-                                        *bitfield_bit_size_ptr = 0;
-                                        
-                                        if (is_bitfield && ast)
-                                        {
-                                            Expr *bitfield_bit_size_expr = ivar_pos->getBitWidth();
-                                            llvm::APSInt bitfield_apsint;
-                                            if (bitfield_bit_size_expr && bitfield_bit_size_expr->EvaluateAsInt(bitfield_apsint, *ast))
-                                            {
-                                                *bitfield_bit_size_ptr = bitfield_apsint.getLimitedValue();
-                                            }
-                                        }
-                                    }
-                                    if (is_bitfield_ptr)
-                                        *is_bitfield_ptr = is_bitfield;
-                                    
-                                    return ivar_qual_type.getAsOpaquePtr();
-                                }
-                            }
-                        }
-                    }
+                    return GetObjCFieldAtIndex(ast, class_interface_decl, idx, name, bit_offset_ptr, bitfield_bit_size_ptr, is_bitfield_ptr);
                 }
             }
             break;
@@ -3843,10 +3920,10 @@ ClangASTContext::GetIndexOfFieldWithName (clang::ASTContext *ast,
                                           uint32_t *bitfield_bit_size_ptr,
                                           bool *is_bitfield_ptr)
 {
-    auto count = ClangASTContext::GetNumFields(ast, clang_type);
+    unsigned count = ClangASTContext::GetNumFields(ast, clang_type);
     lldb::clang_type_t field_clang_type_internal;
     std::string field_name;
-    for (auto index = 0; index < count; index++)
+    for (unsigned index = 0; index < count; index++)
     {
         field_clang_type_internal = ClangASTContext::GetFieldAtIndex(ast, clang_type, index, field_name, bit_offset_ptr, bitfield_bit_size_ptr, is_bitfield_ptr);
         if ( strcmp(field_name.c_str(), name) == 0 )
@@ -5457,6 +5534,10 @@ ClangASTContext::CreateFunctionDeclaration (DeclContext *decl_ctx, const char *n
     if (decl_ctx == NULL)
         decl_ctx = ast->getTranslationUnitDecl();
 
+    
+    const bool hasWrittenPrototype = true;
+    const bool isConstexprSpecified = false;
+
     if (name && name[0])
     {
         func_decl = FunctionDecl::Create (*ast,
@@ -5467,8 +5548,9 @@ ClangASTContext::CreateFunctionDeclaration (DeclContext *decl_ctx, const char *n
                                           QualType::getFromOpaquePtr(function_clang_type),
                                           NULL,
                                           (FunctionDecl::StorageClass)storage,
-                                          (FunctionDecl::StorageClass)storage,
-                                          is_inline);
+                                          is_inline,
+                                          hasWrittenPrototype,
+                                          isConstexprSpecified);
     }
     else
     {
@@ -5480,8 +5562,9 @@ ClangASTContext::CreateFunctionDeclaration (DeclContext *decl_ctx, const char *n
                                           QualType::getFromOpaquePtr(function_clang_type),
                                           NULL,
                                           (FunctionDecl::StorageClass)storage,
-                                          (FunctionDecl::StorageClass)storage,
-                                          is_inline);
+                                          is_inline,
+                                          hasWrittenPrototype,
+                                          isConstexprSpecified);
     }
     if (func_decl)
         decl_ctx->addDecl (func_decl);
@@ -6682,6 +6765,24 @@ ClangASTContext::ConvertStringToFloatValue (ASTContext *ast, clang_type_t clang_
     return 0;
 }
 
+lldb::clang_type_t
+ClangASTContext::GetFloatTypeFromBitSize (clang::ASTContext *ast,
+                                          size_t bit_size)
+{
+    if (ast)
+    {
+        if (bit_size == ast->getTypeSize(ast->FloatTy))
+            return ast->FloatTy.getAsOpaquePtr();
+        else if (bit_size == ast->getTypeSize(ast->DoubleTy))
+            return ast->DoubleTy.getAsOpaquePtr();
+        else if (bit_size == ast->getTypeSize(ast->LongDoubleTy))
+            return ast->LongDoubleTy.getAsOpaquePtr();
+        else if (bit_size == ast->getTypeSize(ast->HalfTy))
+            return ast->HalfTy.getAsOpaquePtr();
+    }
+    return NULL;
+}
+
 unsigned
 ClangASTContext::GetTypeQualifiers(clang_type_t clang_type)
 {
@@ -6704,7 +6805,7 @@ ClangASTContext::GetCompleteType (clang::ASTContext *ast, lldb::clang_type_t cla
 
 bool
 ClangASTContext::GetCompleteType (clang_type_t clang_type)
-{   
+{
     return ClangASTContext::GetCompleteType (getASTContext(), clang_type);
 }
 

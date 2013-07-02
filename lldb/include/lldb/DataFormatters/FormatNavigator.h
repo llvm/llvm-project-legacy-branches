@@ -28,6 +28,7 @@
 #include "lldb/DataFormatters/FormatClasses.h"
 
 #include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/ClangASTType.h"
 
 #include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
@@ -70,7 +71,7 @@ HasPrefix (const char* str1, const char* str2)
 // those will not match any type because of the way we strip qualifiers from typenames
 // this method looks for the case where the user is adding a "class","struct","enum" or "union" Foo
 // and strips the unnecessary qualifier
-static ConstString
+static inline ConstString
 GetValidTypeName_Impl (const ConstString& type)
 {
     int strip_len = 0;
@@ -647,6 +648,36 @@ protected:
         
         if (Get_Impl (valobj,type,entry,use_dynamic,reason))
             return true;
+        
+        // try going to the unqualified type
+        do {
+            if (log)
+                log->Printf("[Get] trying the unqualified type");
+            lldb::clang_type_t opaque_type = type.getAsOpaquePtr();
+            if (!opaque_type)
+            {
+                if (log)
+                    log->Printf("[Get] could not get the opaque_type");
+                break;
+            }
+            ClangASTType unqual_clang_ast_type = ClangASTType::GetFullyUnqualifiedType(valobj.GetClangAST(),opaque_type);
+            if (!unqual_clang_ast_type.IsValid())
+            {
+                if (log)
+                    log->Printf("[Get] could not get the unqual_clang_ast_type");
+                break;
+            }
+            clang::QualType unqualified_qual_type = clang::QualType::getFromOpaquePtr(unqual_clang_ast_type.GetOpaqueQualType());
+            if (unqualified_qual_type.getTypePtrOrNull() != type.getTypePtrOrNull())
+            {
+                if (log)
+                    log->Printf("[Get] unqualified type is there and is not the same, let's try");
+                if (Get_Impl (valobj,unqualified_qual_type,entry,use_dynamic,reason))
+                    return true;
+            }
+            else if (log)
+                log->Printf("[Get] unqualified type same as original type");
+        } while(false);
         
         // if all else fails, go to static type
         if (valobj.IsDynamic())
