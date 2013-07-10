@@ -378,7 +378,7 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
             lldb::pid_t debugserver_pid = LLDB_INVALID_PROCESS_ID;
             uint16_t port = m_gdb_client.LaunchGDBserverAndGetPort(debugserver_pid);
             
-            if (port == 0 || debugserver_pid == LLDB_INVALID_PROCESS_ID)
+            if (port == 0)
             {
                 error.SetErrorStringWithFormat ("unable to launch a GDB server on '%s'", GetHostname ());
             }
@@ -422,10 +422,9 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
                         error = process_sp->ConnectRemote (NULL, connect_url);
                         if (error.Success())
                             error = process_sp->Attach(attach_info);
-                        else
+                        else if (debugserver_pid != LLDB_INVALID_PROCESS_ID)
                         {
-                            bool success = m_gdb_client.KillSpawnedProcess(debugserver_pid);
-                            printf ("success = %i\n", success);
+                            m_gdb_client.KillSpawnedProcess(debugserver_pid);
                         }
                     }
                 }
