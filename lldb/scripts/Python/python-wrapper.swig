@@ -1,13 +1,17 @@
-%wrapper %{
+%header %{
+
+template <typename T>
+PyObject *
+SBTypeToSWIGWrapper (T* item);
 
 class PyErr_Cleaner
 {
 public:
     PyErr_Cleaner(bool print=false) :
-        m_print(print)
+    m_print(print)
     {
     }
-
+    
     ~PyErr_Cleaner()
     {
         if (PyErr_Occurred())
@@ -17,19 +21,14 @@ public:
             PyErr_Clear();
         }
     }
-
+    
 private:
     bool m_print;
 };
 
-// resolve a dotted Python name in the form
-// foo.bar.baz.Foobar to an actual Python object
-// if pmodule is NULL, the __main__ module will be used
-// as the starting point for the search
-
 static PyObject*
 ResolvePythonName(const char* name,
-                  PyObject* pmodule = NULL)
+                  PyObject* pmodule)
 {
     if (!name)
         return pmodule;
@@ -106,13 +105,13 @@ FindSessionDictionary(const char *session_dictionary_name)
 class PyCallable
 {
 public:
-
+    
     operator
     bool ()
     {
         return m_callable != NULL;
     }
-
+    
     template<typename ...Args>
     PyObject*
     operator () (Args... args)
@@ -171,7 +170,7 @@ public:
             return PyCallable();
         return PyCallable(ResolvePythonName (python_function_name, session_dict));
     }
-
+    
     static PyCallable
     FindWithMemberFunction (PyObject *self,
                             const char *python_function_name)
@@ -182,7 +181,7 @@ public:
             return PyCallable();
         return PyCallable(PyObject_GetAttrString(self, python_function_name));
     }
-
+    
 private:
     PyObject* m_callable;
     
@@ -193,6 +192,16 @@ private:
             m_callable = NULL;
     }
 };
+
+%}
+
+%wrapper %{
+
+// resolve a dotted Python name in the form
+// foo.bar.baz.Foobar to an actual Python object
+// if pmodule is NULL, the __main__ module will be used
+// as the starting point for the search
+
 
 // This function is called by lldb_private::ScriptInterpreterPython::BreakpointCallbackFunction(...)
 // and is used when a script command is attached to a breakpoint for execution.
@@ -208,9 +217,9 @@ LLDBSwigPythonBreakpointCallbackFunction
 {
     lldb::SBFrame sb_frame (frame_sp);
     lldb::SBBreakpointLocation sb_bp_loc(bp_loc_sp);
-
+    
     bool stop_at_breakpoint = true;
-
+    
     {
         PyErr_Cleaner py_err_cleaner(true);
         
@@ -227,7 +236,7 @@ LLDBSwigPythonBreakpointCallbackFunction
         
         if (pvalue == Py_False)
             stop_at_breakpoint = false;
-
+        
         Py_XDECREF (pvalue);
     }
     
@@ -397,7 +406,8 @@ LLDBSwigPythonCreateSyntheticProvider
         Py_INCREF(ValObj_PyObj);
         
         PyObject* session_dict = NULL;
-        retval = pfunc(ValObj_PyObj, session_dict = FindSessionDictionary(session_dictionary_name));
+        session_dict = FindSessionDictionary(session_dictionary_name);
+        retval = pfunc(sb_value, session_dict);
         
         Py_XINCREF (session_dict);
         

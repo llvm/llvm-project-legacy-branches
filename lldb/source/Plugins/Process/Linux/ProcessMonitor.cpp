@@ -419,7 +419,7 @@ ReadOperation::Execute(ProcessMonitor *monitor)
 }
 
 //------------------------------------------------------------------------------
-/// @class ReadOperation
+/// @class WriteOperation
 /// @brief Implements ProcessMonitor::WriteMemory.
 class WriteOperation : public Operation
 {
@@ -1098,6 +1098,7 @@ ProcessMonitor::Launch(LaunchArgs *args)
     lldb::pid_t pid;
 
     lldb::ThreadSP inferior;
+    POSIXThread *thread;
     Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
 
     // Propagate the environment if one is not supplied.
@@ -1232,9 +1233,15 @@ ProcessMonitor::Launch(LaunchArgs *args)
     // FIXME: should we be letting UpdateThreadList handle this?
     // FIXME: by using pids instead of tids, we can only support one thread.
     inferior.reset(new POSIXThread(process, pid));
+
+    thread = static_cast<POSIXThread*>(inferior.get());
+    thread->SetName(Host::GetThreadName(pid, pid).c_str());
+
     if (log)
         log->Printf ("ProcessMonitor::%s() adding pid = %" PRIu64, __FUNCTION__, pid);
     process.GetThreadList().AddThread(inferior);
+
+    process.AddThreadForInitialStopIfNeeded(pid);
 
     // Let our process instance know the thread has stopped.
     process.SendMessage(ProcessMessage::Trace(pid));
@@ -1290,11 +1297,11 @@ ProcessMonitor::Attach(AttachArgs *args)
     ProcessMonitor *monitor = args->m_monitor;
     ProcessLinux &process = monitor->GetProcess();
     lldb::ThreadSP inferior;
+    POSIXThread *thread;
     Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
 
     // Use a map to keep track of the threads which we have attached/need to attach.
     Host::TidMap tids_to_attach;
-
     if (pid <= 1)
     {
         args->m_error.SetErrorToGenericError();
@@ -1356,10 +1363,15 @@ ProcessMonitor::Attach(AttachArgs *args)
 
                 // Update the process thread list with the attached thread.
                 inferior.reset(new POSIXThread(process, tid));
+
+                thread = static_cast<POSIXThread*>(inferior.get());
+                thread->SetName(Host::GetThreadName(pid, tid).c_str());
+
                 if (log)
                     log->Printf ("ProcessMonitor::%s() adding tid = %" PRIu64, __FUNCTION__, tid);
                 process.GetThreadList().AddThread(inferior);
                 it->second = true;
+                process.AddThreadForInitialStopIfNeeded(tid);
             }
         }
     }
@@ -1513,7 +1525,7 @@ ProcessMonitor::MonitorSIGTRAP(ProcessMonitor *monitor,
         if (!monitor->GetEventMessage(pid, &data))
             data = -1;
         if (log)
-            log->Printf ("ProcessMonitor::%s() received exit event, data = %lx, pid = %" PRIu64, __FUNCTION__, data, pid);
+            log->Printf ("ProcessMonitor::%s() received limbo event, data = %lx, pid = %" PRIu64, __FUNCTION__, data, pid);
         message = ProcessMessage::Limbo(pid, (data >> 8));
         break;
     }
@@ -1537,6 +1549,13 @@ ProcessMonitor::MonitorSIGTRAP(ProcessMonitor *monitor,
             log->Printf ("ProcessMonitor::%s() received watchpoint event, pid = %" PRIu64, __FUNCTION__, pid);
         message = ProcessMessage::Watch(pid, (lldb::addr_t)info->si_addr);
         break;
+
+    case SIGTRAP:
+    case (SIGTRAP | 0x80):
+        if (log)
+            log->Printf ("ProcessMonitor::%s() received system call stop event, pid = %" PRIu64, __FUNCTION__, pid);
+        // Ignore these signals until we know more about them
+        monitor->Resume(pid, eResumeSignalNone);
     }
 
     return message;
@@ -1711,6 +1730,27 @@ ProcessMonitor::StopThread(lldb::tid_t tid)
                     return true;
                 break;
 
+            case ProcessMessage::eSignalMessage:
+                if (log)
+                    log->Printf ("ProcessMonitor::%s(bp) handling message", __FUNCTION__);
+                if (WSTOPSIG(status) == SIGSTOP)
+                {
+                    m_process->AddThreadForInitialStopIfNeeded(tid);
+                    thread->SetState(lldb::eStateStopped);
+                }
+                else
+                {
+                    m_process->SendMessage(message);
+                    // This isn't the stop we were expecting, but the thread is
+                    // stopped. SendMessage will handle processing of this event,
+                    // but we need to resume here to get the stop we are waiting
+                    // for (otherwise the thread will stop again immediately when
+                    // we try to resume).
+                    if (wait_pid == tid)
+                        Resume(wait_pid, eResumeSignalNone);
+                }
+                break;
+
             case ProcessMessage::eSignalDeliveredMessage:
                 // This is the stop we're expecting.
                 if (wait_pid == tid && WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP && info.si_code == SI_TKILL)
@@ -1721,7 +1761,6 @@ ProcessMonitor::StopThread(lldb::tid_t tid)
                     return true;
                 }
                 // else fall-through
-            case ProcessMessage::eSignalMessage:
             case ProcessMessage::eBreakpointMessage:
             case ProcessMessage::eTraceMessage:
             case ProcessMessage::eWatchpointMessage:

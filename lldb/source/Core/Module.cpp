@@ -245,7 +245,7 @@ Module::~Module()
     // function calls back into this module object. The ordering is important
     // here because symbol files can require the module object file. So we tear
     // down the symbol file first, then the object file.
-    m_unified_sections_ap.reset();
+    m_sections_ap.reset();
     m_symfile_ap.reset();
     m_objfile_sp.reset();
 }
@@ -441,9 +441,9 @@ Module::ResolveFileAddress (lldb::addr_t vm_addr, Address& so_addr)
 {
     Mutex::Locker locker (m_mutex);
     Timer scoped_timer(__PRETTY_FUNCTION__, "Module::ResolveFileAddress (vm_addr = 0x%" PRIx64 ")", vm_addr);
-    ObjectFile* ofile = GetObjectFile();
-    if (ofile)
-        return so_addr.ResolveAddressUsingFileSections(vm_addr, ofile->GetSectionList());
+    SectionList *section_list = GetSectionList();
+    if (section_list)
+        return so_addr.ResolveAddressUsingFileSections(vm_addr, section_list);
     return false;
 }
 
@@ -1097,31 +1097,26 @@ Module::GetObjectFile()
     Mutex::Locker locker (m_mutex);
     if (m_did_load_objfile == false)
     {
-        m_did_load_objfile = true;
         Timer scoped_timer(__PRETTY_FUNCTION__,
                            "Module::GetObjectFile () module = %s", GetFileSpec().GetFilename().AsCString(""));
         DataBufferSP data_sp;
         lldb::offset_t data_offset = 0;
-        m_objfile_sp = ObjectFile::FindPlugin (shared_from_this(),
-                                               &m_file, 
-                                               m_object_offset, 
-                                               m_file.GetByteSize(), 
-                                               data_sp,
-                                               data_offset);
-        if (m_objfile_sp)
+        const lldb::offset_t file_size = m_file.GetByteSize();
+        if (file_size > m_object_offset)
         {
-            // Once we get the object file, update our module with the object file's 
-            // architecture since it might differ in vendor/os if some parts were
-            // unknown.
-            m_objfile_sp->GetArchitecture (m_arch);
-
-            // Populate m_unified_sections_ap with sections from objfile.
-            SectionList *section_list = m_objfile_sp->GetSectionList();
-            if (section_list)
+            m_did_load_objfile = true;
+            m_objfile_sp = ObjectFile::FindPlugin (shared_from_this(),
+                                                   &m_file,
+                                                   m_object_offset,
+                                                   file_size - m_object_offset,
+                                                   data_sp,
+                                                   data_offset);
+            if (m_objfile_sp)
             {
-                m_unified_sections_ap.reset(new SectionList());
-                section_list->Copy (m_unified_sections_ap.get());
-                m_unified_sections_ap->Finalize();
+                // Once we get the object file, update our module with the object file's 
+                // architecture since it might differ in vendor/os if some parts were
+                // unknown.
+                m_objfile_sp->GetArchitecture (m_arch);
             }
         }
     }
@@ -1129,9 +1124,25 @@ Module::GetObjectFile()
 }
 
 SectionList *
+Module::GetSectionList()
+{
+    // Populate m_unified_sections_ap with sections from objfile.
+    if (m_sections_ap.get() == NULL)
+    {
+        ObjectFile *obj_file = GetObjectFile();
+        if (obj_file)
+            obj_file->CreateSections(*GetUnifiedSectionList());
+    }
+    return m_sections_ap.get();
+}
+
+SectionList *
 Module::GetUnifiedSectionList()
 {
-    return m_unified_sections_ap.get();
+    // Populate m_unified_sections_ap with sections from objfile.
+    if (m_sections_ap.get() == NULL)
+        m_sections_ap.reset(new SectionList());
+    return m_sections_ap.get();
 }
 
 const Symbol *
@@ -1246,7 +1257,7 @@ Module::SetSymbolFileFileSpec (const FileSpec &file)
     // Remove any sections in the unified section list that come from the current symbol vendor.
     if (m_symfile_ap)
     {
-        SectionList *section_list = GetUnifiedSectionList();
+        SectionList *section_list = GetSectionList();
         SymbolFile *symbol_file = m_symfile_ap->GetSymbolFile();
         if (section_list && symbol_file)
         {
@@ -1259,10 +1270,9 @@ Module::SetSymbolFileFileSpec (const FileSpec &file)
                     lldb::SectionSP section_sp (section_list->GetSectionAtIndex (idx - 1));
                     if (section_sp->GetObjectFile() == obj_file)
                     {
-                        m_unified_sections_ap->DeleteSection (idx - 1);
+                        section_list->DeleteSection (idx - 1);
                     }
                 }
-                m_unified_sections_ap->Finalize();
             }
         }
     }
@@ -1287,7 +1297,7 @@ Module::IsLoadedInTarget (Target *target)
     ObjectFile *obj_file = GetObjectFile();
     if (obj_file)
     {
-        SectionList *sections = obj_file->GetSectionList();
+        SectionList *sections = GetSectionList();
         if (sections != NULL)
         {
             size_t num_sections = sections->GetSize();
@@ -1394,26 +1404,22 @@ bool
 Module::SetLoadAddress (Target &target, lldb::addr_t offset, bool &changed)
 {
     size_t num_loaded_sections = 0;
-    ObjectFile *objfile = GetObjectFile();
-    if (objfile)
+    SectionList *section_list = GetSectionList ();
+    if (section_list)
     {
-        SectionList *section_list = objfile->GetSectionList ();
-        if (section_list)
+        const size_t num_sections = section_list->GetSize();
+        size_t sect_idx = 0;
+        for (sect_idx = 0; sect_idx < num_sections; ++sect_idx)
         {
-            const size_t num_sections = section_list->GetSize();
-            size_t sect_idx = 0;
-            for (sect_idx = 0; sect_idx < num_sections; ++sect_idx)
+            // Iterate through the object file sections to find the
+            // first section that starts of file offset zero and that
+            // has bytes in the file...
+            SectionSP section_sp (section_list->GetSectionAtIndex (sect_idx));
+            // Only load non-thread specific sections when given a slide
+            if (section_sp && !section_sp->IsThreadSpecific())
             {
-                // Iterate through the object file sections to find the
-                // first section that starts of file offset zero and that
-                // has bytes in the file...
-                SectionSP section_sp (section_list->GetSectionAtIndex (sect_idx));
-                // Only load non-thread specific sections when given a slide
-                if (section_sp && !section_sp->IsThreadSpecific())
-                {
-                    if (target.GetSectionLoadList().SetSectionLoadAddress (section_sp, section_sp->GetFileAddress() + offset))
-                        ++num_loaded_sections;
-                }
+                if (target.GetSectionLoadList().SetSectionLoadAddress (section_sp, section_sp->GetFileAddress() + offset))
+                    ++num_loaded_sections;
             }
         }
     }

@@ -349,3 +349,4 @@ SBCommandReturnObject::SetError (const char *error_cstr)
     if (m_opaque_ap.get() && error_cstr)
         m_opaque_ap->SetError(error_cstr);
 }
+

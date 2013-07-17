@@ -235,6 +235,70 @@ ObjectFileELF::MagicBytesMatch (DataBufferSP& data_sp,
     return false;
 }
 
+/*
+ * crc function from http://svnweb.freebsd.org/base/head/sys/libkern/crc32.c
+ *
+ *   COPYRIGHT (C) 1986 Gary S. Brown. You may use this program, or
+ *   code or tables extracted from it, as desired without restriction.
+ */
+static uint32_t
+calc_gnu_debuglink_crc32(const void *buf, size_t size)
+{
+    static const uint32_t g_crc32_tab[] =
+    {
+        0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
+        0xe963a535, 0x9e6495a3, 0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
+        0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91, 0x1db71064, 0x6ab020f2,
+        0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
+        0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9,
+        0xfa0f3d63, 0x8d080df5, 0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172,
+        0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b, 0x35b5a8fa, 0x42b2986c,
+        0xdbbbc9d6, 0xacbcf940, 0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
+        0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423,
+        0xcfba9599, 0xb8bda50f, 0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924,
+        0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d, 0x76dc4190, 0x01db7106,
+        0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
+        0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d,
+        0x91646c97, 0xe6635c01, 0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e,
+        0x6c0695ed, 0x1b01a57b, 0x8208f4c1, 0xf50fc457, 0x65b0d9c6, 0x12b7e950,
+        0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
+        0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2, 0x4adfa541, 0x3dd895d7,
+        0xa4d1c46d, 0xd3d6f4fb, 0x4369e96a, 0x346ed9fc, 0xad678846, 0xda60b8d0,
+        0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9, 0x5005713c, 0x270241aa,
+        0xbe0b1010, 0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
+        0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4, 0x59b33d17, 0x2eb40d81,
+        0xb7bd5c3b, 0xc0ba6cad, 0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a,
+        0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683, 0xe3630b12, 0x94643b84,
+        0x0d6d6a3e, 0x7a6a5aa8, 0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1,
+        0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb,
+        0x196c3671, 0x6e6b06e7, 0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc,
+        0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5, 0xd6d6a3e8, 0xa1d1937e,
+        0x38d8c2c4, 0x4fdff252, 0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
+        0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55,
+        0x316e8eef, 0x4669be79, 0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236,
+        0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f, 0xc5ba3bbe, 0xb2bd0b28,
+        0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d,
+        0x9b64c2b0, 0xec63f226, 0x756aa39c, 0x026d930a, 0x9c0906a9, 0xeb0e363f,
+        0x72076785, 0x05005713, 0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38,
+        0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21, 0x86d3d2d4, 0xf1d4e242,
+        0x68ddb3f8, 0x1fda836e, 0x81be16cd, 0xf6b9265b, 0x6fb077e1, 0x18b74777,
+        0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c, 0x8f659eff, 0xf862ae69,
+        0x616bffd3, 0x166ccf45, 0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2,
+        0xa7672661, 0xd06016f7, 0x4969474d, 0x3e6e77db, 0xaed16a4a, 0xd9d65adc,
+        0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
+        0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693,
+        0x54de5729, 0x23d967bf, 0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94,
+        0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
+    };    
+    const uint8_t *p = (const uint8_t *)buf;
+    uint32_t crc;
+
+    crc = ~0U;
+    while (size--)
+        crc = g_crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
+    return crc ^ ~0U;
+}
+
 size_t
 ObjectFileELF::GetModuleSpecifications (const lldb_private::FileSpec& file,
                                         lldb::DataBufferSP& data_sp,
@@ -278,10 +342,28 @@ ObjectFileELF::GetModuleSpecifications (const lldb_private::FileSpec& file,
                         data.SetData(data_sp);
                     }
 
-                    uint32_t gnu_debuglink_crc;
+                    uint32_t gnu_debuglink_crc = 0;
                     std::string gnu_debuglink_file;
                     SectionHeaderColl section_headers;
-                    GetSectionHeaderInfo(section_headers, data, header, spec.GetUUID(), gnu_debuglink_file, gnu_debuglink_crc);
+                    lldb_private::UUID &uuid = spec.GetUUID();
+                    GetSectionHeaderInfo(section_headers, data, header, uuid, gnu_debuglink_file, gnu_debuglink_crc);
+
+                    if (!uuid.IsValid())
+                    {
+                        if (!gnu_debuglink_crc)
+                        {
+                            // Need to map entire file into memory to calculate the crc.
+                            data_sp = file.MemoryMapFileContents (file_offset, SIZE_MAX);
+                            data.SetData(data_sp);
+                            gnu_debuglink_crc = calc_gnu_debuglink_crc32 (data.GetDataStart(), data.GetByteSize());
+                        }
+                        if (gnu_debuglink_crc)
+                        {
+                            // Use 4 bytes of crc from the .gnu_debuglink section.
+                            uint32_t uuidt[4] = { gnu_debuglink_crc, 0, 0, 0 };
+                            uuid.SetBytes (uuidt, sizeof(uuidt));
+                        }
+                    }
 
                     specs.Append(spec);
                 }
@@ -374,70 +456,6 @@ ObjectFileELF::ParseHeader()
     return m_header.Parse(m_data, &offset);
 }
 
-/*
- * crc function from http://svnweb.freebsd.org/base/head/sys/libkern/crc32.c
- *
- *   COPYRIGHT (C) 1986 Gary S. Brown. You may use this program, or
- *   code or tables extracted from it, as desired without restriction.
- */
-static uint32_t
-calc_gnu_debuglink_crc32(const void *buf, size_t size)
-{
-    static const uint32_t g_crc32_tab[] =
-    {
-        0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
-        0xe963a535, 0x9e6495a3, 0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
-        0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91, 0x1db71064, 0x6ab020f2,
-        0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
-        0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9,
-        0xfa0f3d63, 0x8d080df5, 0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172,
-        0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b, 0x35b5a8fa, 0x42b2986c,
-        0xdbbbc9d6, 0xacbcf940, 0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
-        0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423,
-        0xcfba9599, 0xb8bda50f, 0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924,
-        0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d, 0x76dc4190, 0x01db7106,
-        0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
-        0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d,
-        0x91646c97, 0xe6635c01, 0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e,
-        0x6c0695ed, 0x1b01a57b, 0x8208f4c1, 0xf50fc457, 0x65b0d9c6, 0x12b7e950,
-        0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
-        0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2, 0x4adfa541, 0x3dd895d7,
-        0xa4d1c46d, 0xd3d6f4fb, 0x4369e96a, 0x346ed9fc, 0xad678846, 0xda60b8d0,
-        0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9, 0x5005713c, 0x270241aa,
-        0xbe0b1010, 0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
-        0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4, 0x59b33d17, 0x2eb40d81,
-        0xb7bd5c3b, 0xc0ba6cad, 0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a,
-        0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683, 0xe3630b12, 0x94643b84,
-        0x0d6d6a3e, 0x7a6a5aa8, 0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1,
-        0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb,
-        0x196c3671, 0x6e6b06e7, 0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc,
-        0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5, 0xd6d6a3e8, 0xa1d1937e,
-        0x38d8c2c4, 0x4fdff252, 0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
-        0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55,
-        0x316e8eef, 0x4669be79, 0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236,
-        0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f, 0xc5ba3bbe, 0xb2bd0b28,
-        0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d,
-        0x9b64c2b0, 0xec63f226, 0x756aa39c, 0x026d930a, 0x9c0906a9, 0xeb0e363f,
-        0x72076785, 0x05005713, 0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38,
-        0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21, 0x86d3d2d4, 0xf1d4e242,
-        0x68ddb3f8, 0x1fda836e, 0x81be16cd, 0xf6b9265b, 0x6fb077e1, 0x18b74777,
-        0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c, 0x8f659eff, 0xf862ae69,
-        0x616bffd3, 0x166ccf45, 0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2,
-        0xa7672661, 0xd06016f7, 0x4969474d, 0x3e6e77db, 0xaed16a4a, 0xd9d65adc,
-        0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
-        0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693,
-        0x54de5729, 0x23d967bf, 0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94,
-        0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
-    };    
-    const uint8_t *p = (const uint8_t *)buf;
-    uint32_t crc;
-
-    crc = ~0U;
-    while (size--)
-        crc = g_crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
-    return crc ^ ~0U;
-}
-
 bool
 ObjectFileELF::GetUUID(lldb_private::UUID* uuid)
 {
@@ -453,7 +471,8 @@ ObjectFileELF::GetUUID(lldb_private::UUID* uuid)
     }
     else 
     {
-        m_gnu_debuglink_crc = calc_gnu_debuglink_crc32 (m_data.GetDataStart(), m_data.GetByteSize());
+        if (!m_gnu_debuglink_crc)
+            m_gnu_debuglink_crc = calc_gnu_debuglink_crc32 (m_data.GetDataStart(), m_data.GetByteSize());
         if (m_gnu_debuglink_crc)
         {
             // Use 4 bytes of crc from the .gnu_debuglink section.
@@ -494,22 +513,6 @@ ObjectFileELF::GetDependentModules(FileSpecList &files)
     return num_specs;
 }
 
-user_id_t
-ObjectFileELF::GetSectionIndexByType(unsigned type)
-{
-    if (!ParseSectionHeaders())
-        return 0;
-
-    for (SectionHeaderCollIter sh_pos = m_section_headers.begin();
-         sh_pos != m_section_headers.end(); ++sh_pos) 
-    {
-        if (sh_pos->sh_type == type)
-            return SectionIndex(sh_pos);
-    }
-
-    return 0;
-}
-
 Address
 ObjectFileELF::GetImageInfoAddress()
 {
@@ -520,28 +523,27 @@ ObjectFileELF::GetImageInfoAddress()
     if (!section_list)
         return Address();
 
-    user_id_t dynsym_id = GetSectionIndexByType(SHT_DYNAMIC);
-    if (!dynsym_id)
+    // Find the SHT_DYNAMIC (.dynamic) section.
+    SectionSP dynsym_section_sp (section_list->FindSectionByType (eSectionTypeELFDynamicLinkInfo, true));
+    if (!dynsym_section_sp)
         return Address();
+    assert (dynsym_section_sp->GetObjectFile() == this);
 
+    user_id_t dynsym_id = dynsym_section_sp->GetID();
     const ELFSectionHeaderInfo *dynsym_hdr = GetSectionHeaderByIndex(dynsym_id);
     if (!dynsym_hdr)
         return Address();
 
-    SectionSP dynsym_section_sp (section_list->FindSectionByID(dynsym_id));
-    if (dynsym_section_sp)
+    for (size_t i = 0; i < m_dynamic_symbols.size(); ++i)
     {
-        for (size_t i = 0; i < m_dynamic_symbols.size(); ++i)
-        {
-            ELFDynamic &symbol = m_dynamic_symbols[i];
+        ELFDynamic &symbol = m_dynamic_symbols[i];
 
-            if (symbol.d_tag == DT_DEBUG)
-            {
-                // Compute the offset as the number of previous entries plus the
-                // size of d_tag.
-                addr_t offset = i * dynsym_hdr->sh_entsize + GetAddressByteSize();
-                return Address(dynsym_section_sp, offset);
-            }
+        if (symbol.d_tag == DT_DEBUG)
+        {
+            // Compute the offset as the number of previous entries plus the
+            // size of d_tag.
+            addr_t offset = i * dynsym_hdr->sh_entsize + GetAddressByteSize();
+            return Address(dynsym_section_sp, offset);
         }
     }
 
@@ -551,26 +553,19 @@ ObjectFileELF::GetImageInfoAddress()
 lldb_private::Address
 ObjectFileELF::GetEntryPointAddress () 
 {
-    SectionList *sections;
-    addr_t offset;
-
     if (m_entry_point_address.IsValid())
         return m_entry_point_address;
 
     if (!ParseHeader() || !IsExecutable())
         return m_entry_point_address;
 
-    sections = GetSectionList();
-    offset = m_header.e_entry;
+    SectionList *section_list = GetSectionList();
+    addr_t offset = m_header.e_entry;
 
-    if (!sections) 
-    {
+    if (!section_list) 
         m_entry_point_address.SetOffset(offset);
-        return m_entry_point_address;
-    }
-
-    m_entry_point_address.ResolveAddressUsingFileSections(offset, sections);
-
+    else
+        m_entry_point_address.ResolveAddressUsingFileSections(offset, section_list);
     return m_entry_point_address;
 }
 
@@ -588,32 +583,22 @@ ObjectFileELF::ParseDependentModules()
     if (!ParseSectionHeaders())
         return 0;
 
-    // Locate the dynamic table.
-    user_id_t dynsym_id = 0;
-    user_id_t dynstr_id = 0;
-    for (SectionHeaderCollIter sh_pos = m_section_headers.begin();
-         sh_pos != m_section_headers.end(); ++sh_pos)
-    {
-        if (sh_pos->sh_type == SHT_DYNAMIC)
-        {
-            dynsym_id = SectionIndex(sh_pos);
-            dynstr_id = sh_pos->sh_link + 1; // Section ID's are 1 based.
-            break;
-        }
-    }
-
-    if (!(dynsym_id && dynstr_id))
-        return 0;
-
     SectionList *section_list = GetSectionList();
     if (!section_list)
         return 0;
 
-    // Resolve and load the dynamic table entries and corresponding string
-    // table.
-    Section *dynsym = section_list->FindSectionByID(dynsym_id).get();
-    Section *dynstr = section_list->FindSectionByID(dynstr_id).get();
-    if (!(dynsym && dynstr))
+    // Find the SHT_DYNAMIC section.
+    Section *dynsym = section_list->FindSectionByType (eSectionTypeELFDynamicLinkInfo, true).get();
+    if (!dynsym)
+        return 0;
+    assert (dynsym->GetObjectFile() == this);
+
+    const ELFSectionHeaderInfo *header = GetSectionHeaderByIndex (dynsym->GetID());
+    if (!header)
+        return 0;
+    // sh_link: section header index of string table used by entries in the section.
+    Section *dynstr = section_list->FindSectionByID (header->sh_link + 1).get();
+    if (!dynstr)
         return 0;
 
     DataExtractor dynsym_data;
@@ -816,6 +801,33 @@ ObjectFileELF::GetSectionHeaderInfo(SectionHeaderColl &section_headers,
     return 0;
 }
 
+size_t
+ObjectFileELF::GetProgramHeaderCount()
+{
+    return ParseProgramHeaders();
+}
+
+const elf::ELFProgramHeader *
+ObjectFileELF::GetProgramHeaderByIndex(lldb::user_id_t id)
+{
+    if (!id || !ParseProgramHeaders())
+        return NULL;
+
+    if (--id < m_program_headers.size())
+        return &m_program_headers[id];
+
+    return NULL;
+}
+
+DataExtractor 
+ObjectFileELF::GetSegmentDataByIndex(lldb::user_id_t id)
+{
+    const elf::ELFProgramHeader *segment_header = GetProgramHeaderByIndex(id);
+    if (segment_header == NULL)
+        return DataExtractor();
+    return DataExtractor(m_data, segment_header->p_offset, segment_header->p_filesz);
+}
+
 //----------------------------------------------------------------------
 // ParseSectionHeaders
 //----------------------------------------------------------------------
@@ -825,34 +837,10 @@ ObjectFileELF::ParseSectionHeaders()
     return GetSectionHeaderInfo(m_section_headers, m_data, m_header, m_uuid, m_gnu_debuglink_file, m_gnu_debuglink_crc);
 }
 
-lldb::user_id_t
-ObjectFileELF::GetSectionIndexByName(const char *name)
-{
-    if (!ParseSectionHeaders())
-        return 0;
-
-    // Search the collection of section headers for one with a matching name.
-    for (SectionHeaderCollIter I = m_section_headers.begin();
-         I != m_section_headers.end(); ++I)
-    {
-        const char *sectionName = I->section_name.AsCString();
-
-        if (!sectionName)
-            return 0;
-
-        if (strcmp(name, sectionName) != 0)
-            continue;
-
-        return SectionIndex(I);
-    }
-
-    return 0;
-}
-
 const ObjectFileELF::ELFSectionHeaderInfo *
 ObjectFileELF::GetSectionHeaderByIndex(lldb::user_id_t id)
 {
-    if (!ParseSectionHeaders() || !id)
+    if (!id || !ParseSectionHeaders())
         return NULL;
 
     if (--id < m_section_headers.size())
@@ -861,14 +849,10 @@ ObjectFileELF::GetSectionHeaderByIndex(lldb::user_id_t id)
     return NULL;
 }
 
-
-SectionList *
-ObjectFileELF::GetSectionList()
+void
+ObjectFileELF::CreateSections(SectionList &unified_section_list)
 {
-    if (m_sections_ap.get())
-        return m_sections_ap.get();
-
-    if (ParseSectionHeaders())
+    if (!m_sections_ap.get() && ParseSectionHeaders())
     {
         m_sections_ap.reset(new SectionList());
 
@@ -927,7 +911,8 @@ ObjectFileELF::GetSectionList()
             // .debug_pubtypes – Lookup table for mapping type names to compilation units
             // .debug_ranges – Address ranges used in DW_AT_ranges attributes
             // .debug_str – String table used in .debug_info
-            // MISSING? .debug-index http://src.chromium.org/viewvc/chrome/trunk/src/build/gdb-add-index?pathrev=144644
+            // MISSING? .gnu_debugdata - "mini debuginfo / MiniDebugInfo" section, http://sourceware.org/gdb/onlinedocs/gdb/MiniDebugInfo.html
+            // MISSING? .debug-index - http://src.chromium.org/viewvc/chrome/trunk/src/build/gdb-add-index?pathrev=144644
             // MISSING? .debug_types - Type descriptions from DWARF 4? See http://gcc.gnu.org/wiki/DwarfSeparateTypeInfo
             else if (name == g_sect_name_dwarf_debug_abbrev)    sect_type = eSectionTypeDWARFDebugAbbrev;
             else if (name == g_sect_name_dwarf_debug_aranges)   sect_type = eSectionTypeDWARFDebugAranges;
@@ -963,40 +948,75 @@ ObjectFileELF::GetSectionList()
                     break;
             }
 
-            SectionSP section_sp(new Section(
-                GetModule(),        // Module to which this section belongs.
-                this,               // ObjectFile to which this section belongs and should read section data from.
-                SectionIndex(I),    // Section ID.
-                name,               // Section name.
-                sect_type,          // Section type.
-                header.sh_addr,     // VM address.
-                vm_size,            // VM size in bytes of this section.
-                header.sh_offset,   // Offset of this section in the file.
-                file_size,          // Size of the section as found in the file.
-                header.sh_flags));  // Flags for this section.
+            SectionSP section_sp (new Section(GetModule(),        // Module to which this section belongs.
+                                              this,               // ObjectFile to which this section belongs and should read section data from.
+                                              SectionIndex(I),    // Section ID.
+                                              name,               // Section name.
+                                              sect_type,          // Section type.
+                                              header.sh_addr,     // VM address.
+                                              vm_size,            // VM size in bytes of this section.
+                                              header.sh_offset,   // Offset of this section in the file.
+                                              file_size,          // Size of the section as found in the file.
+                                              header.sh_flags));  // Flags for this section.
 
             if (is_thread_specific)
                 section_sp->SetIsThreadSpecific (is_thread_specific);
             m_sections_ap->AddSection(section_sp);
         }
-
-        m_sections_ap->Finalize(); // Now that we're done adding sections, finalize to build fast-lookup caches
     }
 
-    return m_sections_ap.get();
+    if (m_sections_ap.get())
+    {
+        if (GetType() == eTypeDebugInfo)
+        {
+            static const SectionType g_sections[] =
+            {
+                eSectionTypeDWARFDebugAranges,
+                eSectionTypeDWARFDebugInfo,
+                eSectionTypeDWARFDebugAbbrev,
+                eSectionTypeDWARFDebugFrame,
+                eSectionTypeDWARFDebugLine,
+                eSectionTypeDWARFDebugStr,
+                eSectionTypeDWARFDebugLoc,
+                eSectionTypeDWARFDebugMacInfo,
+                eSectionTypeDWARFDebugPubNames,
+                eSectionTypeDWARFDebugPubTypes,
+                eSectionTypeDWARFDebugRanges,
+                eSectionTypeELFSymbolTable,
+            };
+            SectionList *elf_section_list = m_sections_ap.get();
+            for (size_t idx = 0; idx < sizeof(g_sections) / sizeof(g_sections[0]); ++idx)
+            {
+                SectionType section_type = g_sections[idx];
+                SectionSP section_sp (elf_section_list->FindSectionByType (section_type, true));
+                if (section_sp)
+                {
+                    SectionSP module_section_sp (unified_section_list.FindSectionByType (section_type, true));
+                    if (module_section_sp)
+                        unified_section_list.ReplaceSection (module_section_sp->GetID(), section_sp);
+                    else
+                        unified_section_list.AddSection (section_sp);
+                }
+            }
+        }
+        else
+        {
+            unified_section_list = *m_sections_ap;
+        }
+    }
 }
 
+// private
 unsigned
-ObjectFileELF::ParseSymbols(Symtab *symtab, 
-             user_id_t start_id,
-             SectionList *section_list,
-             const ELFSectionHeaderInfo *symtab_shdr,
-             const DataExtractor &symtab_data,
-             const DataExtractor &strtab_data)
+ObjectFileELF::ParseSymbols (Symtab *symtab,
+                             user_id_t start_id,
+                             SectionList *section_list,
+                             const size_t num_symbols,
+                             const DataExtractor &symtab_data,
+                             const DataExtractor &strtab_data)
 {
     ELFSymbol symbol;
     lldb::offset_t offset = 0;
-    const size_t num_symbols = symtab_data.GetByteSize() / symtab_shdr->sh_entsize;
 
     static ConstString text_section_name(".text");
     static ConstString init_section_name(".init");
@@ -1109,21 +1129,18 @@ ObjectFileELF::ParseSymbols(Symtab *symtab,
             }
         }
 
-        // If the symbol section we've found has no data (SHT_NOBITS), then check the module
-        // for the main object file and use the section there if it has data. This can happen
-        // if we're parsing the debug file and the it has no .text section, for example.
+        // If the symbol section we've found has no data (SHT_NOBITS), then check the module section
+        // list. This can happen if we're parsing the debug file and it has no .text section, for example.
         if (symbol_section_sp && (symbol_section_sp->GetFileSize() == 0))
         {
             ModuleSP module_sp(GetModule());
             if (module_sp)
             {
-                ObjectFile *obj_file = module_sp->GetObjectFile();
-                // Check if we've got a different object file than ourselves.
-                if (obj_file && (obj_file != this))
+                SectionList *module_section_list = module_sp->GetSectionList();
+                if (module_section_list && module_section_list != section_list)
                 {
                     const ConstString &sect_name = symbol_section_sp->GetName();
-                    SectionList *obj_file_section_list = obj_file->GetSectionList();
-                    lldb::SectionSP section_sp (obj_file_section_list->FindSectionByName (sect_name));
+                    lldb::SectionSP section_sp (module_section_list->FindSectionByName (sect_name));
                     if (section_sp && section_sp->GetFileSize())
                     {
                         symbol_section_sp = section_sp;
@@ -1159,32 +1176,46 @@ ObjectFileELF::ParseSymbols(Symtab *symtab,
 }
 
 unsigned
-ObjectFileELF::ParseSymbolTable(Symtab *symbol_table, user_id_t start_id, user_id_t symtab_id)
+ObjectFileELF::ParseSymbolTable(Symtab *symbol_table, user_id_t start_id, lldb_private::Section *symtab)
 {
-    // Parse in the section list if needed.
-    SectionList *section_list = GetSectionList();
+    if (symtab->GetObjectFile() != this)
+    {
+        // If the symbol table section is owned by a different object file, have it do the
+        // parsing.
+        ObjectFileELF *obj_file_elf = static_cast<ObjectFileELF *>(symtab->GetObjectFile());
+        return obj_file_elf->ParseSymbolTable (symbol_table, start_id, symtab);
+    }
+
+    // Get section list for this object file.
+    SectionList *section_list = m_sections_ap.get();
     if (!section_list)
         return 0;
 
-    const ELFSectionHeaderInfo *symtab_hdr = &m_section_headers[symtab_id - 1];
+    user_id_t symtab_id = symtab->GetID();
+    const ELFSectionHeaderInfo *symtab_hdr = GetSectionHeaderByIndex(symtab_id);
     assert(symtab_hdr->sh_type == SHT_SYMTAB || 
            symtab_hdr->sh_type == SHT_DYNSYM);
 
+    // sh_link: section header index of associated string table.
     // Section ID's are ones based.
     user_id_t strtab_id = symtab_hdr->sh_link + 1;
-
-    Section *symtab = section_list->FindSectionByID(symtab_id).get();
     Section *strtab = section_list->FindSectionByID(strtab_id).get();
+
     unsigned num_symbols = 0;
     if (symtab && strtab)
     {
+        assert (symtab->GetObjectFile() == this);
+        assert (strtab->GetObjectFile() == this);
+
         DataExtractor symtab_data;
         DataExtractor strtab_data;
         if (ReadSectionData(symtab, symtab_data) &&
             ReadSectionData(strtab, strtab_data))
         {
+            size_t num_symbols = symtab_data.GetByteSize() / symtab_hdr->sh_entsize;
+
             num_symbols = ParseSymbols(symbol_table, start_id, 
-                                       section_list, symtab_hdr,
+                                       section_list, num_symbols,
                                        symtab_data, strtab_data);
         }
     }
@@ -1198,17 +1229,15 @@ ObjectFileELF::ParseDynamicSymbols()
     if (m_dynamic_symbols.size())
         return m_dynamic_symbols.size();
 
-    user_id_t dyn_id = GetSectionIndexByType(SHT_DYNAMIC);
-    if (!dyn_id)
-        return 0;
-
     SectionList *section_list = GetSectionList();
     if (!section_list)
         return 0;
 
-    Section *dynsym = section_list->FindSectionByID(dyn_id).get();
+    // Find the SHT_DYNAMIC section.
+    Section *dynsym = section_list->FindSectionByType (eSectionTypeELFDynamicLinkInfo, true).get();
     if (!dynsym)
         return 0;
+    assert (dynsym->GetObjectFile() == this);
 
     ELFDynamic symbol;
     DataExtractor dynsym_data;
@@ -1341,7 +1370,7 @@ ObjectFileELF::ParseTrampolineSymbols(Symtab *symbol_table,
 {
     assert(rel_hdr->sh_type == SHT_RELA || rel_hdr->sh_type == SHT_REL);
 
-    // The link field points to the associated symbol table.  The info field
+    // The link field points to the associated symbol table. The info field
     // points to the section holding the plt.
     user_id_t symtab_id = rel_hdr->sh_link;
     user_id_t plt_id = rel_hdr->sh_info;
@@ -1361,7 +1390,7 @@ ObjectFileELF::ParseTrampolineSymbols(Symtab *symbol_table,
     if (!sym_hdr)
         return 0;
 
-    SectionList *section_list = GetSectionList();
+    SectionList *section_list = m_sections_ap.get();
     if (!section_list)
         return 0;
 
@@ -1377,6 +1406,7 @@ ObjectFileELF::ParseTrampolineSymbols(Symtab *symbol_table,
     if (!symtab)
         return 0;
 
+    // sh_link points to associated string table.
     Section *strtab = section_list->FindSectionByID(sym_hdr->sh_link + 1).get();
     if (!strtab)
         return 0;
@@ -1411,82 +1441,68 @@ ObjectFileELF::ParseTrampolineSymbols(Symtab *symbol_table,
 }
 
 Symtab *
-ObjectFileELF::GetSymtab(uint32_t flags)
+ObjectFileELF::GetSymtab()
 {
     ModuleSP module_sp(GetModule());
-    if (module_sp)
-    {
-        lldb_private::Mutex::Locker locker(module_sp->GetMutex());
+    if (!module_sp)
+        return NULL;
 
-        bool from_unified_section_list = !!(flags & eSymtabFromUnifiedSectionList);
-        SectionList *section_list = from_unified_section_list ? module_sp->GetUnifiedSectionList() : GetSectionList();
+    // We always want to use the main object file so we (hopefully) only have one cached copy
+    // of our symtab, dynamic sections, etc.
+    ObjectFile *module_obj_file = module_sp->GetObjectFile();
+    if (module_obj_file && module_obj_file != this)
+        return module_obj_file->GetSymtab();
+
+    if (m_symtab_ap.get() == NULL)
+    {
+        SectionList *section_list = GetSectionList();
         if (!section_list)
             return NULL;
 
-        // If we're doing the unified section list and it has been modified, then clear our
-        // cache and reload the symbols. If needed, we could check on only the sections that
-        // we use to create the symbol table...
-        std::unique_ptr<lldb_private::Symtab> &symtab_ap = from_unified_section_list ? m_symtab_unified_ap : m_symtab_ap;
-        if (from_unified_section_list && (m_symtab_unified_revisionid != section_list->GetRevisionID()))
-        {
-            symtab_ap.reset();
-            m_symtab_unified_revisionid = section_list->GetRevisionID();
-        }
-        else if (symtab_ap.get())
-        {
-            return symtab_ap.get();
-        }
+        uint64_t symbol_id = 0;
+        lldb_private::Mutex::Locker locker(module_sp->GetMutex());
 
-        Symtab *symbol_table = new Symtab(this);
-        symtab_ap.reset(symbol_table);
+        m_symtab_ap.reset(new Symtab(this));
 
         // Sharable objects and dynamic executables usually have 2 distinct symbol
         // tables, one named ".symtab", and the other ".dynsym". The dynsym is a smaller
         // version of the symtab that only contains global symbols. The information found
         // in the dynsym is therefore also found in the symtab, while the reverse is not
         // necessarily true.
-        Section *section_sym = section_list->FindSectionByType (eSectionTypeELFSymbolTable, true).get();
-        if (!section_sym)
+        Section *symtab = section_list->FindSectionByType (eSectionTypeELFSymbolTable, true).get();
+        if (!symtab)
         {
             // The symtab section is non-allocable and can be stripped, so if it doesn't exist
             // then use the dynsym section which should always be there.
-            section_sym = section_list->FindSectionByType (eSectionTypeELFDynamicSymbols, true).get();
+            symtab = section_list->FindSectionByType (eSectionTypeELFDynamicSymbols, true).get();
         }
+        if (symtab)
+            symbol_id += ParseSymbolTable (m_symtab_ap.get(), symbol_id, symtab);
 
-        uint64_t symbol_id = 0;
-        if (section_sym)
+        // Synthesize trampoline symbols to help navigate the PLT.
+        const ELFDynamic *symbol = FindDynamicSymbol(DT_JMPREL);
+        if (symbol)
         {
-            user_id_t section_id = section_sym->GetID();
-            ObjectFileELF *obj_file_elf = static_cast<ObjectFileELF *>(section_sym->GetObjectFile());
-
-            symbol_id += obj_file_elf->ParseSymbolTable (symbol_table, symbol_id, section_id);
-        }
-
-        Section *section = section_list->FindSectionByType (eSectionTypeELFDynamicLinkInfo, true).get();
-        if (section)
-        {
-            ObjectFileELF *obj_file_elf = static_cast<ObjectFileELF *>(section->GetObjectFile());
-
-            // Synthesize trampoline symbols to help navigate the PLT.
-            const ELFDynamic *symbol = obj_file_elf->FindDynamicSymbol(DT_JMPREL);
-            if (symbol)
+            addr_t addr = symbol->d_ptr;
+            Section *reloc_section = section_list->FindSectionContainingFileAddress(addr).get();
+            if (reloc_section) 
             {
-                addr_t addr = symbol->d_ptr;
-                Section *reloc_section = section_list->FindSectionContainingFileAddress(addr).get();
-                if (reloc_section) 
-                {
-                    user_id_t reloc_id = reloc_section->GetID();
-                    const ELFSectionHeaderInfo *reloc_header = obj_file_elf->GetSectionHeaderByIndex(reloc_id);
-                    assert(reloc_header);
+                user_id_t reloc_id = reloc_section->GetID();
+                const ELFSectionHeaderInfo *reloc_header = GetSectionHeaderByIndex(reloc_id);
+                assert(reloc_header);
 
-                    obj_file_elf->ParseTrampolineSymbols(symbol_table, symbol_id, reloc_header, reloc_id);
-                }
+                ParseTrampolineSymbols (m_symtab_ap.get(), symbol_id, reloc_header, reloc_id);
             }
         }
-
-        return symbol_table;
     }
-    return NULL;
+    return m_symtab_ap.get();
+}
+
+bool
+ObjectFileELF::IsStripped ()
+{
+    // TODO: determine this for ELF
+    return false;
 }
 
 //===----------------------------------------------------------------------===//

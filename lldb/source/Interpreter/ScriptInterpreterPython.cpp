@@ -119,7 +119,7 @@ LLDBSwigPythonCallCommand (const char *python_function_name,
                            const char *session_dictionary_name,
                            lldb::DebuggerSP& debugger,
                            const char* args,
-                           lldb_private::CommandReturnObject& cmd_retobj);
+                           lldb_private::CommandReturnObject &cmd_retobj);
 
 extern "C" bool
 LLDBSwigPythonCallModuleInit (const char *python_module_name,
@@ -2964,7 +2964,7 @@ ScriptInterpreterPython::RunScriptBasedCommand(const char* impl_function,
     }
     
     lldb::DebuggerSP debugger_sp = m_interpreter.GetDebugger().shared_from_this();
-
+    
     if (!debugger_sp.get())
     {
         error.SetErrorString("invalid Debugger pointer");
@@ -2974,15 +2974,15 @@ ScriptInterpreterPython::RunScriptBasedCommand(const char* impl_function,
     bool ret_val = false;
     
     std::string err_msg;
-
+    
     {
         Locker py_lock(this,
                        Locker::AcquireLock | Locker::InitSession,
                        Locker::FreeLock    | Locker::TearDownSession);
-
+        
         SynchronicityHandler synch_handler(debugger_sp,
                                            synchronicity);
-
+        
         // we need to save the thread state when we first start the command
         // because we might decide to interrupt it while some action is taking
         // place outside of Python (e.g. printing to screen, waiting for the network, ...)
@@ -2998,7 +2998,7 @@ ScriptInterpreterPython::RunScriptBasedCommand(const char* impl_function,
                                              args,
                                              cmd_retobj);
     }
-
+    
     if (!ret_val)
         error.SetErrorString("unable to execute script function");
     else

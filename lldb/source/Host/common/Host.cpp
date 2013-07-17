@@ -532,13 +532,13 @@ Host::ThreadCreated (const char *thread_name)
 void
 Host::Backtrace (Stream &strm, uint32_t max_frames)
 {
-    // TODO: Is there a way to backtrace the current process on linux? Other systems?
+    // TODO: Is there a way to backtrace the current process on other systems?
 }
 
 size_t
 Host::GetEnvironment (StringList &env)
 {
-    // TODO: Is there a way to the host environment for this process on linux? Other systems?
+    // TODO: Is there a way to the host environment for this process on other systems?
     return 0;
 }
 
@@ -627,40 +627,6 @@ Host::ThreadJoin (lldb::thread_t thread, thread_result_t *thread_result_ptr, Err
     if (error)
         error->SetError(err, eErrorTypePOSIX);
     return err == 0;
-}
-
-
-std::string
-Host::GetThreadName (lldb::pid_t pid, lldb::tid_t tid)
-{
-    std::string thread_name;
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
-    // We currently can only get the name of a thread in the current process.
-    if (pid == Host::GetCurrentProcessID())
-    {
-        char pthread_name[1024];
-        if (::pthread_getname_np (::pthread_from_mach_thread_np (tid), pthread_name, sizeof(pthread_name)) == 0)
-        {
-            if (pthread_name[0])
-            {
-                thread_name = pthread_name;
-            }
-        }
-        else
-        {
-            dispatch_queue_t current_queue = ::dispatch_get_current_queue ();
-            if (current_queue != NULL)
-            {
-                const char *queue_name = dispatch_queue_get_label (current_queue);
-                if (queue_name && queue_name[0])
-                {
-                    thread_name = queue_name;
-                }
-            }
-        }
-    }
-#endif
-    return thread_name;
 }
 
 bool
@@ -914,7 +880,7 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
     // To get paths related to LLDB we get the path to the executable that
     // contains this function. On MacOSX this will be "LLDB.framework/.../LLDB",
     // on linux this is assumed to be the "lldb" main executable. If LLDB on
-    // linux is actually in a shared library (lldb.so??) then this function will
+    // linux is actually in a shared library (liblldb.so) then this function will
     // need to be modified to "do the right thing".
 
     switch (path_type)
@@ -1042,12 +1008,13 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
 
     case ePathTypeLLDBSystemPlugins:    // System plug-ins directory
         {
-#if defined (__APPLE__)
+#if defined (__APPLE__) || defined(__linux__)
             static ConstString g_lldb_system_plugin_dir;
             static bool g_lldb_system_plugin_dir_located = false;
             if (!g_lldb_system_plugin_dir_located)
             {
                 g_lldb_system_plugin_dir_located = true;
+#if defined (__APPLE__)
                 FileSpec lldb_file_spec;
                 if (GetLLDBPath (ePathTypeLLDBShlibDir, lldb_file_spec))
                 {
@@ -1065,6 +1032,13 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                     }
                     return false;
                 }
+#elif defined (__linux__)
+                FileSpec lldb_file_spec("/usr/lib/lldb", true);
+                if (lldb_file_spec.Exists())
+                {
+                    g_lldb_system_plugin_dir.SetCString(lldb_file_spec.GetPath().c_str());
+                }
+#endif // __APPLE__ || __linux__
             }
             
             if (g_lldb_system_plugin_dir)
@@ -1072,9 +1046,10 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                 file_spec.GetDirectory() = g_lldb_system_plugin_dir;
                 return true;
             }
-#endif
-            // TODO: where would system LLDB plug-ins be located on linux? Other systems?
+#else
+            // TODO: where would system LLDB plug-ins be located on other systems?
             return false;
+#endif
         }
         break;
 
@@ -1094,8 +1069,39 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
             }
             file_spec.GetDirectory() = g_lldb_user_plugin_dir;
             return file_spec.GetDirectory();
+#elif defined (__linux__)
+            static ConstString g_lldb_user_plugin_dir;
+            if (!g_lldb_user_plugin_dir)
+            {
+                // XDG Base Directory Specification
+                // http://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
+                // If XDG_DATA_HOME exists, use that, otherwise use ~/.local/share/lldb.
+                FileSpec lldb_file_spec;
+                const char *xdg_data_home = getenv("XDG_DATA_HOME");
+                if (xdg_data_home && xdg_data_home[0])
+                {
+                    std::string user_plugin_dir (xdg_data_home);
+                    user_plugin_dir += "/lldb";
+                    lldb_file_spec.SetFile (user_plugin_dir.c_str(), true);
+                }
+                else
+                {
+                    const char *home_dir = getenv("HOME");
+                    if (home_dir && home_dir[0])
+                    {
+                        std::string user_plugin_dir (home_dir);
+                        user_plugin_dir += "/.local/share/lldb";
+                        lldb_file_spec.SetFile (user_plugin_dir.c_str(), true);
+                    }
+                }
+
+                if (lldb_file_spec.Exists())
+                    g_lldb_user_plugin_dir.SetCString(lldb_file_spec.GetPath().c_str());
+            }
+            file_spec.GetDirectory() = g_lldb_user_plugin_dir;
+            return file_spec.GetDirectory();
 #endif
-            // TODO: where would user LLDB plug-ins be located on linux? Other systems?
+            // TODO: where would user LLDB plug-ins be located on other systems?
             return false;
         }
     }

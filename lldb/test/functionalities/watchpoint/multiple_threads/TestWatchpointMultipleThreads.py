@@ -52,7 +52,6 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.source = 'main.cpp'
         # Find the line number to break inside main().
         self.first_stop = line_number(self.source, '// Set break point at this line')
-        self.thread_function = line_number(self.source, '// Break here in order to allow the thread')
         # Build dictionary to have unique executable names for each test method.
         self.exe_name = self.testMethodName
         self.d = {'CXX_SOURCES': self.source, 'EXE': self.exe_name}
@@ -64,9 +63,6 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
 
         # Add a breakpoint to set a watchpoint when stopped on the breakpoint.
         lldbutil.run_break_set_by_file_and_line (self, None, self.first_stop, num_expected_locations=1)
-
-        # Set this breakpoint to allow newly created thread to inherit the global watchpoint state.
-        lldbutil.run_break_set_by_file_and_line (self, None, self.thread_function, num_expected_locations=1)
 
         # Run the program.
         self.runCmd("run", RUN_SUCCEEDED)
@@ -89,18 +85,11 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.expect("watchpoint list -v",
             substrs = ['hit_count = 0'])
 
-        breakpoint_stops = 0
         while True:
             self.runCmd("process continue")
 
             self.runCmd("thread list")
-            if "stop reason = breakpoint" in self.res.GetOutput():
-                breakpoint_stops += 1
-                # Since there are only three worker threads that could hit the breakpoint.
-                if breakpoint_stops > 3:
-                    self.fail("Do not expect to break more than 3 times")
-                continue
-            elif "stop reason = watchpoint" in self.res.GetOutput():
+            if "stop reason = watchpoint" in self.res.GetOutput():
                 # Good, we verified that the watchpoint works!
                 self.runCmd("thread backtrace all")
                 break
@@ -120,9 +109,6 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         # Add a breakpoint to set a watchpoint when stopped on the breakpoint.
         lldbutil.run_break_set_by_file_and_line (self, None, self.first_stop, num_expected_locations=1)
 
-        # Set this breakpoint to allow newly created thread to inherit the global watchpoint state.
-        lldbutil.run_break_set_by_file_and_line (self, None, self.thread_function, num_expected_locations=1)
-
         # Run the program.
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -144,7 +130,6 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.expect("watchpoint list -v",
             substrs = ['hit_count = 0'])
 
-        breakpoint_stops = 0
         watchpoint_stops = 0
         while True:
             self.runCmd("process continue")
@@ -154,16 +139,7 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
                 break
 
             self.runCmd("thread list")
-            if "stop reason = breakpoint" in self.res.GetOutput():
-                self.runCmd("thread backtrace all")
-                breakpoint_stops += 1
-                if self.TraceOn():
-                    print "breakpoint_stops=%d...." % breakpoint_stops
-                # Since there are only three worker threads that could hit the breakpoint.
-                if breakpoint_stops > 3:
-                    self.fail("Do not expect to break more than 3 times")
-                continue
-            elif "stop reason = watchpoint" in self.res.GetOutput():
+            if "stop reason = watchpoint" in self.res.GetOutput():
                 self.runCmd("thread backtrace all")
                 watchpoint_stops += 1
                 if watchpoint_stops > 1:

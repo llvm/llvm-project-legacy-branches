@@ -10,6 +10,7 @@
 #include "lldb/API/SBModule.h"
 #include "lldb/API/SBAddress.h"
 #include "lldb/API/SBFileSpec.h"
+#include "lldb/API/SBModuleSpec.h"
 #include "lldb/API/SBProcess.h"
 #include "lldb/API/SBStream.h"
 #include "lldb/API/SBSymbolContextList.h"
@@ -37,6 +38,19 @@ SBModule::SBModule () :
 SBModule::SBModule (const lldb::ModuleSP& module_sp) :
     m_opaque_sp (module_sp)
 {
+}
+
+SBModule::SBModule(const SBModuleSpec &module_spec) :
+    m_opaque_sp ()
+{
+    ModuleSP module_sp;
+    Error error = ModuleList::GetSharedModule (*module_spec.m_opaque_ap,
+                                               module_sp,
+                                               NULL,
+                                               NULL,
+                                               NULL);
+    if (module_sp)
+        SetSP(module_sp);
 }
 
 SBModule::SBModule(const SBModule &rhs) :
@@ -392,7 +406,7 @@ SBModule::GetNumSections ()
     {
         // Give the symbol vendor a chance to add to the unified section list.
         module_sp->GetSymbolVendor();
-        SectionList *section_list = module_sp->GetUnifiedSectionList();
+        SectionList *section_list = module_sp->GetSectionList();
         if (section_list)
             return section_list->GetSize();
     }
@@ -408,7 +422,7 @@ SBModule::GetSectionAtIndex (size_t idx)
     {
         // Give the symbol vendor a chance to add to the unified section list.
         module_sp->GetSymbolVendor();
-        SectionList *section_list = module_sp->GetUnifiedSectionList ();
+        SectionList *section_list = module_sp->GetSectionList ();
 
         if (section_list)
             sb_section.SetSP(section_list->GetSectionAtIndex (idx));
@@ -492,7 +506,7 @@ SBModule::FindFirstType (const char *name_cstr)
         sb_type = SBType (module_sp->FindFirstType(sc, name, exact_match));
         
         if (!sb_type.IsValid())
-            sb_type = SBType (ClangASTType::GetBasicType (module_sp->GetClangASTContext().getASTContext(), name));
+            sb_type = SBType (ClangASTContext::GetBasicType (module_sp->GetClangASTContext().getASTContext(), name));
     }
     return sb_type;
 }
@@ -502,7 +516,7 @@ SBModule::GetBasicType(lldb::BasicType type)
 {
     ModuleSP module_sp (GetSP ());
     if (module_sp)
-        return SBType (ClangASTType::GetBasicType (module_sp->GetClangASTContext().getASTContext(), type));
+        return SBType (ClangASTContext::GetBasicType (module_sp->GetClangASTContext().getASTContext(), type));
     return SBType();
 }
 
@@ -535,7 +549,7 @@ SBModule::FindTypes (const char *type)
         }
         else
         {
-            SBType sb_type(ClangASTType::GetBasicType (module_sp->GetClangASTContext().getASTContext(), name));
+            SBType sb_type(ClangASTContext::GetBasicType (module_sp->GetClangASTContext().getASTContext(), name));
             if (sb_type.IsValid())
                 retval.Append(sb_type);
         }
@@ -573,7 +587,7 @@ SBModule::FindSection (const char *sect_name)
     {
         // Give the symbol vendor a chance to add to the unified section list.
         module_sp->GetSymbolVendor();
-        SectionList *section_list = module_sp->GetUnifiedSectionList();
+        SectionList *section_list = module_sp->GetSectionList();
         if (section_list)
         {
             ConstString const_sect_name(sect_name);

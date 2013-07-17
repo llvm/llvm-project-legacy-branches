@@ -19,6 +19,7 @@
 #include "lldb/API/SBFileSpec.h"
 #include "lldb/API/SBListener.h"
 #include "lldb/API/SBModule.h"
+#include "lldb/API/SBModuleSpec.h"
 #include "lldb/API/SBSourceManager.h"
 #include "lldb/API/SBProcess.h"
 #include "lldb/API/SBStream.h"
@@ -1913,6 +1914,16 @@ SBTarget::AddModule (const char *path,
     return sb_module;
 }
 
+lldb::SBModule
+SBTarget::AddModule (const SBModuleSpec &module_spec)
+{
+    lldb::SBModule sb_module;
+    TargetSP target_sp(GetSP());
+    if (target_sp)
+        sb_module.SetSP(target_sp->GetSharedModule (*module_spec.m_opaque_ap));
+    return sb_module;
+}
+
 bool
 SBTarget::AddModule (lldb::SBModule &module)
 {
@@ -2142,7 +2153,7 @@ SBTarget::FindFirstType (const char* typename_cstr)
         // No matches, search for basic typename matches
         ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
         if (clang_ast)
-            return SBType (ClangASTType::GetBasicType (clang_ast->getASTContext(), const_typename));
+            return SBType (ClangASTContext::GetBasicType (clang_ast->getASTContext(), const_typename));
     }
     return SBType();
 }
@@ -2155,7 +2166,7 @@ SBTarget::GetBasicType(lldb::BasicType type)
     {
         ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
         if (clang_ast)
-            return SBType (ClangASTType::GetBasicType (clang_ast->getASTContext(), type));
+            return SBType (ClangASTContext::GetBasicType (clang_ast->getASTContext(), type));
     }
     return SBType();
 }
@@ -2222,7 +2233,7 @@ SBTarget::FindTypes (const char* typename_cstr)
             // No matches, search for basic typename matches
             ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
             if (clang_ast)
-                sb_type_list.Append (SBType (ClangASTType::GetBasicType (clang_ast->getASTContext(), const_typename)));
+                sb_type_list.Append (SBType (ClangASTContext::GetBasicType (clang_ast->getASTContext(), const_typename)));
         }
     }
     return sb_type_list;

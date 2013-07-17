@@ -99,13 +99,15 @@ ifeq ($(HOST_OS),Linux)
   USEDLIBS += lldbHostLinux.a \
               lldbPluginProcessLinux.a \
               lldbPluginProcessPOSIX.a \
-              lldbPluginDynamicLoaderMacOSX.a
+              lldbPluginDynamicLoaderMacOSX.a \
+              lldbPluginProcessElfCore.a
 endif
 
 ifneq (,$(filter $(HOST_OS), FreeBSD GNU/kFreeBSD))
   USEDLIBS += lldbHostFreeBSD.a \
               lldbPluginProcessPOSIX.a \
-              lldbPluginProcessFreeBSD.a
+              lldbPluginProcessFreeBSD.a \
+              lldbPluginProcessElfCore.a
 endif
 
 include $(LEVEL)/Makefile.common

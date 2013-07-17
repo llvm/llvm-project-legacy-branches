@@ -62,10 +62,10 @@ public:
     void
     SetError (lldb::SBError &error,
               const char *fallback_error_cstr = NULL);
-
+    
     void
     SetError (const char *error_cstr);
-    
+
     lldb::ReturnStatus
     GetStatus();
 

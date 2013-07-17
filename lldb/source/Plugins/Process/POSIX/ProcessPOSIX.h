@@ -14,6 +14,7 @@
 
 // C++ Includes
 #include <queue>
+#include <set>
 
 // Other libraries and framework includes
 #include "lldb/Target/Process.h"
@@ -39,6 +40,9 @@ public:
     //------------------------------------------------------------------
     // Process protocol.
     //------------------------------------------------------------------
+    virtual void
+    Finalize();
+
     virtual bool
     CanDebug(lldb_private::Target &target, bool plugin_specified_by_name);
 
@@ -157,6 +161,11 @@ public:
     virtual void
     StopAllThreads(lldb::tid_t stop_tid);
 
+    /// Adds the thread to the list of threads for which we have received the initial stopping signal.
+    /// The \p stop_tid paramter indicates the thread which the stop happened for.
+    bool
+    AddThreadForInitialStopIfNeeded(lldb::tid_t stop_tid);
+
 protected:
     /// Target byte order.
     lldb::ByteOrder m_byte_order;
@@ -183,8 +192,16 @@ protected:
     /// Returns true if the process is stopped.
     bool IsStopped();
 
+    /// Returns true if at least one running is currently running
+    bool IsAThreadRunning();
+
     typedef std::map<lldb::addr_t, lldb::addr_t> MMapMap;
     MMapMap m_addr_to_mmap_size;
+
+    typedef std::set<lldb::tid_t> ThreadStopSet;
+    /// Every thread begins with a stop signal. This keeps track
+    /// of the threads for which we have received the stop signal.
+    ThreadStopSet m_seen_initial_stop;
 };
 
 #endif  // liblldb_MacOSXProcess_H_

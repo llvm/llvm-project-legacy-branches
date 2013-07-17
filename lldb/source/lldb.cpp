@@ -63,6 +63,10 @@
 
 #include "Plugins/Process/mach-core/ProcessMachCore.h"
 
+#if defined(__linux__) or defined(__FreeBSD__)
+#include "Plugins/Process/elf-core/ProcessElfCore.h"
+#endif
+
 #if defined (__linux__)
 #include "Plugins/Process/Linux/ProcessLinux.h"
 #endif
@@ -143,6 +147,10 @@ lldb_private::Initialize ()
 #if defined (__FreeBSD__)
         ProcessFreeBSD::Initialize();
 #endif
+
+#if defined(__linux__) or defined(__FreeBSD__)
+        ProcessElfCore::Initialize();
+#endif
         //----------------------------------------------------------------------
         // Platform agnostic plugins
         //----------------------------------------------------------------------
@@ -221,7 +229,10 @@ lldb_private::Terminate ()
 #if defined (__FreeBSD__)
     ProcessFreeBSD::Terminate();
 #endif
-    
+
+#if defined(__linux__) or defined(__FreeBSD__)
+    ProcessElfCore::Terminate();
+#endif
     ProcessGDBRemote::Terminate();
     DynamicLoaderStatic::Terminate();
 

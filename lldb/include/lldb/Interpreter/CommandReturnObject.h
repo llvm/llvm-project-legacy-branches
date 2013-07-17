@@ -142,12 +142,12 @@ public:
     AppendErrorWithFormat (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
 
     void
-    SetError (const Error &error, 
+    SetError (const Error &error,
               const char *fallback_error_cstr = NULL);
-
+    
     void
     SetError (const char *error_cstr);
-    
+
     lldb::ReturnStatus
     GetStatus();
 

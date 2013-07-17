@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <execinfo.h>
 
 // C++ Includes
 // Other libraries and framework includes
@@ -102,6 +103,13 @@ ReadProcPseudoFile (lldb::pid_t pid, const char *name)
     }
 
     return buf_sp;
+}
+
+lldb::DataBufferSP
+ReadProcPseudoFile (lldb::pid_t pid, lldb::tid_t tid, const char *name)
+{
+    std::string process_thread_pseudo_file = "task/" + std::to_string(tid) + "/" + name;
+    return ReadProcPseudoFile(pid, process_thread_pseudo_file.c_str());
 }
 
 } // anonymous namespace
@@ -334,7 +342,7 @@ GetELFProcessCPUType (const char *exe_path, ProcessInstanceInfo &process_info)
 
     ModuleSpecList specs;
     FileSpec filespec (exe_path, false);
-    const size_t num_specs = ObjectFile::GetModuleSpecifications (filespec, 0, specs);
+    const size_t num_specs = ObjectFile::GetModuleSpecifications (filespec, 0, 0, specs);
     // GetModuleSpecifications() could fail if the executable has been deleted or is locked.
     // But it shouldn't return more than 1 architecture.
     assert(num_specs <= 1 && "Linux plugin supports only a single architecture");
@@ -472,15 +480,58 @@ Host::ThreadCreated (const char *thread_name)
     }
 }
 
+std::string
+Host::GetThreadName (lldb::pid_t pid, lldb::tid_t tid)
+{
+    const size_t thread_name_max_size = 16;
+    char pthread_name[thread_name_max_size];
+    std::string thread_name;
+    // Read the /proc/$PID/stat file.
+    lldb::DataBufferSP buf_sp = ReadProcPseudoFile (pid, tid, "stat");
+
+    // The file/thread name of the executable is stored in parenthesis. Search for the first
+    // '(' and last ')' and copy everything in between.
+    const char *filename_start = ::strchr ((const char *)buf_sp->GetBytes(), '(');
+    const char *filename_end = ::strrchr ((const char *)buf_sp->GetBytes(), ')');
+
+    if (filename_start && filename_end)
+    {
+        ++filename_start;
+        size_t length = filename_end - filename_start;
+        if (length > thread_name_max_size)
+            length = thread_name_max_size;
+        strncpy(pthread_name, filename_start, length);
+        thread_name = std::string(pthread_name, length);
+    }
+
+    return thread_name;
+}
+
 void
 Host::Backtrace (Stream &strm, uint32_t max_frames)
 {
-    // TODO: Is there a way to backtrace the current process on linux?
+    if (max_frames > 0)
+    {
+        std::vector<void *> frame_buffer (max_frames, NULL);
+        int num_frames = ::backtrace (&frame_buffer[0], frame_buffer.size());
+        char** strs = ::backtrace_symbols (&frame_buffer[0], num_frames);
+        if (strs)
+        {
+            // Start at 1 to skip the "Host::Backtrace" frame
+            for (int i = 1; i < num_frames; ++i)
+                strm.Printf("%s\n", strs[i]);
+            ::free (strs);
+        }
+    }
 }
 
 size_t
 Host::GetEnvironment (StringList &env)
 {
-    // TODO: Is there a way to the host environment for this process on linux?
-    return 0;
+    char **host_env = environ;
+    char *env_entry;
+    size_t i;
+    for (i=0; (env_entry = host_env[i]) != NULL; ++i)
+        env.AppendString(env_entry);
+    return i;
 }
