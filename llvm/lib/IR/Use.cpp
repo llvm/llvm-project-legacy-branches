@@ -91,15 +91,15 @@ Use *Use::initTags(Use * const Start, Use *Stop) {
   while (Done < 20) {
     if (Start == Stop--)
       return Start;
-    static const PrevPtrTag tags[20] = { fullStopTag, oneDigitTag, stopTag,
-                                         oneDigitTag, oneDigitTag, stopTag,
-                                         zeroDigitTag, oneDigitTag, oneDigitTag,
-                                         stopTag, zeroDigitTag, oneDigitTag,
-                                         zeroDigitTag, oneDigitTag, stopTag,
-                                         oneDigitTag, oneDigitTag, oneDigitTag,
-                                         oneDigitTag, stopTag
-                                       };
-    new(Stop) Use(tags[Done++]);
+    static const unsigned long tags =
+      (unsigned long)fullStopTag << 38 | (unsigned long)oneDigitTag << 36 | (unsigned long)stopTag << 34 |
+      (unsigned long)oneDigitTag << 32 | oneDigitTag << 30 | stopTag << 28 |
+      zeroDigitTag << 26 | oneDigitTag << 24 | oneDigitTag << 22 |
+      stopTag << 20 | zeroDigitTag << 18 | oneDigitTag << 16 |
+      zeroDigitTag << 14 | oneDigitTag << 12 | stopTag << 10 |
+      oneDigitTag << 8 | oneDigitTag << 6 | oneDigitTag << 4 |
+      oneDigitTag << 2 | stopTag;
+    new(Stop) Use(PrevPtrTag((tags >> (19 - Done++) * 2) & 0x3));
   }
 
   ptrdiff_t Count = Done;
