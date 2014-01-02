@@ -2453,7 +2453,7 @@ public:
         Process *process = exe_ctx.GetProcessPtr();
         Thread *thread = NULL;
         StackFrameSP frame_sp;
-        const bool process_alive = process->IsAlive();
+        const bool process_alive = process ? process->IsAlive() : false;
         if (process_alive)
         {
             thread = exe_ctx.GetThreadPtr();
