@@ -548,7 +548,7 @@ protected:
                     // Otherwise just return.  
                     // FIXME: in the async case it will now be possible to get to the command
                     // interpreter with a state eStateAttaching.  Make sure we handle that correctly.
-                    StateType state = process->WaitForProcessToStop (NULL);
+                    StateType state = process->WaitForProcessToStop (NULL, NULL, false);
                     
                     result.SetDidChangeProcessState (true);
 
@@ -1087,7 +1087,7 @@ protected:
             
             if (process)
             {
-                error = process->ConnectRemote (&process->GetTarget().GetDebugger().GetOutputStream(), remote_url);
+                error = process->ConnectRemote (process->GetTarget().GetDebugger().GetOutputFile().get(), remote_url);
 
                 if (error.Fail())
                 {

@@ -231,19 +231,6 @@ namespace lldb {
         eValueTypeConstResult       = 7     // constant result variables
     } ValueType;
 
-    //----------------------------------------------------------------------
-    // Token size/granularities for Input Readers
-    //----------------------------------------------------------------------
-
-    typedef enum InputReaderGranularity
-    {
-        eInputReaderGranularityInvalid = 0,
-        eInputReaderGranularityByte,
-        eInputReaderGranularityWord,
-        eInputReaderGranularityLine,
-        eInputReaderGranularityAll
-    } InputReaderGranularity;
-
     //------------------------------------------------------------------
     /// These mask bits allow a common interface for queries that can
     /// limit the amount of information that gets parsed to only the
@@ -272,18 +259,6 @@ namespace lldb {
         ePermissionsReadable    = (1u << 1),
         ePermissionsExecutable  = (1u << 2)
     } Permissions;
-
-    typedef enum InputReaderAction
-    {
-        eInputReaderActivate,   // reader is newly pushed onto the reader stack 
-        eInputReaderAsynchronousOutputWritten, // an async output event occurred; the reader may want to do something
-        eInputReaderReactivate, // reader is on top of the stack again after another reader was popped off 
-        eInputReaderDeactivate, // another reader was pushed on the stack 
-        eInputReaderGotToken,   // reader got one of its tokens (granularity)
-        eInputReaderInterrupt,  // reader received an interrupt signal (probably from a control-c)
-        eInputReaderEndOfFile,  // reader received an EOF char (probably from a control-d)
-        eInputReaderDone        // reader was just popped off the stack and is done
-    } InputReaderAction;
 
     typedef enum BreakpointEventType
     {

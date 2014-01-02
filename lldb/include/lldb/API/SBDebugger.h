@@ -228,15 +228,6 @@ public:
     void
     DispatchInputEndOfFile ();
     
-    void
-    PushInputReader (lldb::SBInputReader &reader);
-
-    void
-    NotifyTopInputReader (lldb::InputReaderAction notification);
-
-    bool
-    InputReaderIsTopReader (const lldb::SBInputReader &reader);
-
     const char *
     GetInstanceName  ();
 
@@ -313,10 +304,12 @@ public:
     GetSyntheticForType (SBTypeNameSpecifier);
 #endif
 
+    void
+    RunCommandInterpreter (bool auto_handle_events);
+
 private:
 
     friend class SBCommandInterpreter;
-    friend class SBInputReader;
     friend class SBListener;
     friend class SBProcess;
     friend class SBSourceManager;

@@ -17,6 +17,7 @@
 #include "lldb/lldb-private.h"
 #include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/Debugger.h"
+#include "lldb/Core/IOHandler.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Interpreter/CommandHistory.h"
 #include "lldb/Interpreter/CommandObject.h"
@@ -29,7 +30,8 @@ namespace lldb_private {
 
 class CommandInterpreter :
     public Broadcaster,
-    public Properties
+    public Properties,
+    public IOHandlerDelegate
 {
 public:
     typedef std::map<std::string, OptionArgVectorSP> OptionArgMap;
@@ -317,20 +319,12 @@ public:
     const char *
     ProcessEmbeddedScriptCommands (const char *arg);
 
-    const char *
-    GetPrompt ();
-
     void
-    SetPrompt (const char *);
+    UpdatePrompt (const char *);
     
-    bool Confirm (const char *message, bool default_answer);
-    
-    static size_t
-    GetConfirmationInputReaderCallback (void *baton,
-                                        InputReader &reader,
-                                        lldb::InputReaderAction action,
-                                        const char *bytes,
-                                        size_t bytes_len);
+    bool
+    Confirm (const char *message,
+             bool default_answer);
     
     void
     LoadCommandDictionary ();
@@ -395,8 +389,12 @@ public:
     bool
     GetBatchCommandMode () { return m_batch_command_mode; }
     
-    void
-    SetBatchCommandMode (bool value) { m_batch_command_mode = value; }
+    bool
+    SetBatchCommandMode (bool value) {
+        const bool old_value = m_batch_command_mode;
+        m_batch_command_mode = value;
+        return old_value;
+    }
     
     void
     ChildrenTruncated ()
@@ -435,6 +433,21 @@ public:
         return m_command_history;
     }
     
+    void
+    RunCommandInterpreter(bool auto_handle_events);
+
+    void
+    GetLLDBCommandsFromIOHandler (const char *prompt,
+                                  IOHandlerDelegate &delegate,
+                                  bool asynchronously,
+                                  void *baton);
+
+    void
+    GetPythonCommandsFromIOHandler (const char *prompt,
+                                    IOHandlerDelegate &delegate,
+                                    bool asynchronously,
+                                    void *baton);
+
     //------------------------------------------------------------------
     // Properties
     //------------------------------------------------------------------
@@ -449,6 +462,16 @@ public:
     
 protected:
     friend class Debugger;
+
+    //------------------------------------------------------------------
+    // IOHandler::Delegate functions
+    //------------------------------------------------------------------
+    virtual void
+    IOHandlerInputComplete (IOHandler &io_handler,
+                            std::string &line);
+
+    size_t
+    GetProcessOutput ();
 
     void
     SetSynchronous (bool value);
@@ -473,6 +496,7 @@ private:
     CommandHistory m_command_history;
     std::string m_repeat_command;               // Stores the command that will be executed for an empty command string.
     std::unique_ptr<ScriptInterpreter> m_script_interpreter_ap;
+    lldb::IOHandlerSP m_command_io_handler_sp;
     char m_comment_char;
     bool m_batch_command_mode;
     ChildrenTruncatedWarningStatus m_truncation_warning;    // Whether we truncated children and whether the user has been told

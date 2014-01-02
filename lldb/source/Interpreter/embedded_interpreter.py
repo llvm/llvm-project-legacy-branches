@@ -1,88 +1,59 @@
-import readline
+import __builtin__
 import code
+import lldb
 import sys
 import traceback
 
-class SimpleREPL(code.InteractiveConsole):
-   def __init__(self, prompt, dict):
-       code.InteractiveConsole.__init__(self,dict)
-       self.prompt = prompt
-       self.loop_exit = False
-       self.dict = dict
+try:
+    import readline
+    import rlcompleter
+except ImportError:
+    have_readline = False
+else:
+    have_readline = True
+    if 'libedit' in readline.__doc__:
+        readline.parse_and_bind('bind ^I rl_complete')
+    else:
+        readline.parse_and_bind('tab: complete')
 
-   def interact(self):
-       try:
-           sys.ps1
-       except AttributeError:
-           sys.ps1 = ">>> "
-       try:
-           sys.ps2
-       except AttributeError:
-           sys.ps2 = "... "
+g_builtin_override_called = False
 
-       while not self.loop_exit:
-           try:
-               self.read_py_command()
-           except (SystemExit, EOFError):
-               # EOF while in Python just breaks out to top level.
-               self.write('\n')
-               self.loop_exit = True
-               break
-           except KeyboardInterrupt:
-               self.write("\nKeyboardInterrupt\n")
-               self.resetbuffer()
-               more = 0
-           except:
-               traceback.print_exc()
+class LLDBQuitter(object):
+    def __init__(self, name):
+        self.name = name
+    def __repr__(self):
+        self()
+    def __call__(self, code=None):
+        global g_builtin_override_called
+        g_builtin_override_called = True
+        raise SystemExit(-1)
 
-   def process_input (self, in_str):
-      # Canonicalize the format of the input string
-      temp_str = in_str
-      temp_str.strip(' \t')
-      words = temp_str.split()
-      temp_str = ('').join(words)
+def setquit():
+    '''Redefine builtin functions 'quit()' and 'exit()' to print a message and raise an EOFError exception.'''
+    # This function will be called prior to each interactive
+    # interpreter loop or each single line, so we set the global
+    # g_builtin_override_called to False so we know if a SystemExit
+    # is thrown, we can catch it and tell the difference between
+    # a call to "quit()" or "exit()" and something like
+    # "sys.exit(123)"
+    global g_builtin_override_called
+    g_builtin_override_called = False
+    __builtin__.quit = LLDBQuitter('quit')
+    __builtin__.exit = LLDBQuitter('exit')
 
-      # Check the input string to see if it was the quit
-      # command.  If so, intercept it, so that it doesn't
-      # close stdin on us!
-      if (temp_str.lower() == "quit()" or temp_str.lower() == "exit()"):
-         self.loop_exit = True
-         in_str = "raise SystemExit "
-      return in_str
+def run_python_interpreter (dict):
+    global g_builtin_override_called
+    setquit()
+    try:
+        code.interact ("Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.", None, dict)
+    except SystemExit as e:
+        if not g_builtin_override_called:
+            print 'Script exited with %s' %(e)
 
-   def my_raw_input (self, prompt):
-      stream = sys.stdout
-      stream.write (prompt)
-      stream.flush ()
-      try:
-         line = sys.stdin.readline()
-      except KeyboardInterrupt:
-         line = " \n"
-      except (SystemExit, EOFError):
-         line = "quit()\n"
-      if not line:
-         raise EOFError
-      if line[-1] == '\n':
-         line = line[:-1]
-      return line
+# When running one line, we might place the string to run in this string
+# in case it would be hard to correctly escape a string's contents
 
-   def read_py_command(self):
-       # Read off a complete Python command.
-       more = 0
-       while 1:
-           if more:
-               prompt = sys.ps2
-           else:
-               prompt = sys.ps1
-           line = self.my_raw_input(prompt)
-           # Can be None if sys.stdin was redefined
-           encoding = getattr(sys.stdin, "encoding", None)
-           if encoding and not isinstance(line, unicode):
-               line = line.decode(encoding)
-           line = self.process_input (line)
-           more = self.push(line)
-           if not more:
-               break
+g_run_one_line_str = None
 
    def one_line (self, input):
       line = self.process_input (input)
@@ -98,6 +69,16 @@ def run_python_interpreter (dict):
    repl.interact()
 
 def run_one_line (dict, input_string):
-   repl = SimpleREPL ('', dict)
-   repl.one_line (input_string)
+    global g_builtin_override_called
+    global g_run_one_line_str
+    setquit()
+    try:
+        repl = code.InteractiveConsole(dict);
+        if input_string:
+            repl.runsource (input_string)
+        elif g_run_one_line_str:
+            repl.runsource (g_run_one_line_str)
 
+    except SystemExit as e:
+        if not g_builtin_override_called:
+            print 'Script exited with %s' %(e)

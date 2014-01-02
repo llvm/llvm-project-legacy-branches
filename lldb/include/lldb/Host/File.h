@@ -476,6 +476,12 @@ public:
     size_t
     PrintfVarArg(const char *format, va_list args);
 
+    
+    void
+    SetOptions (uint32_t options)
+    {
+        m_options = options;
+    }
 protected:
     
     

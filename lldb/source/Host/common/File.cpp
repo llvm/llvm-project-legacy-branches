@@ -76,7 +76,7 @@ FILE * File::kInvalidStream = NULL;
 File::File(const char *path, uint32_t options, uint32_t permissions) :
     m_descriptor (kInvalidDescriptor),
     m_stream (kInvalidStream),
-    m_options (0),
+    m_options (),
     m_owned (false)
 {
     Open (path, options, permissions);
@@ -272,7 +272,10 @@ File::Open (const char *path, uint32_t options, uint32_t permissions)
     if (!DescriptorIsValid())
         error.SetErrorToErrno();
     else
+    {
         m_owned = true;
+        m_options = options;
+    }
     
     return error;
 }
