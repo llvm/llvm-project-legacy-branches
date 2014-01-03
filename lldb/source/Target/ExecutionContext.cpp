@@ -127,10 +127,10 @@ ExecutionContext::ExecutionContext (Target* t, bool fill_current_process_thread_
     if (t && fill_current_process_thread_frame)
     {
         m_process_sp = t->GetProcessSP();
-        if (m_process_sp && StateIsStoppedState(m_process_sp->GetState(), true))
+        if (m_process_sp)
         {
             m_thread_sp = m_process_sp->GetThreadList().GetSelectedThread();
-            if (m_thread_sp)
+            if (StateIsStoppedState(m_process_sp->GetState(), true) && m_thread_sp)
                 m_frame_sp = m_thread_sp->GetSelectedFrame();
         }
     }
@@ -152,10 +152,11 @@ ExecutionContext::ExecutionContext (const ExecutionContextRef &exe_ctx_ref) :
     m_thread_sp (),
     m_frame_sp ()
 {
-    if (m_process_sp && StateIsStoppedState(m_process_sp->GetState(), true))
+    if (m_process_sp)
     {
         m_thread_sp = exe_ctx_ref.GetThreadSP();
-        m_frame_sp = exe_ctx_ref.GetFrameSP();
+        if (StateIsStoppedState(m_process_sp->GetState(), true))
+            m_frame_sp = exe_ctx_ref.GetFrameSP();
     }
 }
 
@@ -169,10 +170,11 @@ ExecutionContext::ExecutionContext (const ExecutionContextRef *exe_ctx_ref_ptr) 
     {
         m_target_sp  = exe_ctx_ref_ptr->GetTargetSP();
         m_process_sp = exe_ctx_ref_ptr->GetProcessSP();
-        if (m_process_sp && StateIsStoppedState(m_process_sp->GetState(), true))
+        if (m_process_sp)
         {
             m_thread_sp = exe_ctx_ref_ptr->GetThreadSP();
-            m_frame_sp = exe_ctx_ref_ptr->GetFrameSP();
+            if (StateIsStoppedState(m_process_sp->GetState(), true))
+                m_frame_sp = exe_ctx_ref_ptr->GetFrameSP();
         }
     }
 }
@@ -190,10 +192,11 @@ ExecutionContext::ExecutionContext (const ExecutionContextRef *exe_ctx_ref_ptr, 
         {
             locker.Lock(m_target_sp->GetAPIMutex());
             m_process_sp = exe_ctx_ref_ptr->GetProcessSP();
-            if (m_process_sp && StateIsStoppedState(m_process_sp->GetState(), true))
+            if (m_process_sp)
             {
                 m_thread_sp = exe_ctx_ref_ptr->GetThreadSP();
-                m_frame_sp = exe_ctx_ref_ptr->GetFrameSP();
+                if (StateIsStoppedState(m_process_sp->GetState(), true))
+                    m_frame_sp = exe_ctx_ref_ptr->GetFrameSP();
             }
         }
     }
@@ -209,11 +212,9 @@ ExecutionContext::ExecutionContext (const ExecutionContextRef &exe_ctx_ref, Mute
     {
         locker.Lock(m_target_sp->GetAPIMutex());
         m_process_sp = exe_ctx_ref.GetProcessSP();
+        m_thread_sp  = exe_ctx_ref.GetThreadSP();
         if (m_process_sp && StateIsStoppedState(m_process_sp->GetState(), true))
-        {
-            m_thread_sp  = exe_ctx_ref.GetThreadSP();
             m_frame_sp   = exe_ctx_ref.GetFrameSP();
-        }
     }
 }
 
