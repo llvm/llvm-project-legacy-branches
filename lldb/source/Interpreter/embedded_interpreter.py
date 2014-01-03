@@ -55,14 +55,6 @@ def run_python_interpreter (dict):
 
 g_run_one_line_str = None
 
-   def one_line (self, input):
-      line = self.process_input (input)
-      more = self.push(line)
-      if more:
-         self.write ("Input not a complete line.\n")
-         self.resetbuffer()
-         more = 0
-
 def run_python_interpreter (dict):
    # Pass in the dictionary, for continuity from one session to the next.
    repl = SimpleREPL('>>> ', dict)
