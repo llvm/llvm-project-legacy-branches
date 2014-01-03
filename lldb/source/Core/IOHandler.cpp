@@ -1596,6 +1596,10 @@ namespace curses
             debugger.EnableForwardEvents (listener_sp);
 
             bool update = true;
+#if defined(__APPLE__)
+            std::deque<int> escape_chars;
+#endif
+            
             while (!done)
             {
                 if (update)
@@ -1608,8 +1612,43 @@ namespace curses
                     doupdate();
                     update = false;
                 }
-                int ch = m_window_sp->GetChar();
                 
+#if defined(__APPLE__)
+                // Terminal.app doesn't map its function keys correctly, F1-F4 default to:
+                // \033OP, \033OQ, \033OR, \033OS, so lets take care of this here if possible
+                int ch;
+                if (escape_chars.empty())
+                    ch = m_window_sp->GetChar();
+                else
+                {
+                    ch = escape_chars.front();
+                    escape_chars.pop_front();
+                }
+                if (ch == KEY_ESCAPE)
+                {
+                    int ch2 = m_window_sp->GetChar();
+                    if (ch2 == 'O')
+                    {
+                        int ch3 = m_window_sp->GetChar();
+                        switch (ch3)
+                        {
+                            case 'P': ch = KEY_F(1); break;
+                            case 'Q': ch = KEY_F(2); break;
+                            case 'R': ch = KEY_F(3); break;
+                            case 'S': ch = KEY_F(4); break;
+                            default:
+                                escape_chars.push_back(ch2);
+                                escape_chars.push_back(ch3);
+                                break;
+                        }
+                    }
+                    else
+                        escape_chars.push_back(ch2);
+                }
+#else
+                int ch = m_window_sp->GetChar();
+
+#endif
                 if (ch == -1)
                 {
                     if (feof(m_in) || ferror(m_in))
