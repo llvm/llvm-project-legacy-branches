@@ -1638,11 +1638,12 @@ namespace curses
                             case 'S': ch = KEY_F(4); break;
                             default:
                                 escape_chars.push_back(ch2);
-                                escape_chars.push_back(ch3);
+                                if (ch3 != -1)
+                                    escape_chars.push_back(ch3);
                                 break;
                         }
                     }
-                    else
+                    else if (ch2 != -1)
                         escape_chars.push_back(ch2);
                 }
 #else
