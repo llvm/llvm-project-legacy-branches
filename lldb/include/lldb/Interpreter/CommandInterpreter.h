@@ -307,7 +307,8 @@ public:
     ExecutionContext
     GetExecutionContext()
     {
-        return m_exe_ctx_ref.Lock();
+        const bool thread_and_frame_only_if_stopped = true;
+        return m_exe_ctx_ref.Lock(thread_and_frame_only_if_stopped);
     }
     
     void

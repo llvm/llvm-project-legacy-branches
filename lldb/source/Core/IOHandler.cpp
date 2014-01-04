@@ -505,6 +505,159 @@ namespace curses
     typedef std::vector<WindowSP> Windows;
     typedef std::vector<WindowDelegateSP> WindowDelegates;
 
+    // type summary add -s "x=${var.x}, y=${var.y}" curses::Rect
+    struct Point
+    {
+        int x;
+        int y;
+        
+        Point (int _x = 0, int _y = 0) :
+            x(_x),
+            y(_y)
+        {
+        }
+
+        void
+        Clear ()
+        {
+            x = 0;
+            y = 0;
+        }
+    };
+    
+    // type summary add -s "w=${var.width}, h=${var.height}" curses::Size
+    struct Size
+    {
+        int width;
+        int height;
+        Size (int w = 0, int h = 0) :
+            width (w),
+            height (h)
+        {
+        }
+        
+        void
+        Clear ()
+        {
+            width = 0;
+            height = 0;
+        }
+    };
+    
+    // type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
+    struct Rect
+    {
+        Point origin;
+        Size size;
+        
+        Rect () :
+            origin(),
+            size()
+        {
+        }
+    
+        Rect (const Point &p, const Size &s) :
+            origin (p),
+            size (s)
+        {
+        }
+        
+        void
+        Clear ()
+        {
+            origin.Clear();
+            size.Clear();
+        }
+        
+        // Return a status bar rectangle which is the last line of
+        // this rectangle. This rectangle will be modified to not
+        // include the status bar area.
+        Rect
+        MakeStatusBar ()
+        {
+            Rect status_bar;
+            if (size.height > 1)
+            {
+                status_bar.origin.x = origin.x;
+                status_bar.origin.y = size.height;
+                status_bar.size.width = size.width;
+                status_bar.size.height = 1;
+                --size.height;
+            }
+            return status_bar;
+        }
+
+        // Return a menubar rectangle which is the first line of
+        // this rectangle. This rectangle will be modified to not
+        // include the menubar area.
+        Rect
+        MakeMenuBar ()
+        {
+            Rect menubar;
+            if (size.height > 1)
+            {
+                menubar.origin.x = origin.x;
+                menubar.origin.y = origin.y;
+                menubar.size.width = size.width;
+                menubar.size.height = 1;
+                ++origin.y;
+                --size.height;
+            }
+            return menubar;
+        }
+
+        void
+        HorizontalSplitPercentage (float top_percentage, Rect &top, Rect &bottom) const
+        {
+            float top_height = top_percentage * size.height;
+            HorizontalSplit (top_height, top, bottom);
+        }
+
+        void
+        HorizontalSplit (int top_height, Rect &top, Rect &bottom) const
+        {
+            top = *this;
+            if (top_height < size.height)
+            {
+                top.size.height = top_height;
+                bottom.origin.x = origin.x;
+                bottom.origin.y = origin.y + top.size.height;
+                bottom.size.width = size.width;
+                bottom.size.height = size.height - top.size.height;
+            }
+            else
+            {
+                bottom.Clear();
+            }
+        }
+        
+        void
+        VerticalSplitPercentage (float left_percentage, Rect &left, Rect &right) const
+        {
+            float left_width = left_percentage * size.width;
+            VerticalSplit (left_width, left, right);
+        }
+
+
+        void
+        VerticalSplit (int left_width, Rect &left, Rect &right) const
+        {
+            left = *this;
+            if (left_width < size.width)
+            {
+                left.size.width = left_width;
+                right.origin.x = origin.x + left.size.width;
+                right.origin.y = origin.y;
+                right.size.width = size.width - left.size.width;
+                right.size.height = size.height;
+            }
+            else
+            {
+                right.Clear();
+            }
+        }
+    };
+
     enum HandleCharResult
     {
         eKeyNotHandled      = 0,
@@ -574,9 +727,9 @@ namespace curses
         {
         }
         
-        Window (const char *name, int nlines, int ncols, int begin_y, int begin_x) :
+        Window (const char *name, const Rect &bounds) :
             m_name (name),
-            m_window (::newwin (nlines, ncols, begin_y, begin_x)),
+            m_window (::newwin (bounds.size.height, bounds.size.width, bounds.origin.y, bounds.origin.y)),
             m_parent (NULL),
             m_subwindows (),
             m_delegate_sp (),
@@ -619,9 +772,13 @@ namespace curses
         void    Box (chtype v_char = ACS_VLINE, chtype h_char = ACS_HLINE) { ::box(m_window, v_char, h_char); }
         void    Clear ()    { ::wclear (m_window); }
         void    Erase ()    { ::werase (m_window); }
+        Rect    GetBounds () { return Rect (GetParentOrigin(), GetSize()); } // Get the rectangle in our parent window
         int     GetChar ()  { return ::wgetch (m_window); }
         int     GetCursorX ()     { return getcurx (m_window); }
         int     GetCursorY ()     { return getcury (m_window); }
+        Rect    GetFrame ()    { return Rect (Point(), GetSize()); } // Get our rectangle in our own coordinate system
+        Point   GetParentOrigin() { return Point (GetParentX(), GetParentY()); }
+        Size    GetSize()         { return Size (GetWidth(), GetHeight()); }
         int     GetParentX ()     { return getparx (m_window); }
         int     GetParentY ()     { return getpary (m_window); }
         int     GetMaxX()   { return getmaxx (m_window); }
@@ -630,12 +787,18 @@ namespace curses
         int     GetHeight() { return GetMaxY(); }
         void    MoveCursor (int x, int y) {  ::wmove (m_window, y, x); }
         void    MoveWindow (int x, int y) {  ::mvwin (m_window, y, x); }
+        void    MoveWindow (const Point &pt) {  ::mvwin (m_window, pt.y, pt.x); }
         void    Resize (int w, int h) { ::wresize(m_window, h, w); }
+        void    Resize (const Size &size) { ::wresize(m_window, size.height, size.width); }
         void    PutChar (int ch)    { ::waddch (m_window, ch); }
         void    PutCString (const char *s, int len = -1) { ::waddnstr (m_window, s, len); }
         void    Refresh ()  { ::wrefresh (m_window); }
         void    DeferredRefresh ()  { ::wnoutrefresh(m_window); }
         void    SetBackground (int color_pair_idx) { ::wbkgd (m_window,COLOR_PAIR(color_pair_idx)); }
+        void    SetBounds (const Rect &r) {
+            MoveWindow(r.origin);
+            Resize (r.size);
+        }
         void    UnderlineOn ()  { AttributeOn(A_UNDERLINE); }
         void    UnderlineOff () { AttributeOff(A_UNDERLINE); }
 
@@ -670,13 +833,20 @@ namespace curses
         }
 
         WindowSP
-        CreateSubWindow (const char *name, int h, int w, int y, int x, bool make_active)
+        CreateSubWindow (const char *name, const Rect &bounds, bool make_active)
         {
             WindowSP subwindow_sp;
             if (m_window)
-                subwindow_sp.reset(new Window(name, ::subwin (m_window, h, w, y, x), true));
+                subwindow_sp.reset(new Window(name, ::subwin (m_window,
+                                                              bounds.size.height,
+                                                              bounds.size.width,
+                                                              bounds.origin.y,
+                                                              bounds.origin.x), true));
             else
-                subwindow_sp.reset(new Window(name, ::newwin (h, w, y, x), true));
+                subwindow_sp.reset(new Window(name, ::newwin (bounds.size.height,
+                                                              bounds.size.width,
+                                                              bounds.origin.y,
+                                                              bounds.origin.x), true));
             subwindow_sp->m_parent = this;
             if (make_active)
             {
@@ -1488,16 +1658,16 @@ namespace curses
                 if (run_menu_sp->Action() == MenuActionResult::Quit)
                     return eQuitApplication;
 
-                const int win_width = run_menu_sp->GetDrawWidth();
-                const int win_height = run_menu_sp->GetSubmenus().size() + 2;
+                Rect menu_bounds;
+                menu_bounds.origin.x = run_menu_sp->GetStartingColumn();
+                menu_bounds.origin.y = 1;
+                menu_bounds.size.width = run_menu_sp->GetDrawWidth();
+                menu_bounds.size.height = run_menu_sp->GetSubmenus().size() + 2;
                 if (m_menu_window_sp)
                     window.GetParent()->RemoveSubWindow(m_menu_window_sp.get());
                 
                 m_menu_window_sp = window.GetParent()->CreateSubWindow (run_menu_sp->GetName().c_str(),
-                                                                        win_height,
-                                                                        win_width,
-                                                                        1,
-                                                                        run_menu_sp->GetStartingColumn(),
+                                                                        menu_bounds,
                                                                         true);
                 m_menu_window_sp->SetDelegate (run_menu_sp);
             }
@@ -2475,32 +2645,25 @@ public:
                     WindowSP main_window_sp = m_app.GetMainWindow();
                     WindowSP source_window_sp = main_window_sp->FindSubWindow("Source");
                     WindowSP variables_window_sp = main_window_sp->FindSubWindow("Variables");
-                    const int source_x = source_window_sp->GetParentX();
-                    const int source_y = source_window_sp->GetParentY();
-                    const int source_w = source_window_sp->GetWidth();
-                    const int source_h = source_window_sp->GetHeight();
+                    const Rect source_bounds = source_window_sp->GetBounds();
 
                     if (variables_window_sp)
                     {
-                        source_window_sp->Resize (source_w, source_h + variables_window_sp->GetHeight());
+                        source_window_sp->Resize (source_bounds.size.width,
+                                                  source_bounds.size.height + variables_window_sp->GetHeight());
                         main_window_sp->RemoveSubWindow(variables_window_sp.get());
                     }
                     else
                     {
-                        int new_source_h = (source_h / 3) * 2;
-                        int variables_h = source_h - new_source_h;
-                        if (variables_h > 0)
-                        {
-                            source_window_sp->Resize (source_w, new_source_h);
-                            WindowSP new_variables_window_sp = main_window_sp->CreateSubWindow ("Variables",
-                                                                                                variables_h,
-                                                                                                source_w,
-                                                                                                source_y + new_source_h,
-                                                                                                source_x,
-                                                                                                false);
-                            
-                            new_variables_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
-                        }
+                        Rect new_source_rect;
+                        Rect new_vars_rect;
+                        source_bounds.HorizontalSplitPercentage (0.70, new_source_rect, new_vars_rect);
+                        source_window_sp->SetBounds (new_source_rect);
+                        WindowSP new_variables_window_sp = main_window_sp->CreateSubWindow ("Variables",
+                                                                                            new_vars_rect,
+                                                                                            false);
+                        
+                        new_variables_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
                     }
                     touchwin(stdscr);
                 }
@@ -3122,44 +3285,40 @@ IOHandlerCursesGUI::Activate ()
         menubar_sp->AddSubmenu (help_menu_sp);
         menubar_sp->SetDelegate(app_menu_delegate_sp);
         
-        WindowSP menubar_window_sp = main_window_sp->CreateSubWindow("Menubar", 1, main_window_sp->GetWidth(), 0, 0, false);
+        Rect content_bounds = main_window_sp->GetFrame();
+        Rect menubar_bounds = content_bounds.MakeMenuBar();
+        Rect status_bounds = content_bounds.MakeStatusBar();
+        Rect source_bounds;
+        Rect variables_bounds;
+        content_bounds.HorizontalSplitPercentage(0.70, source_bounds, variables_bounds);
+        
+        WindowSP menubar_window_sp = main_window_sp->CreateSubWindow("Menubar", menubar_bounds, false);
         // Let the menubar get keys if the active window doesn't handle the
         // keys that are typed so it can respond to menubar key presses.
         menubar_window_sp->SetCanBeActive(false); // Don't let the menubar become the active window
         menubar_window_sp->SetDelegate(menubar_sp);
+        
+        WindowSP source_window_sp (main_window_sp->CreateSubWindow("Source",
+                                                                   source_bounds,
+                                                                   true));
+        WindowSP variables_window_sp (main_window_sp->CreateSubWindow("Variables",
+                                                                      variables_bounds,
+                                                                      false));
+        WindowSP status_window_sp (main_window_sp->CreateSubWindow("Status",
+                                                                   status_bounds,
+                                                                   false));
+        status_window_sp->SetCanBeActive(false); // Don't let the status bar become the active window
+        main_window_sp->SetDelegate (std::static_pointer_cast<WindowDelegate>(app_delegate_sp));
+        source_window_sp->SetDelegate (WindowDelegateSP(new SourceFileWindowDelegate(m_debugger)));
+        variables_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
+        status_window_sp->SetDelegate (WindowDelegateSP(new StatusBarWindowDelegate(m_debugger)));
+        
         init_pair (1, COLOR_WHITE   , COLOR_BLUE  );
         init_pair (2, COLOR_BLACK   , COLOR_WHITE );
         init_pair (3, COLOR_MAGENTA , COLOR_WHITE );
         init_pair (4, COLOR_MAGENTA , COLOR_BLACK );
         init_pair (5, COLOR_RED     , COLOR_BLACK );
-        
-        const int main_window_view_h = main_window_sp->GetHeight() - 1; // Subtract 1 for menubar
-        const int main_window_view_w = main_window_sp->GetWidth();
-        int source_window_height = (main_window_view_h / 3) * 2;
-        int locals_window_height = main_window_view_h - source_window_height;
-        WindowSP source_window_sp (main_window_sp->CreateSubWindow("Source",
-                                                                   source_window_height,
-                                                                   main_window_view_w,
-                                                                   1,
-                                                                   0,
-                                                                   true));
-        WindowSP locals_window_sp (main_window_sp->CreateSubWindow("Variables",
-                                                                   locals_window_height - 1,
-                                                                   main_window_view_w,
-                                                                   1 + source_window_height,
-                                                                   0,
-                                                                   false));
-        WindowSP status_window_sp (main_window_sp->CreateSubWindow("Status",
-                                                                   1,
-                                                                   main_window_view_w,
-                                                                   source_window_height + locals_window_height,
-                                                                   0,
-                                                                   false));
-        status_window_sp->SetCanBeActive(false); // Don't let the status bar become the active window
-        main_window_sp->SetDelegate (std::static_pointer_cast<WindowDelegate>(app_delegate_sp));
-        source_window_sp->SetDelegate (WindowDelegateSP(new SourceFileWindowDelegate(m_debugger)));
-        locals_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
-        status_window_sp->SetDelegate (WindowDelegateSP(new StatusBarWindowDelegate(m_debugger)));
+
     }
 }
 
