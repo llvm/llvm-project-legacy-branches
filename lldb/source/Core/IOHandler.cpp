@@ -620,12 +620,12 @@ namespace curses
         void    Clear ()    { ::wclear (m_window); }
         void    Erase ()    { ::werase (m_window); }
         int     GetChar ()  { return ::wgetch (m_window); }
-        int     GetCursorX ()     { return ::getcurx (m_window); }
-        int     GetCursorY ()     { return ::getcury (m_window); }
-        int     GetParentX ()     { return ::getparx (m_window); }
-        int     GetParentY ()     { return ::getpary (m_window); }
-        int     GetMaxX()   { return ::getmaxx (m_window); }
-        int     GetMaxY()   { return ::getmaxy (m_window); }
+        int     GetCursorX ()     { return getcurx (m_window); }
+        int     GetCursorY ()     { return getcury (m_window); }
+        int     GetParentX ()     { return getparx (m_window); }
+        int     GetParentY ()     { return getpary (m_window); }
+        int     GetMaxX()   { return getmaxx (m_window); }
+        int     GetMaxY()   { return getmaxy (m_window); }
         int     GetWidth()  { return GetMaxX(); }
         int     GetHeight() { return GetMaxY(); }
         void    MoveCursor (int x, int y) {  ::wmove (m_window, y, x); }
