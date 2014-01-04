@@ -514,8 +514,8 @@ namespace curses
     
     enum class MenuActionResult
     {
-        Success,
-        Error,
+        Handled,
+        NotHandled,
         Quit    // Exit all menus and quit
     };
 
@@ -620,15 +620,17 @@ namespace curses
         void    Clear ()    { ::wclear (m_window); }
         void    Erase ()    { ::werase (m_window); }
         int     GetChar ()  { return ::wgetch (m_window); }
-        int     GetX ()     { return ::getcurx (m_window); }
-        int     GetY ()     { return ::getcury (m_window); }
-        int     GetMinX()   { return ::getbegx (m_window); }
-        int     GetMinY()   { return ::getbegy (m_window); }
+        int     GetCursorX ()     { return ::getcurx (m_window); }
+        int     GetCursorY ()     { return ::getcury (m_window); }
+        int     GetParentX ()     { return ::getparx (m_window); }
+        int     GetParentY ()     { return ::getpary (m_window); }
         int     GetMaxX()   { return ::getmaxx (m_window); }
         int     GetMaxY()   { return ::getmaxy (m_window); }
         int     GetWidth()  { return GetMaxX(); }
         int     GetHeight() { return GetMaxY(); }
-        void    Move (int x, int y) {  ::wmove (m_window, y, x); }
+        void    MoveCursor (int x, int y) {  ::wmove (m_window, y, x); }
+        void    MoveWindow (int x, int y) {  ::mvwin (m_window, y, x); }
+        void    Resize (int w, int h) { ::wresize(m_window, h, w); }
         void    PutChar (int ch)    { ::waddch (m_window, ch); }
         void    PutCString (const char *s, int len = -1) { ::waddnstr (m_window, s, len); }
         void    Refresh ()  { ::wrefresh (m_window); }
@@ -717,6 +719,19 @@ namespace curses
             return false;
         }
         
+        WindowSP
+        FindSubWindow (const char *name)
+        {
+            Windows::iterator pos, end = m_subwindows.end();
+            size_t i = 0;
+            for (pos = m_subwindows.begin(); pos != end; ++pos, ++i)
+            {
+                if ((*pos)->m_name.compare(name) == 0)
+                    return *pos;
+            }
+            return WindowSP();
+        }
+        
         void
         RemoveSubWindows ()
         {
@@ -760,7 +775,7 @@ namespace curses
                 AttributeOn(attr);
 
             Box();
-            Move (3, 0);
+            MoveCursor(3, 0);
             
             if (title && title[0])
             {
@@ -1016,7 +1031,8 @@ namespace curses
         // Menuitem constructor
         Menu (const char *name,
               const char *key_name,
-              int key_value);
+              int key_value,
+              uint64_t identifier);
         
         virtual ~
         Menu ()
@@ -1054,11 +1070,30 @@ namespace curses
         WindowDelegateHandleChar (Window &window, int key);
 
         MenuActionResult
+        ActionPrivate (Menu &menu)
+        {
+            MenuActionResult result = MenuActionResult::NotHandled;
+            if (m_delegate_sp)
+            {
+                result = m_delegate_sp->MenuDelegateAction (menu);
+                if (result != MenuActionResult::NotHandled)
+                    return result;
+            }
+            else if (m_parent)
+            {
+                result = m_parent->ActionPrivate(menu);
+                if (result != MenuActionResult::NotHandled)
+                    return result;
+            }
+            return m_canned_result;
+        }
+
+        MenuActionResult
         Action ()
         {
-            if (m_delegate_sp)
-                return m_delegate_sp->MenuDelegateAction (*this);
-            return m_canned_result;
+            // Call the recursive action so it can try to handle it
+            // with the menu delegate, and if not, try our parent menu
+            return ActionPrivate (*this);
         }
         
         void
@@ -1138,9 +1173,24 @@ namespace curses
         {
             return m_max_submenu_name_length + m_max_submenu_key_name_length + 8;
         }
+
+        
+        uint64_t
+        GetIdentifier() const
+        {
+            return m_identifier;
+        }
+
+        void
+        SetIdentifier (uint64_t identifier)
+        {
+            m_identifier = identifier;
+        }
+
     protected:
         std::string m_name;
         std::string m_key_name;
+        uint64_t m_identifier;
         Type m_type;
         int m_key_value;
         int m_start_col;
@@ -1158,6 +1208,7 @@ namespace curses
     Menu::Menu (Type type) :
         m_name (),
         m_key_name (),
+        m_identifier (0),
         m_type (type),
         m_key_value (0),
         m_start_col (0),
@@ -1166,7 +1217,7 @@ namespace curses
         m_selected (0),
         m_parent (NULL),
         m_submenus (),
-        m_canned_result (MenuActionResult::Success),
+        m_canned_result (MenuActionResult::NotHandled),
         m_delegate_sp()
     {
     }
@@ -1174,9 +1225,11 @@ namespace curses
     // Menuitem constructor
     Menu::Menu (const char *name,
                 const char *key_name,
-                int key_value) :
+                int key_value,
+                uint64_t identifier) :
         m_name (),
         m_key_name (),
+        m_identifier (identifier),
         m_type (Type::Invalid),
         m_key_value (key_value),
         m_start_col (0),
@@ -1185,7 +1238,7 @@ namespace curses
         m_selected (0),
         m_parent (NULL),
         m_submenus (),
-        m_canned_result (MenuActionResult::Success),
+        m_canned_result (MenuActionResult::NotHandled),
         m_delegate_sp()
     {
         if (name && name[0])
@@ -1234,7 +1287,7 @@ namespace curses
     {
         if (m_type == Type::Separator)
         {
-            window.Move(0, window.GetY());
+            window.MoveCursor(0, window.GetCursorY());
             window.PutChar(ACS_LTEE);
             int width = window.GetWidth();
             if (width > 2)
@@ -1314,13 +1367,13 @@ namespace curses
         case  Menu::Type::Bar:
             {
                 window.SetBackground(2);
-                window.Move(0, 0);
+                window.MoveCursor(0, 0);
                 for (size_t i=0; i<num_submenus; ++i)
                 {
                     Menu *menu = submenus[i].get();
                     if (i > 0)
                         window.PutChar(' ');
-                    menu->SetStartingColumn (window.GetX());
+                    menu->SetStartingColumn (window.GetCursorX());
                     window.PutCString("| ");
                     menu->DrawMenuTitle (window, false);
                 }
@@ -1342,7 +1395,7 @@ namespace curses
                 for (size_t i=0; i<num_submenus; ++i)
                 {
                     const bool is_selected = i == selected_idx;
-                    window.Move(x, y + i);
+                    window.MoveCursor(x, y + i);
                     if (is_selected)
                     {
                         // Remember where we want the cursor to be
@@ -1351,7 +1404,7 @@ namespace curses
                     }
                     submenus[i]->DrawMenuTitle (window, is_selected);
                 }
-                window.Move(cursor_x, cursor_y);
+                window.MoveCursor(cursor_x, cursor_y);
                 window.DeferredRefresh();
             }
             break;
@@ -1443,7 +1496,7 @@ namespace curses
                 m_menu_window_sp = window.GetParent()->CreateSubWindow (run_menu_sp->GetName().c_str(),
                                                                         win_height,
                                                                         win_width,
-                                                                        window.GetMinY() + 1,
+                                                                        1,
                                                                         run_menu_sp->GetStartingColumn(),
                                                                         true);
                 m_menu_window_sp->SetDelegate (run_menu_sp);
@@ -1511,6 +1564,7 @@ namespace curses
                         {
                             handled = true;
                             SetSelectedSubmenuIndex(i);
+                            window.GetParent()->RemoveSubWindow(&window);
                             if (menu->Action() == MenuActionResult::Quit)
                                 return eQuitApplication;
                             return eKeyHandled;
@@ -1940,8 +1994,8 @@ public:
         // Keep the cursor on the selected row so the highlight and the cursor
         // are always on the same line
         if (m_selected_row)
-            window.Move (m_selected_row->x,
-                         m_selected_row->y);
+            window.MoveCursor (m_selected_row->x,
+                               m_selected_row->y);
         
         return true; // Drawing handled
     }
@@ -2094,7 +2148,7 @@ protected:
         const char *value = valobj->GetValueAsCString ();
         const char *summary = valobj->GetSummaryAsCString ();
         
-        window.Move (row.x, row.y);
+        window.MoveCursor (row.x, row.y);
         
         row.DrawTree (window);
         
@@ -2302,9 +2356,42 @@ class ApplicationDelegate :
     public MenuDelegate
 {
 public:
-    ApplicationDelegate (Debugger &debugger) :
+    enum {
+        eMenuID_LLDB = 1,
+        eMenuID_LLDBAbout,
+        eMenuID_LLDBExit,
+        
+        eMenuID_Target,
+        eMenuID_TargetCreate,
+        eMenuID_TargetDelete,
+        
+        eMenuID_Process,
+        eMenuID_ProcessAttach,
+        eMenuID_ProcessDetach,
+        eMenuID_ProcessLaunch,
+        eMenuID_ProcessContinue,
+        eMenuID_ProcessHalt,
+        eMenuID_ProcessKill,
+        
+        eMenuID_Thread,
+        eMenuID_ThreadStepIn,
+        eMenuID_ThreadStepOver,
+        eMenuID_ThreadStepOut,
+        
+        eMenuID_View,
+        eMenuID_ViewBacktrace,
+        eMenuID_ViewRegisters,
+        eMenuID_ViewSource,
+        eMenuID_ViewVariables,
+        
+        eMenuID_Help,
+        eMenuID_HelpGUIHelp
+    };
+
+    ApplicationDelegate (Application &app, Debugger &debugger) :
         WindowDelegate (),
         MenuDelegate (),
+        m_app (app),
         m_debugger (debugger)
     {
     }
@@ -2333,54 +2420,99 @@ public:
     virtual MenuActionResult
     MenuDelegateAction (Menu &menu)
     {
-        if (menu.GetName().compare("Process") == 0)
+        switch (menu.GetIdentifier())
         {
-            // Populate the menu with all of the threads
-            Menus &submenus = menu.GetSubmenus();
-            ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
-            Process *process = exe_ctx.GetProcessPtr();
-            if (process && process->IsAlive() && StateIsStoppedState (process->GetState(), true))
-            {
-                if (submenus.size() == 7)
-                    menu.AddSubmenu (MenuSP (new Menu(Menu::Type::Separator)));
-                else if (submenus.size() > 8)
-                    submenus.erase (submenus.begin() + 8, submenus.end());
-                
-                ThreadList &threads = process->GetThreadList();
-                Mutex::Locker locker (threads.GetMutex());
-                size_t num_threads = threads.GetSize();
-                for (size_t i=0; i<num_threads; ++i)
+            case eMenuID_Process:
                 {
-                    ThreadSP thread_sp = threads.GetThreadAtIndex(i);
-                    char menu_char = '\0';
-                    if (i < 9)
-                        menu_char = '1' + i;
-                    StreamString thread_menu_title;
-                    thread_menu_title.Printf("Thread %u", thread_sp->GetIndexID());
-                    const char *thread_name = thread_sp->GetName();
-                    if (thread_name && thread_name[0])
-                        thread_menu_title.Printf (" %s", thread_name);
+                    // Populate the menu with all of the threads if the process is stopped when
+                    // the Process menu gets selected and is about to display its submenu.
+                    Menus &submenus = menu.GetSubmenus();
+                    ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
+                    Process *process = exe_ctx.GetProcessPtr();
+                    if (process && process->IsAlive() && StateIsStoppedState (process->GetState(), true))
+                    {
+                        if (submenus.size() == 7)
+                            menu.AddSubmenu (MenuSP (new Menu(Menu::Type::Separator)));
+                        else if (submenus.size() > 8)
+                            submenus.erase (submenus.begin() + 8, submenus.end());
+                        
+                        ThreadList &threads = process->GetThreadList();
+                        Mutex::Locker locker (threads.GetMutex());
+                        size_t num_threads = threads.GetSize();
+                        for (size_t i=0; i<num_threads; ++i)
+                        {
+                            ThreadSP thread_sp = threads.GetThreadAtIndex(i);
+                            char menu_char = '\0';
+                            if (i < 9)
+                                menu_char = '1' + i;
+                            StreamString thread_menu_title;
+                            thread_menu_title.Printf("Thread %u", thread_sp->GetIndexID());
+                            const char *thread_name = thread_sp->GetName();
+                            if (thread_name && thread_name[0])
+                                thread_menu_title.Printf (" %s", thread_name);
+                            else
+                            {
+                                const char *queue_name = thread_sp->GetQueueName();
+                                if (queue_name && queue_name[0])
+                                    thread_menu_title.Printf (" %s", queue_name);
+                            }
+                            menu.AddSubmenu (MenuSP (new Menu(thread_menu_title.GetString().c_str(), NULL, menu_char, thread_sp->GetID())));
+                        }
+                    }
+                    else if (submenus.size() > 7)
+                    {
+                        // Remove the separator and any other thread submenu items
+                        // that were previously added
+                        submenus.erase (submenus.begin() + 7, submenus.end());
+                    }
+                    // Since we are adding and removing items we need to recalculate the name lengths
+                    menu.RecalculateNameLengths();
+                }
+                return MenuActionResult::Handled;
+                
+            case eMenuID_ViewVariables:
+                {
+                    WindowSP main_window_sp = m_app.GetMainWindow();
+                    WindowSP source_window_sp = main_window_sp->FindSubWindow("Source");
+                    WindowSP variables_window_sp = main_window_sp->FindSubWindow("Variables");
+                    const int source_x = source_window_sp->GetParentX();
+                    const int source_y = source_window_sp->GetParentY();
+                    const int source_w = source_window_sp->GetWidth();
+                    const int source_h = source_window_sp->GetHeight();
+
+                    if (variables_window_sp)
+                    {
+                        source_window_sp->Resize (source_w, source_h + variables_window_sp->GetHeight());
+                        main_window_sp->RemoveSubWindow(variables_window_sp.get());
+                    }
                     else
                     {
-                        const char *queue_name = thread_sp->GetQueueName();
-                        if (queue_name && queue_name[0])
-                            thread_menu_title.Printf (" %s", queue_name);
+                        int new_source_h = (source_h / 3) * 2;
+                        int variables_h = source_h - new_source_h;
+                        if (variables_h > 0)
+                        {
+                            source_window_sp->Resize (source_w, new_source_h);
+                            WindowSP new_variables_window_sp = main_window_sp->CreateSubWindow ("Variables",
+                                                                                                variables_h,
+                                                                                                source_w,
+                                                                                                source_y + new_source_h,
+                                                                                                source_x,
+                                                                                                false);
+                            
+                            new_variables_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
+                        }
                     }
-                    menu.AddSubmenu (MenuSP (new Menu(thread_menu_title.GetString().c_str(), NULL, menu_char)));
+                    touchwin(stdscr);
                 }
-            }
-            else if (submenus.size() > 7)
-            {
-                // Remove the separator and any other thread submenu items
-                // that were previously added
-                submenus.erase (submenus.begin() + 7, submenus.end());
-            }
-            // Since we are adding and removing items we need to recalculate the name lengths
-            menu.RecalculateNameLengths();
+                return MenuActionResult::Handled;
+            default:
+                break;
         }
-        return MenuActionResult::Success;
+
+        return MenuActionResult::NotHandled;
     }
 protected:
+    Application &m_app;
     Debugger &m_debugger;
 };
 
@@ -2406,7 +2538,7 @@ public:
         StackFrame *frame = exe_ctx.GetFramePtr();
         window.Erase();
         window.SetBackground(2);
-        window.Move (0, 0);
+        window.MoveCursor (0, 0);
         if (process)
         {
             const StateType state = process->GetState();
@@ -2414,11 +2546,11 @@ public:
 
             if (StateIsStoppedState(state, true))
             {
-                window.Move (40, 0);
+                window.MoveCursor (40, 0);
                 if (thread)
                     window.Printf ("Thread: 0x%4.4" PRIx64, thread->GetID());
 
-                window.Move (60, 0);
+                window.MoveCursor (60, 0);
                 if (frame)
                     window.Printf ("Frame: %3u  PC = 0x%16.16" PRIx64, frame->GetFrameIndex(), frame->GetFrameCodeAddress().GetOpcodeLoadAddress (exe_ctx.GetTargetPtr()));
             }
@@ -2483,10 +2615,10 @@ public:
     {
         window.Erase();
         window.DrawTitleBox ("Sources");
-        m_min_x = window.GetMinX()+1;
-        m_min_y = window.GetMinY()+1;
-        m_max_x = window.GetMaxX();
-        m_max_y = window.GetMaxY();
+        m_min_x = 1;
+        m_min_y = 1;
+        m_max_x = window.GetMaxX()-1;
+        m_max_y = window.GetMaxY()-1;
         const uint32_t num_visible_lines = NumVisibleLines();
         
         ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
@@ -2604,7 +2736,7 @@ public:
                 if (curr_line < num_lines)
                 {
                     const int line_y = 1+i;
-                    window.Move(1, line_y);
+                    window.MoveCursor(1, line_y);
                     const bool is_pc_line = curr_line == m_pc_line;
                     const bool line_is_selected = m_selected_line == curr_line;
                     // Highlight the line as the PC line first, then if the selected line
@@ -2652,14 +2784,14 @@ public:
                             {
                                 size_t stop_description_len = strlen(stop_description);
                                 int desc_x = window.GetWidth() - stop_description_len - 16;
-                                window.Printf ("%*s", desc_x - window.GetX(), "");
-                                //window.Move(window.GetWidth() - stop_description_len - 15, line_y);
+                                window.Printf ("%*s", desc_x - window.GetCursorX(), "");
+                                //window.MoveCursor(window.GetWidth() - stop_description_len - 15, line_y);
                                 window.Printf ("<<< Thread %u: %s ", thread->GetIndexID(), stop_description);
                             }
                         }
                         else
                         {
-                            window.Printf ("%*s", window.GetWidth() - window.GetX() - 1, "");
+                            window.Printf ("%*s", window.GetWidth() - window.GetCursorX() - 1, "");
                         }
                     }
                     if (highlight_attr)
@@ -2941,44 +3073,42 @@ IOHandlerCursesGUI::Activate ()
         
         
         // This is both a window and a menu delegate
-        std::shared_ptr<ApplicationDelegate> app_delegate_sp(new ApplicationDelegate(m_debugger));
+        std::shared_ptr<ApplicationDelegate> app_delegate_sp(new ApplicationDelegate(*m_app_ap, m_debugger));
         
-        
-        MenuSP lldb_menu_sp(new Menu("LLDB" , "F1", KEY_F(1)));
-        MenuSP exit_menuitem_sp(new Menu("Exit", NULL, 'x'));
+        MenuDelegateSP app_menu_delegate_sp = std::static_pointer_cast<MenuDelegate>(app_delegate_sp);
+        MenuSP lldb_menu_sp(new Menu("LLDB" , "F1", KEY_F(1), ApplicationDelegate::eMenuID_LLDB));
+        MenuSP exit_menuitem_sp(new Menu("Exit", NULL, 'x', ApplicationDelegate::eMenuID_LLDBExit));
         exit_menuitem_sp->SetCannedResult(MenuActionResult::Quit);
-        lldb_menu_sp->AddSubmenu (MenuSP (new Menu("About LLDB", NULL, 'a')));
+        lldb_menu_sp->AddSubmenu (MenuSP (new Menu("About LLDB", NULL, 'a', ApplicationDelegate::eMenuID_LLDBAbout)));
         lldb_menu_sp->AddSubmenu (MenuSP (new Menu(Menu::Type::Separator)));
         lldb_menu_sp->AddSubmenu (exit_menuitem_sp);
         
-        MenuSP target_menu_sp(new Menu("Target" ,"F2", KEY_F(2)));
-        target_menu_sp->AddSubmenu (MenuSP (new Menu("Create", NULL, 'c')));
-        target_menu_sp->AddSubmenu (MenuSP (new Menu("Delete", NULL, 'd')));
+        MenuSP target_menu_sp(new Menu("Target" ,"F2", KEY_F(2), ApplicationDelegate::eMenuID_Target));
+        target_menu_sp->AddSubmenu (MenuSP (new Menu("Create", NULL, 'c', ApplicationDelegate::eMenuID_TargetCreate)));
+        target_menu_sp->AddSubmenu (MenuSP (new Menu("Delete", NULL, 'd', ApplicationDelegate::eMenuID_TargetDelete)));
         
-        MenuSP process_menu_sp(new Menu("Process", "F3", KEY_F(3)));
-        process_menu_sp->SetDelegate(std::static_pointer_cast<MenuDelegate>(app_delegate_sp));
-        process_menu_sp->AddSubmenu (MenuSP (new Menu("Attach"  , NULL, 'a')));
-        process_menu_sp->AddSubmenu (MenuSP (new Menu("Detach"  , NULL, 'd')));
-        process_menu_sp->AddSubmenu (MenuSP (new Menu("Launch"  , NULL, 'l')));
+        MenuSP process_menu_sp(new Menu("Process", "F3", KEY_F(3), ApplicationDelegate::eMenuID_Process));
+        process_menu_sp->AddSubmenu (MenuSP (new Menu("Attach"  , NULL, 'a', ApplicationDelegate::eMenuID_ProcessAttach)));
+        process_menu_sp->AddSubmenu (MenuSP (new Menu("Detach"  , NULL, 'd', ApplicationDelegate::eMenuID_ProcessDetach)));
+        process_menu_sp->AddSubmenu (MenuSP (new Menu("Launch"  , NULL, 'l', ApplicationDelegate::eMenuID_ProcessLaunch)));
         process_menu_sp->AddSubmenu (MenuSP (new Menu(Menu::Type::Separator)));
-        process_menu_sp->AddSubmenu (MenuSP (new Menu("Continue", NULL, 'c')));
-        process_menu_sp->AddSubmenu (MenuSP (new Menu("Halt"    , NULL, 'h')));
-        process_menu_sp->AddSubmenu (MenuSP (new Menu("Kill"    , NULL, 'k')));
+        process_menu_sp->AddSubmenu (MenuSP (new Menu("Continue", NULL, 'c', ApplicationDelegate::eMenuID_ProcessContinue)));
+        process_menu_sp->AddSubmenu (MenuSP (new Menu("Halt"    , NULL, 'h', ApplicationDelegate::eMenuID_ProcessHalt)));
+        process_menu_sp->AddSubmenu (MenuSP (new Menu("Kill"    , NULL, 'k', ApplicationDelegate::eMenuID_ProcessKill)));
         
-        MenuSP thread_menu_sp(new Menu("Thread", "F4", KEY_F(4)));
-        thread_menu_sp->AddSubmenu (MenuSP (new Menu("Step In"  , NULL, 'i')));
-        thread_menu_sp->AddSubmenu (MenuSP (new Menu("Step Over", NULL, 'v')));
-        thread_menu_sp->AddSubmenu (MenuSP (new Menu("Step Out" , NULL, 'o')));
+        MenuSP thread_menu_sp(new Menu("Thread", "F4", KEY_F(4), ApplicationDelegate::eMenuID_Thread));
+        thread_menu_sp->AddSubmenu (MenuSP (new Menu("Step In"  , NULL, 'i', ApplicationDelegate::eMenuID_ThreadStepIn)));
+        thread_menu_sp->AddSubmenu (MenuSP (new Menu("Step Over", NULL, 'v', ApplicationDelegate::eMenuID_ThreadStepOver)));
+        thread_menu_sp->AddSubmenu (MenuSP (new Menu("Step Out" , NULL, 'o', ApplicationDelegate::eMenuID_ThreadStepOut)));
         
-        MenuSP view_menu_sp(new Menu("View", "F5", KEY_F(5)));
-        view_menu_sp->AddSubmenu (MenuSP (new Menu("Backtrace", NULL, 'b')));
-        view_menu_sp->AddSubmenu (MenuSP (new Menu("Registers", NULL, 'r')));
-        view_menu_sp->AddSubmenu (MenuSP (new Menu("Source"   , NULL, 's')));
-        view_menu_sp->AddSubmenu (MenuSP (new Menu("Threads"  , NULL, 't')));
-        view_menu_sp->AddSubmenu (MenuSP (new Menu("Variables", NULL, 'v')));
+        MenuSP view_menu_sp(new Menu("View", "F5", KEY_F(5), ApplicationDelegate::eMenuID_View));
+        view_menu_sp->AddSubmenu (MenuSP (new Menu("Backtrace", NULL, 'b', ApplicationDelegate::eMenuID_ViewBacktrace)));
+        view_menu_sp->AddSubmenu (MenuSP (new Menu("Registers", NULL, 'r', ApplicationDelegate::eMenuID_ViewRegisters)));
+        view_menu_sp->AddSubmenu (MenuSP (new Menu("Source"   , NULL, 's', ApplicationDelegate::eMenuID_ViewSource)));
+        view_menu_sp->AddSubmenu (MenuSP (new Menu("Variables", NULL, 'v', ApplicationDelegate::eMenuID_ViewVariables)));
         
-        MenuSP help_menu_sp(new Menu("Help", "F6", KEY_F(6)));
-        help_menu_sp->AddSubmenu (MenuSP (new Menu("GUI Help", NULL, 'g')));
+        MenuSP help_menu_sp(new Menu("Help", "F6", KEY_F(6), ApplicationDelegate::eMenuID_Help));
+        help_menu_sp->AddSubmenu (MenuSP (new Menu("GUI Help", NULL, 'g', ApplicationDelegate::eMenuID_HelpGUIHelp)));
         
         m_app_ap->Initialize();
         WindowSP &main_window_sp = m_app_ap->GetMainWindow();
@@ -2990,8 +3120,9 @@ IOHandlerCursesGUI::Activate ()
         menubar_sp->AddSubmenu (thread_menu_sp);
         menubar_sp->AddSubmenu (view_menu_sp);
         menubar_sp->AddSubmenu (help_menu_sp);
+        menubar_sp->SetDelegate(app_menu_delegate_sp);
         
-        WindowSP menubar_window_sp = main_window_sp->CreateSubWindow("menubar", 1, main_window_sp->GetWidth(), 0, 0, false);
+        WindowSP menubar_window_sp = main_window_sp->CreateSubWindow("Menubar", 1, main_window_sp->GetWidth(), 0, 0, false);
         // Let the menubar get keys if the active window doesn't handle the
         // keys that are typed so it can respond to menubar key presses.
         menubar_window_sp->SetCanBeActive(false); // Don't let the menubar become the active window
@@ -3006,19 +3137,19 @@ IOHandlerCursesGUI::Activate ()
         const int main_window_view_w = main_window_sp->GetWidth();
         int source_window_height = (main_window_view_h / 3) * 2;
         int locals_window_height = main_window_view_h - source_window_height;
-        WindowSP source_window_sp (main_window_sp->CreateSubWindow("source",
+        WindowSP source_window_sp (main_window_sp->CreateSubWindow("Source",
                                                                    source_window_height,
                                                                    main_window_view_w,
                                                                    1,
                                                                    0,
                                                                    true));
-        WindowSP locals_window_sp (main_window_sp->CreateSubWindow("locals",
+        WindowSP locals_window_sp (main_window_sp->CreateSubWindow("Variables",
                                                                    locals_window_height - 1,
                                                                    main_window_view_w,
                                                                    1 + source_window_height,
                                                                    0,
                                                                    false));
-        WindowSP status_window_sp (main_window_sp->CreateSubWindow("status",
+        WindowSP status_window_sp (main_window_sp->CreateSubWindow("Status",
                                                                    1,
                                                                    main_window_view_w,
                                                                    source_window_height + locals_window_height,
