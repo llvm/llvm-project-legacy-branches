@@ -21,12 +21,15 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/StreamFile.h"
+#include "lldb/Core/ValueObjectRegister.h"
 #include "lldb/Host/Editline.h"
 #include "lldb/Interpreter/CommandCompletions.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/Function.h"
+#include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/ThreadPlan.h"
+
 
 
 #include <ncurses.h>
@@ -2133,8 +2136,8 @@ public:
         m_num_rows = 0;
         m_min_x = 2;
         m_min_y = 1;
-        m_max_x = window.GetMaxX();
-        m_max_y = window.GetMaxY() - 1;
+        m_max_x = window.GetWidth() - 1;
+        m_max_y = window.GetHeight() - 1;
         
         window.Erase();
         window.DrawTitleBox ("Variables");
@@ -2152,8 +2155,8 @@ public:
         // Make sure the selected row is always visible
         if (m_selected_row_idx < m_first_visible_row)
             m_first_visible_row = m_selected_row_idx;
-        else if (m_first_visible_row + m_max_y < m_selected_row_idx)
-            m_first_visible_row = m_selected_row_idx - m_max_y;
+        else if (m_first_visible_row + num_visible_rows <= m_selected_row_idx)
+            m_first_visible_row = m_selected_row_idx - num_visible_rows + 1;
         
         DisplayRows (window, m_rows, g_options);
         
@@ -2519,6 +2522,65 @@ public:
 protected:
     Debugger &m_debugger;
     Block *m_frame_block;
+};
+
+
+class RegistersWindowDelegate : public ValueObjectListDelegate
+{
+public:
+    RegistersWindowDelegate (Debugger &debugger) :
+        ValueObjectListDelegate (),
+        m_debugger (debugger)
+    {
+    }
+    
+    virtual
+    ~RegistersWindowDelegate()
+    {
+    }
+    
+    virtual bool
+    WindowDelegateDraw (Window &window, bool force)
+    {
+        ExecutionContext exe_ctx (m_debugger.GetCommandInterpreter().GetExecutionContext());
+        StackFrame *frame = exe_ctx.GetFramePtr();
+        
+        ValueObjectList value_list;
+        if (frame)
+        {
+            if (frame->GetStackID() != m_stack_id)
+            {
+                m_stack_id = frame->GetStackID();
+                RegisterContextSP reg_ctx (frame->GetRegisterContext());
+                if (reg_ctx)
+                {
+                    const uint32_t num_sets = reg_ctx->GetRegisterSetCount();
+                    for (uint32_t set_idx = 0; set_idx < num_sets; ++set_idx)
+                    {
+                        value_list.Append(ValueObjectRegisterSet::Create (frame, reg_ctx, set_idx));
+                    }
+                }
+                SetValues(value_list);
+            }
+        }
+        else
+        {
+            Process *process = exe_ctx.GetProcessPtr();
+            if (process && process->IsAlive())
+                return true; // Don't do any updating if we are running
+            else
+            {
+                // Update the values with an empty list if there
+                // is no process or the process isn't alive anymore
+                SetValues(value_list);
+            }
+        }
+        return ValueObjectListDelegate::WindowDelegateDraw (window, force);
+    }
+    
+protected:
+    Debugger &m_debugger;
+    StackID m_stack_id;
 };
 
 class ApplicationDelegate :
@@ -3311,6 +3373,7 @@ IOHandlerCursesGUI::Activate ()
         main_window_sp->SetDelegate (std::static_pointer_cast<WindowDelegate>(app_delegate_sp));
         source_window_sp->SetDelegate (WindowDelegateSP(new SourceFileWindowDelegate(m_debugger)));
         variables_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
+        //variables_window_sp->SetDelegate (WindowDelegateSP(new RegistersWindowDelegate(m_debugger)));
         status_window_sp->SetDelegate (WindowDelegateSP(new StatusBarWindowDelegate(m_debugger)));
         
         init_pair (1, COLOR_WHITE   , COLOR_BLUE  );
