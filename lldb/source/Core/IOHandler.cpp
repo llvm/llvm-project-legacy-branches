@@ -508,7 +508,11 @@ namespace curses
     typedef std::vector<WindowSP> Windows;
     typedef std::vector<WindowDelegateSP> WindowDelegates;
 
-    // type summary add -s "x=${var.x}, y=${var.y}" curses::Rect
+#if 0
+type summary add -s "x=${var.x}, y=${var.y}" curses::Point
+type summary add -s "w=${var.width}, h=${var.height}" curses::Size
+type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
+#endif
     struct Point
     {
         int x;
@@ -528,7 +532,6 @@ namespace curses
         }
     };
     
-    // type summary add -s "w=${var.width}, h=${var.height}" curses::Size
     struct Size
     {
         int width;
@@ -547,7 +550,6 @@ namespace curses
         }
     };
     
-    // type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
     struct Rect
     {
         Point origin;
@@ -798,12 +800,15 @@ namespace curses
         void    Refresh ()  { ::wrefresh (m_window); }
         void    DeferredRefresh ()  { ::wnoutrefresh(m_window); }
         void    SetBackground (int color_pair_idx) { ::wbkgd (m_window,COLOR_PAIR(color_pair_idx)); }
-        void    SetBounds (const Rect &r) {
-            MoveWindow(r.origin);
-            Resize (r.size);
-        }
         void    UnderlineOn ()  { AttributeOn(A_UNDERLINE); }
         void    UnderlineOff () { AttributeOff(A_UNDERLINE); }
+
+        void
+        SetBounds (const Rect &bounds)
+        {
+            MoveWindow(bounds.origin);
+            Resize (bounds.size);
+        }
 
         void
         Printf (const char *format, ...)  __attribute__ ((format (printf, 2, 3)))
@@ -1162,6 +1167,11 @@ namespace curses
             }
         }
 
+        const char *
+        GetName () const
+        {
+            return m_name.c_str();
+        }
     protected:
         std::string m_name;
         WINDOW *m_window;
@@ -2140,7 +2150,7 @@ public:
         m_max_y = window.GetHeight() - 1;
         
         window.Erase();
-        window.DrawTitleBox ("Variables");
+        window.DrawTitleBox (window.GetName());
         
         const int num_visible_rows = NumVisibleRows();
         const int num_rows = CalculateTotalNumberRows (m_rows);
@@ -2707,25 +2717,115 @@ public:
                     WindowSP main_window_sp = m_app.GetMainWindow();
                     WindowSP source_window_sp = main_window_sp->FindSubWindow("Source");
                     WindowSP variables_window_sp = main_window_sp->FindSubWindow("Variables");
+                    WindowSP registers_window_sp = main_window_sp->FindSubWindow("Registers");
                     const Rect source_bounds = source_window_sp->GetBounds();
 
                     if (variables_window_sp)
                     {
-                        source_window_sp->Resize (source_bounds.size.width,
-                                                  source_bounds.size.height + variables_window_sp->GetHeight());
+                        const Rect variables_bounds = variables_window_sp->GetBounds();
+
                         main_window_sp->RemoveSubWindow(variables_window_sp.get());
+
+                        if (registers_window_sp)
+                        {
+                            WindowDelegateSP window_delegate_sp = registers_window_sp->GetDelegate();
+                            main_window_sp->RemoveSubWindow(registers_window_sp.get());
+
+                            // We have a registers window, so give all the area back to the registers window
+                            Rect registers_bounds = variables_bounds;
+                            registers_bounds.size.width = source_bounds.size.width;
+                            WindowSP new_window_sp = main_window_sp->CreateSubWindow ("Registers",
+                                                                                      registers_bounds,
+                                                                                      false);
+                            new_window_sp->SetDelegate (window_delegate_sp);
+                        }
+                        else
+                        {
+                            // We have no registers window showing so give the bottom
+                            // area back to the source view
+                            source_window_sp->Resize (source_bounds.size.width,
+                                                      source_bounds.size.height + variables_bounds.size.height);
+                        }
                     }
                     else
                     {
-                        Rect new_source_rect;
-                        Rect new_vars_rect;
-                        source_bounds.HorizontalSplitPercentage (0.70, new_source_rect, new_vars_rect);
-                        source_window_sp->SetBounds (new_source_rect);
-                        WindowSP new_variables_window_sp = main_window_sp->CreateSubWindow ("Variables",
-                                                                                            new_vars_rect,
-                                                                                            false);
-                        
-                        new_variables_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
+                        Rect new_variables_rect;
+                        if (registers_window_sp)
+                        {
+                            // We have a variables window, split it into two columns
+                            // where the left hand side will be the variables and the
+                            // right hand side will be the registers
+                            const Rect variables_bounds = registers_window_sp->GetBounds();
+                            Rect new_registers_rect;
+                            variables_bounds.VerticalSplitPercentage (0.50, new_variables_rect, new_registers_rect);
+                            registers_window_sp->SetBounds (new_registers_rect);
+                        }
+                        else
+                        {
+                            // No variables window, grab the bottom part of the source window
+                            Rect new_source_rect;
+                            source_bounds.HorizontalSplitPercentage (0.70, new_source_rect, new_variables_rect);
+                            source_window_sp->SetBounds (new_source_rect);
+                        }
+                        WindowSP new_window_sp = main_window_sp->CreateSubWindow ("Variables",
+                                                                                  new_variables_rect,
+                                                                                  false);
+                        new_window_sp->SetDelegate (WindowDelegateSP(new RegistersWindowDelegate(m_debugger)));
+                    }
+                    touchwin(stdscr);
+                }
+                return MenuActionResult::Handled;
+            case eMenuID_ViewRegisters:
+                {
+                    WindowSP main_window_sp = m_app.GetMainWindow();
+                    WindowSP source_window_sp = main_window_sp->FindSubWindow("Source");
+                    WindowSP variables_window_sp = main_window_sp->FindSubWindow("Variables");
+                    WindowSP registers_window_sp = main_window_sp->FindSubWindow("Registers");
+                    const Rect source_bounds = source_window_sp->GetBounds();
+
+                    if (registers_window_sp)
+                    {
+                        if (variables_window_sp)
+                        {
+                            const Rect variables_bounds = variables_window_sp->GetBounds();
+
+                            // We have a variables window, so give all the area back to the variables window
+                            variables_window_sp->Resize (variables_bounds.size.width + registers_window_sp->GetWidth(),
+                                                         variables_bounds.size.height);
+                        }
+                        else
+                        {
+                            // We have no variables window showing so give the bottom
+                            // area back to the source view
+                            source_window_sp->Resize (source_bounds.size.width,
+                                                      source_bounds.size.height + registers_window_sp->GetHeight());
+                        }
+                        main_window_sp->RemoveSubWindow(registers_window_sp.get());
+                    }
+                    else
+                    {
+                        Rect new_regs_rect;
+                        if (variables_window_sp)
+                        {
+                            // We have a variables window, split it into two columns
+                            // where the left hand side will be the variables and the
+                            // right hand side will be the registers
+                            const Rect variables_bounds = variables_window_sp->GetBounds();
+                            Rect new_vars_rect;
+                            variables_bounds.VerticalSplitPercentage (0.50, new_vars_rect, new_regs_rect);
+                            variables_window_sp->SetBounds (new_vars_rect);
+                        }
+                        else
+                        {
+                            // No variables window, grab the bottom part of the source window
+                            Rect new_source_rect;
+                            source_bounds.HorizontalSplitPercentage (0.70, new_source_rect, new_regs_rect);
+                            source_window_sp->SetBounds (new_source_rect);
+                        }
+                        WindowSP new_window_sp = main_window_sp->CreateSubWindow ("Registers",
+                                                                                  new_regs_rect,
+                                                                                  false);
+                        new_window_sp->SetDelegate (WindowDelegateSP(new RegistersWindowDelegate(m_debugger)));
                     }
                     touchwin(stdscr);
                 }
@@ -3373,7 +3473,6 @@ IOHandlerCursesGUI::Activate ()
         main_window_sp->SetDelegate (std::static_pointer_cast<WindowDelegate>(app_delegate_sp));
         source_window_sp->SetDelegate (WindowDelegateSP(new SourceFileWindowDelegate(m_debugger)));
         variables_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
-        //variables_window_sp->SetDelegate (WindowDelegateSP(new RegistersWindowDelegate(m_debugger)));
         status_window_sp->SetDelegate (WindowDelegateSP(new StatusBarWindowDelegate(m_debugger)));
         
         init_pair (1, COLOR_WHITE   , COLOR_BLUE  );
