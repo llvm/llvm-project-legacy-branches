@@ -57,8 +57,7 @@ g_run_one_line_str = None
 
 def run_python_interpreter (dict):
    # Pass in the dictionary, for continuity from one session to the next.
-   repl = SimpleREPL('>>> ', dict)
-   repl.interact()
+   code.interact(banner="Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.", local=dict)
 
 def run_one_line (dict, input_string):
     global g_builtin_override_called
