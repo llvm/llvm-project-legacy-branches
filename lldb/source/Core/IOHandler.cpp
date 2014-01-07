@@ -530,6 +530,14 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             x = 0;
             y = 0;
         }
+        
+        Point &
+        operator += (const Point &rhs)
+        {
+            x += rhs.x;
+            y += rhs.y;
+            return *this;
+        }
     };
     
     struct Size
@@ -1842,7 +1850,8 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
                 if (update)
                 {
                     m_window_sp->Draw(false);
-                
+                    // Cursor hiding isn't working on MacOSX, so hide it in the top left corner
+                    m_window_sp->MoveCursor(0, 0);
                     // All windows should be calling Window::DeferredRefresh() instead
                     // of Window::Refresh() so we can do a single update and avoid
                     // any screen blinking
@@ -2758,7 +2767,15 @@ public:
                             const Rect variables_bounds = registers_window_sp->GetBounds();
                             Rect new_registers_rect;
                             variables_bounds.VerticalSplitPercentage (0.50, new_variables_rect, new_registers_rect);
-                            registers_window_sp->SetBounds (new_registers_rect);
+                            
+                            WindowDelegateSP window_delegate_sp = registers_window_sp->GetDelegate();
+                            main_window_sp->RemoveSubWindow(registers_window_sp.get());
+                            
+                            // We have a registers window, so give all the area back to the registers window
+                            WindowSP new_window_sp = main_window_sp->CreateSubWindow ("Registers",
+                                                                                      new_registers_rect,
+                                                                                      false);
+                            new_window_sp->SetDelegate (window_delegate_sp);
                         }
                         else
                         {
