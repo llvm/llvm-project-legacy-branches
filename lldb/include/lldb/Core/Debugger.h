@@ -107,6 +107,8 @@ public:
     {
         return m_error_file_sp;
     }
+
+    
     
     void
     SetInputFileHandle (FILE *fh, bool tranfer_ownership);
@@ -187,12 +189,16 @@ public:
     void
     DispatchInputEndOfFile ();
 
+    //------------------------------------------------------------------
+    // If any of the streams are not set, set them to the in/out/err
+    // stream of the top most input reader to ensure they at least have
+    // something
+    //------------------------------------------------------------------
     void
-    GetIOHandlerFiles (IOHandler &reader);
+    AdoptTopIOHandlerFilesIfInvalid (lldb::StreamFileSP &in,
+                                     lldb::StreamFileSP &out,
+                                     lldb::StreamFileSP &err);
 
-//    bool
-//    TryPushIOHandler (const lldb::IOHandlerSP& reader_sp);
-//
     void
     PushIOHandler (const lldb::IOHandlerSP& reader_sp);
 

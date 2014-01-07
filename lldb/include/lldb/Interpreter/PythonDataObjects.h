@@ -86,7 +86,7 @@ namespace lldb_private {
         {
             return m_py_obj;
         }
-        
+
         PythonString
         Repr ();
         

@@ -52,7 +52,7 @@ public:
                               void *ret_value,
                               const ExecuteScriptOptions &options = ExecuteScriptOptions());
 
-    bool
+    lldb_private::Error
     ExecuteMultipleLines (const char *in_string,
                           const ExecuteScriptOptions &options = ExecuteScriptOptions());
 

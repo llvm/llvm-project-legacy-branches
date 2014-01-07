@@ -102,6 +102,12 @@ Editline::~Editline()
 {
     SaveHistory();
 
+    if (m_history)
+    {
+        ::history_end (m_history);
+        m_history = NULL;
+    }
+
     // Disable edit mode to stop the terminal from flushing all input
     // during the call to el_end() since we expect to have multiple editline
     // instances in this program.
@@ -109,11 +115,6 @@ Editline::~Editline()
 
     ::el_end(m_editline);
     m_editline = NULL;
-    if (m_history)
-    {
-        ::history_end (m_history);
-        m_history = NULL;
-    }
 }
 
 void
@@ -148,7 +149,8 @@ Editline::SaveHistory ()
 {
     if (m_history)
     {
-        ::history (m_history, &m_history_event, H_SAVE, GetHistoryFile().GetPath().c_str());
+        std::string history_path = GetHistoryFile().GetPath();
+        ::history (m_history, &m_history_event, H_SAVE, history_path.c_str());
         return true;
     }
     return false;

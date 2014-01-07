@@ -886,7 +886,7 @@ Debugger::RunIOHandler (const IOHandlerSP& reader_sp)
 }
 
 void
-Debugger::GetIOHandlerFiles (IOHandler &reader)
+Debugger::AdoptTopIOHandlerFilesIfInvalid (StreamFileSP &in, StreamFileSP &out, StreamFileSP &err)
 {
     // Before an IOHandler runs, it must have in/out/err streams.
     // This function is called when one ore more of the streams
@@ -897,69 +897,44 @@ Debugger::GetIOHandlerFiles (IOHandler &reader)
     Mutex::Locker locker (m_input_reader_stack.GetMutex());
     IOHandlerSP top_reader_sp (m_input_reader_stack.Top());
     // If no STDIN has been set, then set it appropriately
-    if (!reader.GetInputStreamFile())
+    if (!in)
     {
         if (top_reader_sp)
-            reader.GetInputStreamFile() = top_reader_sp->GetInputStreamFile();
+            in = top_reader_sp->GetInputStreamFile();
         else
-            reader.GetInputStreamFile() = GetInputFile();
+            in = GetInputFile();
         
         // If there is nothing, use stdin
-        if (!reader.GetInputStreamFile())
-            reader.GetInputStreamFile() = StreamFileSP(new StreamFile(stdin, false));
+        if (!in)
+            in = StreamFileSP(new StreamFile(stdin, false));
     }
     // If no STDOUT has been set, then set it appropriately
-    if (!reader.GetOutputStreamFile())
+    if (!out)
     {
         if (top_reader_sp)
-            reader.GetOutputStreamFile() = top_reader_sp->GetOutputStreamFile();
+            out = top_reader_sp->GetOutputStreamFile();
         else
-            reader.GetOutputStreamFile() = GetOutputFile();
-
+            out = GetOutputFile();
+        
         // If there is nothing, use stdout
-        if (!reader.GetOutputStreamFile())
-            reader.GetOutputStreamFile() = StreamFileSP(new StreamFile(stdout, false));
+        if (!out)
+            out = StreamFileSP(new StreamFile(stdout, false));
     }
     // If no STDERR has been set, then set it appropriately
-    if (!reader.GetErrorStreamFile())
+    if (!err)
     {
         if (top_reader_sp)
-            reader.GetErrorStreamFile() = top_reader_sp->GetErrorStreamFile();
+            err = top_reader_sp->GetErrorStreamFile();
         else
-            reader.GetErrorStreamFile() = GetErrorFile();
-
+            err = GetErrorFile();
+        
         // If there is nothing, use stderr
-        if (!reader.GetErrorStreamFile())
-            reader.GetErrorStreamFile() = StreamFileSP(new StreamFile(stdout, false));
-
+        if (!err)
+            err = StreamFileSP(new StreamFile(stdout, false));
+        
     }
 }
 
-//bool
-//Debugger::TryPushIOHandler (const IOHandlerSP& reader_sp)
-//{
-//    if (!reader_sp)
-//        return false;
-//    
-//    Mutex::Locker locker;
-//
-//    if (locker.TryLock(m_input_reader_stack.GetMutex()))
-//    {
-//        // Got the current top input reader...
-//        IOHandlerSP top_reader_sp (m_input_reader_stack.Top());
-//        
-//        // Push our new input reader
-//        m_input_reader_stack.Push (reader_sp);
-//        
-//        // Interrupt the top input reader to it will exit its Run() function
-//        // and let this new input reader take over
-//        if (top_reader_sp)
-//            top_reader_sp->Deactivate();
-//        return true;
-//    }
-//    return false;
-//}
-//
 void
 Debugger::PushIOHandler (const IOHandlerSP& reader_sp)
 {

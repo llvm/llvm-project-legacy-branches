@@ -27,6 +27,8 @@
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Breakpoint/WatchpointOptions.h"
+#include "lldb/Core/Communication.h"
+#include "lldb/Core/ConnectionFileDescriptor.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Host/Host.h"
@@ -66,6 +68,9 @@ _check_and_flush (FILE *stream)
   int prev_fail = ferror (stream);
   return fflush (stream) || prev_fail ? EOF : 0;
 }
+
+static std::string
+ReadPythonBacktrace (PyObject* py_backtrace);
 
 ScriptInterpreterPython::Locker::Locker (ScriptInterpreterPython *py_interpreter,
                                          uint16_t on_entry,
@@ -518,33 +523,92 @@ ScriptInterpreterPython::GetEmbeddedInterpreterModuleObjects ()
     return (bool)m_run_one_line_function;
 }
 
+static void
+ReadThreadBytesReceived(void *baton, const void *src, size_t src_len)
+{
+    if (src && src_len)
+    {
+        Stream *strm = (Stream *)baton;
+        strm->Write(src, src_len);
+        strm->Flush();
+    }
+}
+
 bool
 ScriptInterpreterPython::ExecuteOneLine (const char *command, CommandReturnObject *result, const ExecuteScriptOptions &options)
 {
     if (!m_valid_session)
         return false;
     
-    // We want to call run_one_line, passing in the dictionary and the command string.  We cannot do this through
-    // PyRun_SimpleString here because the command string may contain escaped characters, and putting it inside
-    // another string to pass to PyRun_SimpleString messes up the escaping.  So we use the following more complicated
-    // method to pass the command string directly down to Python.
-    Debugger &debugger = m_interpreter.GetDebugger();
-    
-    Locker locker(this,
-                  ScriptInterpreterPython::Locker::AcquireLock |
-                  ScriptInterpreterPython::Locker::InitSession |
-                  (options.GetSetLLDBGlobals() ? ScriptInterpreterPython::Locker::InitGlobals : 0),
-                  ScriptInterpreterPython::Locker::FreeAcquiredLock |
-                  ScriptInterpreterPython::Locker::TearDownSession,
-                  debugger.GetInputFile()->GetFile().GetStream(),
-                  debugger.GetOutputFile()->GetFile().GetStream(),
-                  debugger.GetErrorFile()->GetFile().GetStream());
-
-    bool success = false;
-
-
-    if (command)
+    if (command && command[0])
     {
+        // We want to call run_one_line, passing in the dictionary and the command string.  We cannot do this through
+        // PyRun_SimpleString here because the command string may contain escaped characters, and putting it inside
+        // another string to pass to PyRun_SimpleString messes up the escaping.  So we use the following more complicated
+        // method to pass the command string directly down to Python.
+        Debugger &debugger = m_interpreter.GetDebugger();
+        
+        StreamFileSP input_file_sp;
+        StreamFileSP output_file_sp;
+        StreamFileSP error_file_sp;
+        Communication output_comm ("lldb.ScriptInterpreterPython.ExecuteOneLine.comm");
+        int pipe_fds[2] = { -1, -1 };
+        
+        if (options.GetEnableIO())
+        {
+            if (result)
+            {
+                input_file_sp = debugger.GetInputFile();
+                // Set output to a temporary file so we can forward the results on to the result object
+                
+                int err = pipe(pipe_fds);
+                if (err == 0)
+                {
+                    std::unique_ptr<ConnectionFileDescriptor> conn_ap(new ConnectionFileDescriptor(pipe_fds[0], false));
+                    if (conn_ap->IsConnected())
+                    {
+                        output_comm.SetConnection(conn_ap.release());
+                        output_comm.SetReadThreadBytesReceivedCallback(ReadThreadBytesReceived, &result->GetOutputStream());
+                        output_comm.StartReadThread();
+                        output_file_sp.reset(new StreamFile(pipe_fds[1], false));
+                        // Set the options so we can open our pipe fd for writing when we call GetStream() below...
+                        output_file_sp->GetFile().SetOptions(File::eOpenOptionWrite);
+                        error_file_sp = output_file_sp;
+                        // Don't buffer the output
+                        ::setbuf (output_file_sp->GetFile().GetStream(), NULL);
+                        
+                        result->SetImmediateOutputFile(debugger.GetOutputFile()->GetFile().GetStream());
+                        result->SetImmediateErrorFile(debugger.GetErrorFile()->GetFile().GetStream());
+                    }
+                }
+            }
+            if (!input_file_sp || !output_file_sp || !error_file_sp)
+                debugger.AdoptTopIOHandlerFilesIfInvalid(input_file_sp, output_file_sp, error_file_sp);
+        }
+        else
+        {
+            input_file_sp.reset (new StreamFile ());
+            input_file_sp->GetFile().Open("/dev/null", File::eOpenOptionRead);
+            output_file_sp.reset (new StreamFile ());
+            output_file_sp->GetFile().Open("/dev/null", File::eOpenOptionWrite);
+            error_file_sp = output_file_sp;
+        }
+
+        FILE *in_file = input_file_sp->GetFile().GetStream();
+        FILE *out_file = output_file_sp->GetFile().GetStream();
+        FILE *err_file = error_file_sp->GetFile().GetStream();
+        Locker locker(this,
+                      ScriptInterpreterPython::Locker::AcquireLock |
+                      ScriptInterpreterPython::Locker::InitSession |
+                      (options.GetSetLLDBGlobals() ? ScriptInterpreterPython::Locker::InitGlobals : 0),
+                      ScriptInterpreterPython::Locker::FreeAcquiredLock |
+                      ScriptInterpreterPython::Locker::TearDownSession,
+                      in_file,
+                      out_file,
+                      err_file);
+        
+        bool success = false;
+        
         // Find the correct script interpreter dictionary in the main module.
         PythonDictionary &session_dict = GetSessionDictionary ();
         if (session_dict)
@@ -577,6 +641,20 @@ ScriptInterpreterPython::ExecuteOneLine (const char *command, CommandReturnObjec
             }
         }
 
+        // Flush our output and error file handles
+        ::fflush (out_file);
+        if (out_file != err_file)
+            ::fflush (err_file);
+        
+        if (pipe_fds[0] != -1)
+        {
+            // Close write end of pipe so our communication thread exits
+            ::close (pipe_fds[1]);
+            output_comm.StopReadThread();
+            ::close (pipe_fds[0]);
+        }
+        
+        
         if (success)
             return true;
 
@@ -873,10 +951,10 @@ ScriptInterpreterPython::ExecuteOneLineWithReturn (const char *in_string,
     return ret_success;
 }
 
-bool
+Error
 ScriptInterpreterPython::ExecuteMultipleLines (const char *in_string, const ExecuteScriptOptions &options)
 {
-    
+    Error error;
     
     Locker locker(this,
                   ScriptInterpreterPython::Locker::AcquireLock      | ScriptInterpreterPython::Locker::InitSession | (options.GetSetLLDBGlobals() ? ScriptInterpreterPython::Locker::InitGlobals : 0),
@@ -925,19 +1003,33 @@ ScriptInterpreterPython::ExecuteMultipleLines (const char *in_string, const Exec
     py_error = PyErr_Occurred ();
     if (py_error != NULL)
     {
-        puts(in_string);
-        _PyObject_Dump (py_error);
-        PyErr_Print();
-        success = false;
+//        puts(in_string);
+//        _PyObject_Dump (py_error);
+//        PyErr_Print();
+//        success = false;
+        
+        PyObject *type = NULL;
+        PyObject *value = NULL;
+        PyObject *traceback = NULL;
+        PyErr_Fetch (&type,&value,&traceback);
+        
+        // get the backtrace
+        std::string bt = ReadPythonBacktrace(traceback);
+        
+        if (value && value != Py_None)
+            error.SetErrorStringWithFormat("%s\n%s", PyString_AsString(PyObject_Str(value)),bt.c_str());
+        else
+            error.SetErrorStringWithFormat("%s",bt.c_str());
+        Py_XDECREF(type);
+        Py_XDECREF(value);
+        Py_XDECREF(traceback);
         if (options.GetMaskoutErrors())
         {
-            if (PyErr_GivenExceptionMatches (py_error, PyExc_SyntaxError))
-                PyErr_Print ();
             PyErr_Clear();
         }
     }
 
-    return success;
+    return error;
 }
 
 
@@ -1009,7 +1101,7 @@ ScriptInterpreterPython::ExportFunctionDefinitionToInterpreter (StringList &func
     // Convert StringList to one long, newline delimited, const char *.
     std::string function_def_string(function_def.CopyList());
 
-    return ExecuteMultipleLines (function_def_string.c_str(), ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false));
+    return ExecuteMultipleLines (function_def_string.c_str(), ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false)).Success();
 }
 
 bool
@@ -2114,7 +2206,7 @@ ScriptInterpreterPython::LoadScriptingModule (const char* pathname,
             command_stream.Printf("if not (sys.path.__contains__('%s')):\n    sys.path.insert(1,'%s');\n\n",
                                   directory.c_str(),
                                   directory.c_str());
-            bool syspath_retval = ExecuteMultipleLines(command_stream.GetData(), ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false).SetSetLLDBGlobals(false));
+            bool syspath_retval = ExecuteMultipleLines(command_stream.GetData(), ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false).SetSetLLDBGlobals(false)).Success();
             if (!syspath_retval)
             {
                 error.SetErrorString("Python sys.path handling failed");
@@ -2177,47 +2269,9 @@ ScriptInterpreterPython::LoadScriptingModule (const char* pathname,
         else
             command_stream.Printf("import %s",basename.c_str());
         
-        bool import_retval = ExecuteMultipleLines(command_stream.GetData(), ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false).SetSetLLDBGlobals(false).SetMaskoutErrors(false));
-        PyObject* py_error = PyErr_Occurred(); // per Python docs: "you do not need to Py_DECREF()" the return of this function
-        
-        if (py_error || !import_retval) // check for failure of the import
-        {
-            if (py_error) // if we have a Python error..
-            {
-                PyObject *type = NULL,*value = NULL,*traceback = NULL;
-                PyErr_Fetch (&type,&value,&traceback);
-
-                if (PyErr_GivenExceptionMatches (py_error, PyExc_ImportError)) // and it is an ImportError
-                {
-                    if (value && value != Py_None)
-                        error.SetErrorString(PyString_AsString(PyObject_Str(value)));
-                    else
-                        error.SetErrorString("ImportError raised by imported module");
-                }
-                else // any other error
-                {
-                    // get the backtrace
-                    std::string bt = ReadPythonBacktrace(traceback);
-                    
-                    if (value && value != Py_None)
-                        error.SetErrorStringWithFormat("Python error raised while importing module: %s - traceback: %s", PyString_AsString(PyObject_Str(value)),bt.c_str());
-                    else
-                        error.SetErrorStringWithFormat("Python raised an error while importing module - traceback: %s",bt.c_str());
-                }
-                
-                Py_XDECREF(type);
-                Py_XDECREF(value);
-                Py_XDECREF(traceback);
-            }
-            else // we failed but have no error to explain why
-            {
-                error.SetErrorString("unknown error while importing module");
-            }
-            
-            // anyway, clear the error indicator and return false
-            PyErr_Clear();
+        error = ExecuteMultipleLines(command_stream.GetData(), ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false).SetSetLLDBGlobals(false));
+        if (error.Fail())
             return false;
-        }
         
         // if we are here, everything worked
         // call __lldb_init_module(debugger,dict)

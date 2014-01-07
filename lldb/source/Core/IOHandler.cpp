@@ -58,10 +58,11 @@ IOHandler::IOHandler (Debugger &debugger,
     m_done (false),
     m_active (false)
 {
-    // If any files are not specified, then adopt them from the
-    // top input reader.
+    // If any files are not specified, then adopt them from the top input reader.
     if (!m_input_sp || !m_output_sp || !m_error_sp)
-        debugger.GetIOHandlerFiles (*this);
+        debugger.AdoptTopIOHandlerFilesIfInvalid (m_input_sp,
+                                                  m_output_sp,
+                                                  m_error_sp);
 }
 
 IOHandler::~IOHandler()

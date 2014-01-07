@@ -4886,7 +4886,7 @@ void
 Process::PopProcessIOHandler ()
 {
     IOHandlerSP io_handler_sp (m_process_input_reader);
-    if (io_handler_sp && io_handler_sp->IsActive())
+    if (io_handler_sp)
     {
         io_handler_sp->Interrupt();
         m_target.GetDebugger().PopIOHandler (io_handler_sp);
