@@ -2433,9 +2433,8 @@ Target::Launch (Listener &listener, ProcessLaunchInfo &launch_info)
             {
                 error.SetErrorStringWithFormat ("initial process state wasn't stopped: %s", StateAsCString(state));
             }
-            
-            m_process_sp->RestoreProcessEvents ();
         }
+        m_process_sp->RestoreProcessEvents ();
     }
     else
     {
