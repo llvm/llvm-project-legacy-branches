@@ -2846,6 +2846,66 @@ Debugger::HandleProcessEvent (const EventSP &event_sp)
                     }
                     else
                     {
+                        // Lock the thread list so it doesn't change on us
+                        ThreadList &thread_list = process_sp->GetThreadList();
+                        Mutex::Locker locker (thread_list.GetMutex());
+                        
+                        ThreadSP curr_thread (thread_list.GetSelectedThread());
+                        ThreadSP thread;
+                        StopReason curr_thread_stop_reason = eStopReasonInvalid;
+                        if (curr_thread)
+                            curr_thread_stop_reason = curr_thread->GetStopReason();
+                        if (!curr_thread->IsValid() ||
+                            curr_thread_stop_reason == eStopReasonInvalid ||
+                            curr_thread_stop_reason == eStopReasonNone)
+                        {
+                            // Prefer a thread that has just completed its plan over another thread as current thread.
+                            ThreadSP plan_thread;
+                            ThreadSP other_thread;
+                            const size_t num_threads = thread_list.GetSize();
+                            size_t i;
+                            for (i = 0; i < num_threads; ++i)
+                            {
+                                thread = thread_list.GetThreadAtIndex(i);
+                                StopReason thread_stop_reason = thread->GetStopReason();
+                                switch (thread_stop_reason)
+                                {
+                                    case eStopReasonInvalid:
+                                    case eStopReasonNone:
+                                        break;
+                                        
+                                    case eStopReasonTrace:
+                                    case eStopReasonBreakpoint:
+                                    case eStopReasonWatchpoint:
+                                    case eStopReasonSignal:
+                                    case eStopReasonException:
+                                    case eStopReasonExec:
+                                    case eStopReasonThreadExiting:
+                                        if (!other_thread)
+                                            other_thread = thread;
+                                        break;
+                                    case eStopReasonPlanComplete:
+                                        if (!plan_thread)
+                                            plan_thread = thread;
+                                        break;
+                                }
+                            }
+                            if (plan_thread)
+                                thread_list.SetSelectedThreadByID (plan_thread->GetID());
+                            else if (other_thread)
+                                thread_list.SetSelectedThreadByID (other_thread->GetID());
+                            else
+                            {
+                                if (curr_thread->IsValid())
+                                    thread = curr_thread;
+                                else
+                                    thread = thread_list.GetThreadAtIndex(0);
+                                
+                                if (thread)
+                                    thread_list.SetSelectedThreadByID (thread->GetID());
+                            }
+                        }
+
                         if (GetTargetList().GetSelectedTarget().get() == &process_sp->GetTarget())
                         {
                             const bool only_threads_with_stop_reason = true;
