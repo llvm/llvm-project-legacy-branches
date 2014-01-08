@@ -15,6 +15,8 @@
 #include "lldb/Core/StringList.h"
 #include "lldb/Host/Host.h"
 
+#include <limits.h>
+
 using namespace lldb;
 using namespace lldb_private;
 

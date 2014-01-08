@@ -265,6 +265,10 @@ if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
   list(APPEND system_libs execinfo)
 endif()
 
+if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+  list(APPEND system_libs ncurses)
+endif()
+
 #add_subdirectory(include)
 add_subdirectory(docs)
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
