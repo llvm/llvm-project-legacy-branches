@@ -930,6 +930,8 @@ Driver::MainLoop ()
         m_debugger.HandleCommand (command_string);;
     }
 
+    ExecuteInitialCommands(false);
+
     // Now that all option parsing is done, we try and parse the .lldbinit
     // file in the current working directory
     sb_interpreter.SourceInitFileInCurrentWorkingDirectory (result);
