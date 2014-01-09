@@ -2224,6 +2224,528 @@ struct DisplayOptions
     bool show_types;
 };
 
+class TreeItem;
+
+class TreeDelegate
+{
+public:
+    TreeDelegate() {}
+    virtual ~TreeDelegate() {}
+    virtual void TreeDelegateDrawTreeItem (TreeItem &item, Window &window) = 0;
+    virtual void TreeDelegateGenerateChildren (TreeItem &item) = 0;
+};
+typedef std::shared_ptr<TreeDelegate> TreeDelegateSP;
+
+class TreeItem
+{
+public:
+    
+    TreeItem (TreeItem *parent, TreeDelegate &delegate, bool might_have_children) :
+        m_parent (parent),
+        m_delegate (delegate),
+        m_user_data (nullptr),
+        m_row_idx (-1),
+        m_children (),
+        m_might_have_children (might_have_children),
+        m_is_expanded (false),
+        m_did_calculate_children (false)
+    {
+    }
+    
+    size_t
+    GetDepth () const
+    {
+        if (m_parent)
+            return 1 + m_parent->GetDepth();
+        return 0;
+    }
+    
+    int
+    GetRowIndex () const
+    {
+        return m_row_idx;
+    }
+
+    void
+    ClearChildren ()
+    {
+        m_children.clear();
+    }
+
+    void
+    Resize (size_t n, const TreeItem &t)
+    {
+        m_children.resize(n, t);
+    }
+    
+    TreeItem &
+    operator [](size_t i)
+    {
+        return m_children[i];
+    }
+
+    void
+    SetRowIndex (int row_idx)
+    {
+        m_row_idx = row_idx;
+    }
+
+    size_t
+    GetNumChildren ()
+    {
+        if (!m_did_calculate_children)
+        {
+            m_did_calculate_children = true;
+            m_delegate.TreeDelegateGenerateChildren (*this);
+        }
+        return m_children.size();
+    }
+
+    void
+    CalculateRowIndexes (int &row_idx)
+    {
+        SetRowIndex(row_idx);
+        ++row_idx;
+
+        // The root item must calculate its children
+        if (m_parent == NULL)
+            GetNumChildren();
+        
+        const bool expanded = IsExpanded();
+        for (auto &item : m_children)
+        {
+            if (expanded)
+                item.CalculateRowIndexes(row_idx);
+            else
+                item.SetRowIndex(-1);
+        }
+    }
+
+    TreeItem *
+    GetParent ()
+    {
+        return m_parent;
+    }
+
+    bool
+    IsExpanded () const
+    {
+        return m_is_expanded;
+    }
+
+    void
+    Expand()
+    {
+        m_is_expanded = true;
+    }
+    
+    void
+    Unexpand ()
+    {
+        m_is_expanded = false;
+    }
+    
+    bool
+    Draw (Window &window,
+          const int first_visible_row,
+          const uint32_t selected_row_idx,
+          int &row_idx,
+          int &num_rows_left)
+    {
+        if (num_rows_left <= 0)
+            return false;
+
+        if (m_row_idx >= first_visible_row)
+        {
+            window.MoveCursor(2, row_idx + 1);
+
+            if (m_parent)
+                m_parent->DrawTreeForChild (window, this, 0);
+        
+            if (m_might_have_children)
+            {
+                // It we can get UTF8 characters to work we should try to use the "symbol"
+                // UTF8 string below
+                //            const char *symbol = "";
+                //            if (row.expanded)
+                //                symbol = "\xe2\x96\xbd ";
+                //            else
+                //                symbol = "\xe2\x96\xb7 ";
+                //            window.PutCString (symbol);
+                
+                // The ACS_DARROW and ACS_RARROW don't look very nice they are just a
+                // 'v' or '>' character...
+                //            if (expanded)
+                //                window.PutChar (ACS_DARROW);
+                //            else
+                //                window.PutChar (ACS_RARROW);
+                // Since we can't find any good looking right arrow/down arrow
+                // symbols, just use a diamond...
+                window.PutChar (ACS_DIAMOND);
+                window.PutChar (ACS_HLINE);
+            }
+            bool highlight = (selected_row_idx == m_row_idx) && window.IsActive();
+
+            if (highlight)
+                window.AttributeOn(A_REVERSE);
+
+            m_delegate.TreeDelegateDrawTreeItem(*this, window);
+
+            if (highlight)
+                window.AttributeOff(A_REVERSE);
+            ++row_idx;
+            --num_rows_left;
+        }
+
+        if (num_rows_left <= 0)
+            return false; // We are done drawing...
+
+        if (IsExpanded())
+        {
+            for (auto &item : m_children)
+            {
+                // If we displayed all the rows and item.Draw() returns
+                // false we are done drawing and can exit this for loop
+                if (item.Draw(window, first_visible_row, selected_row_idx, row_idx, num_rows_left) == false)
+                    break;
+            }
+        }
+        return num_rows_left >= 0; // Return true if not done drawing yet
+    }
+    
+    void
+    DrawTreeForChild (Window &window, TreeItem *child, uint32_t reverse_depth)
+    {
+        if (m_parent)
+            m_parent->DrawTreeForChild (window, this, reverse_depth + 1);
+        
+        if (&m_children.back() == child)
+        {
+            // Last child
+            if (reverse_depth == 0)
+            {
+                window.PutChar (ACS_LLCORNER);
+                window.PutChar (ACS_HLINE);
+            }
+            else
+            {
+                window.PutChar (' ');
+                window.PutChar (' ');
+            }
+        }
+        else
+        {
+            if (reverse_depth == 0)
+            {
+                window.PutChar (ACS_LTEE);
+                window.PutChar (ACS_HLINE);
+            }
+            else
+            {
+                window.PutChar (ACS_VLINE);
+                window.PutChar (' ');
+            }
+        }
+    }
+    
+    TreeItem *
+    GetItemForRowIndex (uint32_t row_idx)
+    {
+        if (m_row_idx == row_idx)
+            return this;
+        if (m_children.empty())
+            return NULL;
+        if (m_children.back().m_row_idx < row_idx)
+            return NULL;
+        if (IsExpanded())
+        {
+            for (auto &item : m_children)
+            {
+                TreeItem *selected_item_ptr = item.GetItemForRowIndex(row_idx);
+                if (selected_item_ptr)
+                    return selected_item_ptr;
+            }
+        }
+        return NULL;
+    }
+    
+    void *
+    GetUserData() const
+    {
+        return m_user_data;
+    }
+    
+    void
+    SetUserData (void *user_data)
+    {
+        m_user_data = user_data;
+    }
+    
+
+protected:
+    TreeItem *m_parent;
+    TreeDelegate &m_delegate;
+    void *m_user_data;
+    int m_row_idx; // Zero based visible row index, -1 if not visible or for the root item
+    std::vector<TreeItem> m_children;
+    bool m_might_have_children;
+    bool m_is_expanded;
+    bool m_did_calculate_children;
+
+};
+
+class TreeWindowDelegate : public WindowDelegate
+{
+public:
+    TreeWindowDelegate (const TreeDelegateSP &delegate_sp) :
+        m_delegate_sp (delegate_sp),
+        m_root (NULL, *delegate_sp, true)
+    {
+    }
+    
+    int
+    NumVisibleRows () const
+    {
+        return m_max_y - m_min_y;
+    }
+
+    virtual bool
+    WindowDelegateDraw (Window &window, bool force)
+    {
+        m_min_x = 2;
+        m_min_y = 1;
+        m_max_x = window.GetWidth() - 1;
+        m_max_y = window.GetHeight() - 1;
+        
+        window.Erase();
+        window.DrawTitleBox (window.GetName());
+            
+        const int num_visible_rows = NumVisibleRows();
+        m_num_rows = 0;
+        m_root.CalculateRowIndexes(m_num_rows);
+        
+        // If we unexpanded while having something selected our
+        // total number of rows is less than the num visible rows,
+        // then make sure we show all the rows by setting the first
+        // visible row accordingly.
+        if (m_first_visible_row > 0 && m_num_rows < num_visible_rows)
+            m_first_visible_row = 0;
+        
+        // Make sure the selected row is always visible
+        if (m_selected_row_idx < m_first_visible_row)
+            m_first_visible_row = m_selected_row_idx;
+        else if (m_first_visible_row + num_visible_rows <= m_selected_row_idx)
+            m_first_visible_row = m_selected_row_idx - num_visible_rows + 1;
+        
+        int row_idx = 0;
+        int num_rows_left = num_visible_rows;
+        m_root.Draw (window, m_first_visible_row, m_selected_row_idx, row_idx, num_rows_left);
+        
+        window.DeferredRefresh();
+        
+        // Get the selected row
+        m_selected_item = m_root.GetItemForRowIndex (m_selected_row_idx);
+        
+        return true; // Drawing handled
+    }
+    
+    virtual HandleCharResult
+    WindowDelegateHandleChar (Window &window, int c)
+    {
+        switch(c)
+        {
+            case ',':
+            case KEY_PPAGE:
+                // Page up key
+                if (m_first_visible_row > 0)
+                {
+                    if (m_first_visible_row > m_max_y)
+                        m_first_visible_row -= m_max_y;
+                    else
+                        m_first_visible_row = 0;
+                    m_selected_row_idx = m_first_visible_row;
+                }
+                return eKeyHandled;
+                
+            case '.':
+            case KEY_NPAGE:
+                // Page down key
+                if (m_num_rows > m_max_y)
+                {
+                    if (m_first_visible_row + m_max_y < m_num_rows)
+                    {
+                        m_first_visible_row += m_max_y;
+                        m_selected_row_idx = m_first_visible_row;
+                    }
+                }
+                return eKeyHandled;
+                
+            case KEY_UP:
+                if (m_selected_row_idx > 0)
+                    --m_selected_row_idx;
+                return eKeyHandled;
+            case KEY_DOWN:
+                if (m_selected_row_idx + 1 < m_num_rows)
+                    ++m_selected_row_idx;
+                return eKeyHandled;
+                
+            case KEY_RIGHT:
+                if (m_selected_item)
+                {
+                    if (!m_selected_item->IsExpanded())
+                        m_selected_item->Expand();
+                }
+                return eKeyHandled;
+                
+            case KEY_LEFT:
+                if (m_selected_item)
+                {
+                    if (m_selected_item->IsExpanded())
+                        m_selected_item->Unexpand();
+                    else if (m_selected_item->GetParent())
+                        m_selected_row_idx = m_selected_item->GetParent()->GetRowIndex();
+                }
+                return eKeyHandled;
+                
+            case ' ':
+                // Toggle expansion state when SPACE is pressed
+                if (m_selected_item)
+                {
+                    if (m_selected_item->IsExpanded())
+                        m_selected_item->Unexpand();
+                    else
+                        m_selected_item->Expand();
+                }
+                return eKeyHandled;
+                
+            default:
+                break;
+        }
+        return eKeyNotHandled;
+    }
+
+protected:
+    TreeDelegateSP m_delegate_sp;
+    TreeItem m_root;
+    TreeItem *m_selected_item;
+    int m_num_rows;
+    int m_selected_row_idx;
+    int m_first_visible_row;
+    int m_min_x;
+    int m_min_y;
+    int m_max_x;
+    int m_max_y;
+
+};
+
+class FrameTreeDelegate : public TreeDelegate
+{
+public:
+    FrameTreeDelegate () :
+        TreeDelegate()
+    {
+    }
+    
+    virtual ~FrameTreeDelegate()
+    {
+    }
+    
+    virtual void
+    TreeDelegateDrawTreeItem (TreeItem &item, Window &window)
+    {
+        StackFrame *frame = (StackFrame *)item.GetUserData();
+        if (frame)
+        {
+            StreamString strm;
+            const SymbolContext &sc = frame->GetSymbolContext(eSymbolContextEverything);
+            ExecutionContext exe_ctx (frame->shared_from_this());
+            const char *frame_format = "frame #${frame.index}: ${module.file.basename}{`${function.name}${function.pc-offset}}}";
+            if (Debugger::FormatPrompt (frame_format, &sc, &exe_ctx, NULL, strm))
+                window.PutCString(strm.GetString().c_str());
+        }
+    }
+    virtual void
+    TreeDelegateGenerateChildren (TreeItem &item)
+    {
+        // No children for frames yet...
+    }
+};
+
+class ThreadTreeDelegate : public TreeDelegate
+{
+public:
+    ThreadTreeDelegate (Debugger &debugger) :
+        TreeDelegate(),
+        m_debugger (debugger),
+        m_thread_wp (),
+        m_tid (LLDB_INVALID_THREAD_ID),
+        m_stop_id (UINT32_MAX)
+    {
+    }
+    
+    virtual ~ThreadTreeDelegate()
+    {
+    }
+    
+    virtual void
+    TreeDelegateDrawTreeItem (TreeItem &item, Window &window)
+    {
+        ThreadSP thread_sp = m_thread_wp.lock();
+        if (thread_sp)
+        {
+            StreamString strm;
+            ExecutionContext exe_ctx (thread_sp);
+            const char *format = "thread #${thread.index}: tid = ${thread.id}{, name = '${thread.name}}{, queue = '${thread.queue}}{, stop reason = ${thread.stop-reason}}";
+            if (Debugger::FormatPrompt (format, NULL, &exe_ctx, NULL, strm))
+                window.PutCString(strm.GetString().c_str());
+        }
+    }
+    virtual void
+    TreeDelegateGenerateChildren (TreeItem &item)
+    {
+        TargetSP target_sp (m_debugger.GetSelectedTarget());
+        if (target_sp)
+        {
+            ProcessSP process_sp = target_sp->GetProcessSP();
+            if (process_sp && process_sp->IsAlive())
+            {
+                StateType state = process_sp->GetState();
+                if (StateIsStoppedState(state, true))
+                {
+                    item.ClearChildren();
+                    item.Expand();
+                    ThreadSP thread_sp = process_sp->GetThreadList().GetSelectedThread();
+                    if (thread_sp)
+                    {
+                        if (m_stop_id == process_sp->GetStopID() && thread_sp->GetID() == m_tid)
+                            return; // Children are already up to date
+                        if (!m_frame_delegate_sp)
+                            m_frame_delegate_sp.reset (new FrameTreeDelegate());
+                        m_thread_wp = thread_sp;
+                        m_tid = thread_sp->GetID();
+                        
+                        TreeItem t (&item, *m_frame_delegate_sp, false);
+                        size_t num_frames = thread_sp->GetStackFrameCount();
+                        item.Resize (num_frames, t);
+                        for (size_t i=0; i<num_frames; ++i)
+                        {
+                            item[i].SetUserData (thread_sp->GetStackFrameAtIndex(i).get());
+                        }
+                    }
+                }
+                return;
+            }
+        }
+        item.ClearChildren();
+    }
+    
+protected:
+    Debugger &m_debugger;
+    ThreadWP m_thread_wp;
+    std::shared_ptr<FrameTreeDelegate> m_frame_delegate_sp;
+    lldb::user_id_t m_tid;
+    uint32_t m_stop_id;
+};
 
 class ValueObjectListDelegate : public WindowDelegate
 {
@@ -3612,6 +4134,8 @@ IOHandlerCursesGUI::Activate ()
         main_window_sp->SetDelegate (std::static_pointer_cast<WindowDelegate>(app_delegate_sp));
         source_window_sp->SetDelegate (WindowDelegateSP(new SourceFileWindowDelegate(m_debugger)));
         variables_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
+//        TreeDelegateSP thread_delegate_sp (new ThreadTreeDelegate(m_debugger));
+//        threads_window_sp->SetDelegate (WindowDelegateSP(new TreeWindowDelegate(thread_delegate_sp)));
         status_window_sp->SetDelegate (WindowDelegateSP(new StatusBarWindowDelegate(m_debugger)));
         
         init_pair (1, COLOR_WHITE   , COLOR_BLUE  );
