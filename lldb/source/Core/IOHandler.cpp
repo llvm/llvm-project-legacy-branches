@@ -603,6 +603,15 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         }
     };
     
+    bool operator == (const Point &lhs, const Point &rhs)
+    {
+        return lhs.x == rhs.x && lhs.y == rhs.y;
+    }
+    bool operator != (const Point &lhs, const Point &rhs)
+    {
+        return lhs.x != rhs.x || lhs.y != rhs.y;
+    }
+
     struct Size
     {
         int width;
@@ -621,6 +630,15 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         }
     };
     
+    bool operator == (const Size &lhs, const Size &rhs)
+    {
+        return lhs.width == rhs.width && lhs.height == rhs.height;
+    }
+    bool operator != (const Size &lhs, const Size &rhs)
+    {
+        return lhs.width != rhs.width || lhs.height != rhs.height;
+    }
+
     struct Rect
     {
         Point origin;
@@ -734,6 +752,15 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         }
     };
 
+    bool operator == (const Rect &lhs, const Rect &rhs)
+    {
+        return lhs.origin == rhs.origin && lhs.size == rhs.size;
+    }
+    bool operator != (const Rect &lhs, const Rect &rhs)
+    {
+        return lhs.origin != rhs.origin || lhs.size != rhs.size;
+    }
+
     enum HandleCharResult
     {
         eKeyNotHandled      = 0,
@@ -785,7 +812,8 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             m_prev_active_window_idx (UINT32_MAX),
             m_delete (false),
             m_needs_update (true),
-            m_can_activate (true)
+            m_can_activate (true),
+            m_is_subwin (false)
         {
         }
         
@@ -799,7 +827,8 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             m_prev_active_window_idx (UINT32_MAX),
             m_delete (del),
             m_needs_update (true),
-            m_can_activate (true)
+            m_can_activate (true),
+            m_is_subwin (false)
         {
         }
         
@@ -813,7 +842,8 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             m_prev_active_window_idx (UINT32_MAX),
             m_delete (true),
             m_needs_update (true),
-            m_can_activate (true)
+            m_can_activate (true),
+            m_is_subwin (false)
         {
         }
         
@@ -862,8 +892,7 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         int     GetWidth()  { return GetMaxX(); }
         int     GetHeight() { return GetMaxY(); }
         void    MoveCursor (int x, int y) {  ::wmove (m_window, y, x); }
-        void    MoveWindow (int x, int y) {  ::mvwin (m_window, y, x); }
-        void    MoveWindow (const Point &pt) {  ::mvwin (m_window, pt.y, pt.x); }
+        void    MoveWindow (int x, int y) {  MoveWindow(Point(x,y)); }
         void    Resize (int w, int h) { ::wresize(m_window, h, w); }
         void    Resize (const Size &size) { ::wresize(m_window, size.height, size.width); }
         void    PutChar (int ch)    { ::waddch (m_window, ch); }
@@ -875,10 +904,44 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         void    UnderlineOff () { AttributeOff(A_UNDERLINE); }
 
         void
+        MoveWindow (const Point &origin)
+        {
+            const bool moving_window = origin != GetParentOrigin();
+            if (m_is_subwin && moving_window)
+            {
+                // Can't move subwindows, must delete and re-create
+                Size size = GetSize();
+                Reset (::subwin (m_parent->m_window,
+                                 size.height,
+                                 size.width,
+                                 origin.y,
+                                 origin.x), true);
+            }
+            else
+            {
+                ::mvwin (m_window, origin.y, origin.x);
+            }
+        }
+
+        void
         SetBounds (const Rect &bounds)
         {
-            MoveWindow(bounds.origin);
-            Resize (bounds.size);
+            const bool moving_window = bounds.origin != GetParentOrigin();
+            if (m_is_subwin && moving_window)
+            {
+                // Can't move subwindows, must delete and re-create
+                Reset (::subwin (m_parent->m_window,
+                                 bounds.size.height,
+                                 bounds.size.width,
+                                 bounds.origin.y,
+                                 bounds.origin.x), true);
+            }
+            else
+            {
+                if (moving_window)
+                    MoveWindow(bounds.origin);
+                Resize (bounds.size);
+            }
         }
 
         void
@@ -898,34 +961,27 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
                 m_parent->Touch();
         }
 
-        void
-        AddSubWindow (const WindowSP &subwindow_sp, bool make_active)
-        {
-            subwindow_sp->m_parent = this;
-            if (make_active)
-            {
-                m_prev_active_window_idx = m_curr_active_window_idx;
-                m_curr_active_window_idx = m_subwindows.size();
-            }
-            m_subwindows.push_back(subwindow_sp);
-            m_needs_update = true;
-        }
-
         WindowSP
         CreateSubWindow (const char *name, const Rect &bounds, bool make_active)
         {
             WindowSP subwindow_sp;
             if (m_window)
+            {
                 subwindow_sp.reset(new Window(name, ::subwin (m_window,
                                                               bounds.size.height,
                                                               bounds.size.width,
                                                               bounds.origin.y,
                                                               bounds.origin.x), true));
+                subwindow_sp->m_is_subwin = true;
+            }
             else
+            {
                 subwindow_sp.reset(new Window(name, ::newwin (bounds.size.height,
                                                               bounds.size.width,
                                                               bounds.origin.y,
                                                               bounds.origin.x), true));
+                subwindow_sp->m_is_subwin = false;
+            }
             subwindow_sp->m_parent = this;
             if (make_active)
             {
@@ -1254,6 +1310,7 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         bool m_delete;
         bool m_needs_update;
         bool m_can_activate;
+        bool m_is_subwin;
         
     private:
         DISALLOW_COPY_AND_ASSIGN(Window);
@@ -2816,16 +2873,10 @@ public:
 
                         if (registers_window_sp)
                         {
-                            WindowDelegateSP window_delegate_sp = registers_window_sp->GetDelegate();
-                            main_window_sp->RemoveSubWindow(registers_window_sp.get());
-
                             // We have a registers window, so give all the area back to the registers window
                             Rect registers_bounds = variables_bounds;
                             registers_bounds.size.width = source_bounds.size.width;
-                            WindowSP new_window_sp = main_window_sp->CreateSubWindow ("Registers",
-                                                                                      registers_bounds,
-                                                                                      false);
-                            new_window_sp->SetDelegate (window_delegate_sp);
+                            registers_window_sp->SetBounds(registers_bounds);
                         }
                         else
                         {
@@ -2840,21 +2891,13 @@ public:
                         Rect new_variables_rect;
                         if (registers_window_sp)
                         {
-                            // We have a variables window, split it into two columns
-                            // where the left hand side will be the variables and the
-                            // right hand side will be the registers
+                            // We have a registers window so split the area of the registers
+                            // window into two columns where the left hand side will be the
+                            // variables and the right hand side will be the registers
                             const Rect variables_bounds = registers_window_sp->GetBounds();
                             Rect new_registers_rect;
                             variables_bounds.VerticalSplitPercentage (0.50, new_variables_rect, new_registers_rect);
-                            
-                            WindowDelegateSP window_delegate_sp = registers_window_sp->GetDelegate();
-                            main_window_sp->RemoveSubWindow(registers_window_sp.get());
-                            
-                            // We have a registers window, so give all the area back to the registers window
-                            WindowSP new_window_sp = main_window_sp->CreateSubWindow ("Registers",
-                                                                                      new_registers_rect,
-                                                                                      false);
-                            new_window_sp->SetDelegate (window_delegate_sp);
+                            registers_window_sp->SetBounds (new_registers_rect);
                         }
                         else
                         {
@@ -2913,7 +2956,7 @@ public:
                         }
                         else
                         {
-                            // No variables window, grab the bottom part of the source window
+                            // No registers window, grab the bottom part of the source window
                             Rect new_source_rect;
                             source_bounds.HorizontalSplitPercentage (0.70, new_source_rect, new_regs_rect);
                             source_window_sp->SetBounds (new_source_rect);
