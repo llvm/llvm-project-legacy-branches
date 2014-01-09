@@ -379,7 +379,9 @@ namespace lldb_private {
     protected:
         std::unique_ptr<Editline> m_editline_ap;
         IOHandlerDelegate &m_delegate;
+        std::string m_prompt;
         bool m_multi_line;
+        bool m_interactive;
         
     };
     
