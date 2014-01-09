@@ -56,11 +56,16 @@ def run_python_interpreter (dict):
 g_run_one_line_str = None
 
 def run_python_interpreter (dict):
-   # Pass in the dictionary, for continuity from one session to the next.
-   code.interact(banner="Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.", local=dict)
+    # Pass in the dictionary, for continuity from one session to the next.
+    setquit()
+    try:
+        code.interact(banner="Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.", local=dict)
+    except SystemExit as e:
+        global g_builtin_override_called
+        if not g_builtin_override_called:
+            print 'Script exited with %s' %(e)
 
 def run_one_line (dict, input_string):
-    global g_builtin_override_called
     global g_run_one_line_str
     setquit()
     try:
@@ -71,5 +76,6 @@ def run_one_line (dict, input_string):
             repl.runsource (g_run_one_line_str)
 
     except SystemExit as e:
+        global g_builtin_override_called
         if not g_builtin_override_called:
             print 'Script exited with %s' %(e)
