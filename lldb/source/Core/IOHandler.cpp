@@ -289,15 +289,37 @@ IOHandlerEditline::IOHandlerEditline (Debugger &debugger,
     IOHandler (debugger, input_sp, output_sp, error_sp),
     m_editline_ap (),
     m_delegate (delegate),
-    m_multi_line (multi_line)
+    m_prompt (),
+    m_multi_line (multi_line),
+    m_interactive (false)
 {
-    m_editline_ap.reset(new Editline (editline_name,
-                                      prompt ? prompt : "",
-                                      GetInputFILE (),
-                                      GetOutputFILE (),
-                                      GetErrorFILE ()));
-    m_editline_ap->SetLineCompleteCallback (LineCompletedCallback, this);
-    m_editline_ap->SetAutoCompleteCallback (AutoCompleteCallback, this);
+    if (prompt && prompt[0])
+        m_prompt = prompt;
+
+    const int in_fd = GetInputFD();
+    struct winsize window_size;
+    bool use_editline = false;
+    if (isatty (in_fd))
+    {
+        m_interactive = true;
+        if (::ioctl (in_fd, TIOCGWINSZ, &window_size) == 0)
+        {
+            if (window_size.ws_col > 0)
+                use_editline = true;
+        }
+    }
+
+    if (use_editline)
+    {
+        m_editline_ap.reset(new Editline (editline_name,
+                                          prompt ? prompt : "",
+                                          GetInputFILE (),
+                                          GetOutputFILE (),
+                                          GetErrorFILE ()));
+        m_editline_ap->SetLineCompleteCallback (LineCompletedCallback, this);
+        m_editline_ap->SetAutoCompleteCallback (AutoCompleteCallback, this);
+    }
+    
 }
 
 IOHandlerEditline::~IOHandlerEditline ()
@@ -315,6 +337,20 @@ IOHandlerEditline::GetLine (std::string &line)
     }
     else
     {
+        if (m_interactive)
+        {
+            const char *prompt = GetPrompt();
+            if (prompt && prompt[0])
+            {
+                FILE *out = GetOutputFILE();
+                if (out)
+                {
+                    ::fprintf(out, "%s", prompt);
+                    ::fflush(out);
+                }
+            }
+        }
+        line.clear();
         FILE *in = GetInputFILE();
         char buffer[256];
         bool done = false;
@@ -324,12 +360,22 @@ IOHandlerEditline::GetLine (std::string &line)
                 done = true;
             else
             {
-                const size_t buffer_len = strlen(buffer);
-                line.append(buffer, buffer_len);
+                size_t buffer_len = strlen(buffer);
                 assert (buffer[buffer_len] == '\0');
-                const char last_char = buffer[buffer_len-1];
+                char last_char = buffer[buffer_len-1];
                 if (last_char == '\r' || last_char == '\n')
+                {
                     done = true;
+                    // Strip trailing newlines
+                    while (last_char == '\r' || last_char == '\n')
+                    {
+                        --buffer_len;
+                        if (buffer_len == 0)
+                            break;
+                        last_char = buffer[buffer_len-1];
+                    }
+                }
+                line.append(buffer, buffer_len);
             }
         }
         return !line.empty();
@@ -374,18 +420,21 @@ IOHandlerEditline::GetPrompt ()
 {
     if (m_editline_ap)
         return m_editline_ap->GetPrompt ();
-    return false;
+    else if (m_prompt.empty())
+        return NULL;
+    return m_prompt.c_str();
 }
 
 bool
 IOHandlerEditline::SetPrompt (const char *p)
 {
+    if (p && p[0])
+        m_prompt = p;
+    else
+        m_prompt.clear();
     if (m_editline_ap)
-    {
         m_editline_ap->SetPrompt (p);
-        return true;
-    }
-    return false;
+    return true;
 }
 
 bool
@@ -469,6 +518,19 @@ IOHandlerEditline::Refresh ()
 {
     if (m_editline_ap && m_editline_ap->GettingLine())
         m_editline_ap->Refresh();
+    else
+    {
+        const char *prompt = GetPrompt();
+        if (prompt && prompt[0])
+        {
+            FILE *out = GetOutputFILE();
+            if (out)
+            {
+                ::fprintf(out, "%s", prompt);
+                ::fflush(out);
+            }
+        }
+    }
 }
 
 void
@@ -1995,7 +2057,7 @@ struct Row
     row_idx(0),
     x(1),
     y(1),
-    might_have_children (v->MightHaveChildren()),
+    might_have_children (v ? v->MightHaveChildren() : false),
     expanded (false),
     calculated_children (false),
     children()
@@ -2017,10 +2079,13 @@ struct Row
         if (!calculated_children)
         {
             calculated_children = true;
-            const size_t num_children = valobj->GetNumChildren();
-            for (size_t i=0; i<num_children; ++i)
+            if (valobj)
             {
-                children.push_back(Row (valobj->GetChildAtIndex(i, true), this));
+                const size_t num_children = valobj->GetNumChildren();
+                for (size_t i=0; i<num_children; ++i)
+                {
+                    children.push_back(Row (valobj->GetChildAtIndex(i, true), this));
+                }
             }
         }
     }
@@ -2327,7 +2392,7 @@ protected:
         return eFormatDefault;
     }
     
-    void
+    bool
     DisplayRowObject (Window &window,
                       Row &row,
                       DisplayOptions &options,
@@ -2336,6 +2401,9 @@ protected:
     {
         ValueObject *valobj = row.valobj.get();
         
+        if (valobj == NULL)
+            return false;
+    
         const char *type_name = options.show_types ? valobj->GetTypeName().GetCString() : NULL;
         const char *name = valobj->GetName().GetCString();
         const char *value = valobj->GetValueAsCString ();
@@ -2380,6 +2448,8 @@ protected:
         
         if (highlight)
             window.AttributeOff (A_REVERSE);
+        
+        return true;
     }
     void
     DisplayRows (Window &window,
@@ -2400,18 +2470,26 @@ protected:
             {
                 row.x = m_min_x;
                 row.y = m_num_rows - m_first_visible_row + 1;
-                DisplayRowObject (window,
-                                  row,
-                                  options,
-                                  window_is_active && m_num_rows == m_selected_row_idx,
-                                  last_child);
+                if (DisplayRowObject (window,
+                                      row,
+                                      options,
+                                      window_is_active && m_num_rows == m_selected_row_idx,
+                                      last_child))
+                {
+                    ++m_num_rows;
+                }
+                else
+                {
+                    row.x = 0;
+                    row.y = 0;
+                }
             }
             else
             {
                 row.x = 0;
                 row.y = 0;
+                ++m_num_rows;
             }
-            ++m_num_rows;
             
             if (row.expanded && !row.children.empty())
             {
