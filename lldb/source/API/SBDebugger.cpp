@@ -49,6 +49,43 @@ using namespace lldb;
 using namespace lldb_private;
 
 
+SBInputReader::SBInputReader()
+{
+}
+SBInputReader::~SBInputReader()
+{
+}
+
+static lldb::thread_result_t
+RunCI (lldb::thread_arg_t baton)
+{
+    Debugger *debugger = (Debugger *)baton;
+    debugger->GetCommandInterpreter().RunCommandInterpreter(false);
+    return NULL;
+}
+
+SBError
+SBInputReader::Initialize(lldb::SBDebugger& sb_debugger, unsigned long (*)(void*, lldb::SBInputReader*, lldb::InputReaderAction, char const*, unsigned long), void*, lldb::InputReaderGranularity, char const*, char const*, bool)
+{
+    Debugger *debugger = sb_debugger.get();
+    if (debugger)
+    {
+        lldb::thread_t thread = Host::ThreadCreate("lldb.SBInputReader.command_interpreter", RunCI, debugger, NULL);
+        Host::ThreadDetach(thread, NULL);
+    }
+    return SBError();
+}
+
+void
+SBInputReader::SetIsDone(bool)
+{
+}
+bool
+SBInputReader::IsActive() const
+{
+    return false;
+}
+
 static lldb::DynamicLibrarySP
 LoadPlugin (const lldb::DebuggerSP &debugger_sp, const FileSpec& spec, Error& error)
 {
@@ -923,6 +960,11 @@ SBDebugger::DispatchInputEndOfFile ()
 {
     if (m_opaque_sp)
         m_opaque_sp->DispatchInputEndOfFile ();
+}
+
+void
+SBDebugger::PushInputReader (SBInputReader &reader)
+{
 }
 
 void
