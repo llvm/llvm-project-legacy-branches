@@ -27,6 +27,7 @@
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/Function.h"
+#include "lldb/Symbol/Symbol.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/ThreadPlan.h"
 
@@ -902,6 +903,16 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         void    SetBackground (int color_pair_idx) { ::wbkgd (m_window,COLOR_PAIR(color_pair_idx)); }
         void    UnderlineOn ()  { AttributeOn(A_UNDERLINE); }
         void    UnderlineOff () { AttributeOff(A_UNDERLINE); }
+
+        void    PutCStringTruncated (const char *s, int right_pad)
+        {
+            int bytes_left = GetWidth() - GetCursorX();
+            if (bytes_left > right_pad)
+            {
+                bytes_left -= right_pad;
+                ::waddnstr (m_window, s, bytes_left);
+            }
+        }
 
         void
         MoveWindow (const Point &origin)
@@ -2233,6 +2244,7 @@ public:
     virtual ~TreeDelegate() {}
     virtual void TreeDelegateDrawTreeItem (TreeItem &item, Window &window) = 0;
     virtual void TreeDelegateGenerateChildren (TreeItem &item) = 0;
+    virtual bool TreeDelegateItemSelected (TreeItem &item) = 0; // Return true if we need to update views
 };
 typedef std::shared_ptr<TreeDelegate> TreeDelegateSP;
 
@@ -2243,12 +2255,11 @@ public:
     TreeItem (TreeItem *parent, TreeDelegate &delegate, bool might_have_children) :
         m_parent (parent),
         m_delegate (delegate),
-        m_user_data (nullptr),
+        m_identifier (0),
         m_row_idx (-1),
         m_children (),
         m_might_have_children (might_have_children),
-        m_is_expanded (false),
-        m_did_calculate_children (false)
+        m_is_expanded (false)
     {
     }
     
@@ -2293,14 +2304,15 @@ public:
     size_t
     GetNumChildren ()
     {
-        if (!m_did_calculate_children)
-        {
-            m_did_calculate_children = true;
-            m_delegate.TreeDelegateGenerateChildren (*this);
-        }
+        m_delegate.TreeDelegateGenerateChildren (*this);
         return m_children.size();
     }
 
+    void
+    ItemWasSelected ()
+    {
+        m_delegate.TreeDelegateItemSelected(*this);
+    }
     void
     CalculateRowIndexes (int &row_idx)
     {
@@ -2469,37 +2481,57 @@ public:
         return NULL;
     }
     
-    void *
-    GetUserData() const
+//    void *
+//    GetUserData() const
+//    {
+//        return m_user_data;
+//    }
+//    
+//    void
+//    SetUserData (void *user_data)
+//    {
+//        m_user_data = user_data;
+//    }
+    uint64_t
+    GetIdentifier() const
     {
-        return m_user_data;
+        return m_identifier;
     }
     
     void
-    SetUserData (void *user_data)
+    SetIdentifier (uint64_t identifier)
     {
-        m_user_data = user_data;
+        m_identifier = identifier;
     }
     
 
 protected:
     TreeItem *m_parent;
     TreeDelegate &m_delegate;
-    void *m_user_data;
+    //void *m_user_data;
+    uint64_t m_identifier;
     int m_row_idx; // Zero based visible row index, -1 if not visible or for the root item
     std::vector<TreeItem> m_children;
     bool m_might_have_children;
     bool m_is_expanded;
-    bool m_did_calculate_children;
 
 };
 
 class TreeWindowDelegate : public WindowDelegate
 {
 public:
-    TreeWindowDelegate (const TreeDelegateSP &delegate_sp) :
+    TreeWindowDelegate (Debugger &debugger, const TreeDelegateSP &delegate_sp) :
+        m_debugger (debugger),
         m_delegate_sp (delegate_sp),
-        m_root (NULL, *delegate_sp, true)
+        m_root (NULL, *delegate_sp, true),
+        m_selected_item (NULL),
+        m_num_rows (0),
+        m_selected_row_idx (0),
+        m_first_visible_row (0),
+        m_min_x (0),
+        m_min_y (0),
+        m_max_x (0),
+        m_max_y (0)
     {
     }
     
@@ -2512,6 +2544,24 @@ public:
     virtual bool
     WindowDelegateDraw (Window &window, bool force)
     {
+        ExecutionContext exe_ctx (m_debugger.GetCommandInterpreter().GetExecutionContext());
+        Process *process = exe_ctx.GetProcessPtr();
+        
+        bool display_content = false;
+        if (process)
+        {
+            StateType state = process->GetState();
+            if (StateIsStoppedState(state, true))
+            {
+                // We are stopped, so it is ok to
+                display_content = true;
+            }
+            else if (StateIsRunningState(state))
+            {
+                return true; // Don't do any updating when we are running
+            }
+        }
+
         m_min_x = 2;
         m_min_y = 1;
         m_max_x = window.GetWidth() - 1;
@@ -2519,32 +2569,39 @@ public:
         
         window.Erase();
         window.DrawTitleBox (window.GetName());
+
+        if (display_content)
+        {
+            const int num_visible_rows = NumVisibleRows();
+            m_num_rows = 0;
+            m_root.CalculateRowIndexes(m_num_rows);
             
-        const int num_visible_rows = NumVisibleRows();
-        m_num_rows = 0;
-        m_root.CalculateRowIndexes(m_num_rows);
-        
-        // If we unexpanded while having something selected our
-        // total number of rows is less than the num visible rows,
-        // then make sure we show all the rows by setting the first
-        // visible row accordingly.
-        if (m_first_visible_row > 0 && m_num_rows < num_visible_rows)
-            m_first_visible_row = 0;
-        
-        // Make sure the selected row is always visible
-        if (m_selected_row_idx < m_first_visible_row)
-            m_first_visible_row = m_selected_row_idx;
-        else if (m_first_visible_row + num_visible_rows <= m_selected_row_idx)
-            m_first_visible_row = m_selected_row_idx - num_visible_rows + 1;
-        
-        int row_idx = 0;
-        int num_rows_left = num_visible_rows;
-        m_root.Draw (window, m_first_visible_row, m_selected_row_idx, row_idx, num_rows_left);
+            // If we unexpanded while having something selected our
+            // total number of rows is less than the num visible rows,
+            // then make sure we show all the rows by setting the first
+            // visible row accordingly.
+            if (m_first_visible_row > 0 && m_num_rows < num_visible_rows)
+                m_first_visible_row = 0;
+            
+            // Make sure the selected row is always visible
+            if (m_selected_row_idx < m_first_visible_row)
+                m_first_visible_row = m_selected_row_idx;
+            else if (m_first_visible_row + num_visible_rows <= m_selected_row_idx)
+                m_first_visible_row = m_selected_row_idx - num_visible_rows + 1;
+            
+            int row_idx = 0;
+            int num_rows_left = num_visible_rows;
+            m_root.Draw (window, m_first_visible_row, m_selected_row_idx, row_idx, num_rows_left);
+            // Get the selected row
+            m_selected_item = m_root.GetItemForRowIndex (m_selected_row_idx);
+        }
+        else
+        {
+            m_selected_item = NULL;
+        }
         
         window.DeferredRefresh();
         
-        // Get the selected row
-        m_selected_item = m_root.GetItemForRowIndex (m_selected_row_idx);
         
         return true; // Drawing handled
     }
@@ -2564,6 +2621,9 @@ public:
                     else
                         m_first_visible_row = 0;
                     m_selected_row_idx = m_first_visible_row;
+                    m_selected_item = m_root.GetItemForRowIndex(m_selected_row_idx);
+                    if (m_selected_item)
+                        m_selected_item->ItemWasSelected ();
                 }
                 return eKeyHandled;
                 
@@ -2576,17 +2636,30 @@ public:
                     {
                         m_first_visible_row += m_max_y;
                         m_selected_row_idx = m_first_visible_row;
+                        m_selected_item = m_root.GetItemForRowIndex(m_selected_row_idx);
+                        if (m_selected_item)
+                            m_selected_item->ItemWasSelected ();
                     }
                 }
                 return eKeyHandled;
                 
             case KEY_UP:
                 if (m_selected_row_idx > 0)
+                {
                     --m_selected_row_idx;
+                    m_selected_item = m_root.GetItemForRowIndex(m_selected_row_idx);
+                    if (m_selected_item)
+                        m_selected_item->ItemWasSelected ();
+                }
                 return eKeyHandled;
             case KEY_DOWN:
                 if (m_selected_row_idx + 1 < m_num_rows)
+                {
                     ++m_selected_row_idx;
+                    m_selected_item = m_root.GetItemForRowIndex(m_selected_row_idx);
+                    if (m_selected_item)
+                        m_selected_item->ItemWasSelected ();
+                }
                 return eKeyHandled;
                 
             case KEY_RIGHT:
@@ -2603,7 +2676,12 @@ public:
                     if (m_selected_item->IsExpanded())
                         m_selected_item->Unexpand();
                     else if (m_selected_item->GetParent())
+                    {
                         m_selected_row_idx = m_selected_item->GetParent()->GetRowIndex();
+                        m_selected_item = m_root.GetItemForRowIndex(m_selected_row_idx);
+                        if (m_selected_item)
+                            m_selected_item->ItemWasSelected ();
+                    }
                 }
                 return eKeyHandled;
                 
@@ -2625,6 +2703,7 @@ public:
     }
 
 protected:
+    Debugger &m_debugger;
     TreeDelegateSP m_delegate_sp;
     TreeItem m_root;
     TreeItem *m_selected_item;
@@ -2641,9 +2720,12 @@ protected:
 class FrameTreeDelegate : public TreeDelegate
 {
 public:
-    FrameTreeDelegate () :
-        TreeDelegate()
+    FrameTreeDelegate (const ThreadSP &thread_sp) :
+        TreeDelegate(),
+        m_thread_wp()
     {
+        if (thread_sp)
+            m_thread_wp = thread_sp;
     }
     
     virtual ~FrameTreeDelegate()
@@ -2653,15 +2735,24 @@ public:
     virtual void
     TreeDelegateDrawTreeItem (TreeItem &item, Window &window)
     {
-        StackFrame *frame = (StackFrame *)item.GetUserData();
-        if (frame)
+        ThreadSP thread_sp = m_thread_wp.lock();
+        if (thread_sp)
         {
-            StreamString strm;
-            const SymbolContext &sc = frame->GetSymbolContext(eSymbolContextEverything);
-            ExecutionContext exe_ctx (frame->shared_from_this());
-            const char *frame_format = "frame #${frame.index}: ${module.file.basename}{`${function.name}${function.pc-offset}}}";
-            if (Debugger::FormatPrompt (frame_format, &sc, &exe_ctx, NULL, strm))
-                window.PutCString(strm.GetString().c_str());
+            const uint64_t frame_idx = item.GetIdentifier();
+            StackFrameSP frame_sp = thread_sp->GetStackFrameAtIndex(frame_idx);
+            if (frame_sp)
+            {
+                StreamString strm;
+                const SymbolContext &sc = frame_sp->GetSymbolContext(eSymbolContextEverything);
+                ExecutionContext exe_ctx (frame_sp);
+                //const char *frame_format = "frame #${frame.index}: ${module.file.basename}{`${function.name}${function.pc-offset}}}";
+                const char *frame_format = "frame #${frame.index}: {${function.name}${function.pc-offset}}}";
+                if (Debugger::FormatPrompt (frame_format, &sc, &exe_ctx, NULL, strm))
+                {
+                    int right_pad = 1;
+                    window.PutCStringTruncated(strm.GetString().c_str(), right_pad);
+                }
+            }
         }
     }
     virtual void
@@ -2669,6 +2760,27 @@ public:
     {
         // No children for frames yet...
     }
+    
+    virtual bool
+    TreeDelegateItemSelected (TreeItem &item)
+    {
+        ThreadSP thread_sp = m_thread_wp.lock();
+        if (thread_sp)
+        {
+            const uint64_t frame_idx = item.GetIdentifier();
+            thread_sp->SetSelectedFrameByIndex(frame_idx);
+            return true;
+        }
+        return false;
+    }
+    void
+    SetThread (ThreadSP thread_sp)
+    {
+        m_thread_wp = thread_sp;
+    }
+    
+protected:
+    ThreadWP m_thread_wp;
 };
 
 class ThreadTreeDelegate : public TreeDelegate
@@ -2683,7 +2795,8 @@ public:
     {
     }
     
-    virtual ~ThreadTreeDelegate()
+    virtual
+    ~ThreadTreeDelegate()
     {
     }
     
@@ -2695,9 +2808,12 @@ public:
         {
             StreamString strm;
             ExecutionContext exe_ctx (thread_sp);
-            const char *format = "thread #${thread.index}: tid = ${thread.id}{, name = '${thread.name}}{, queue = '${thread.queue}}{, stop reason = ${thread.stop-reason}}";
+            const char *format = "thread #${thread.index}: tid = ${thread.id}{, stop reason = ${thread.stop-reason}}";
             if (Debugger::FormatPrompt (format, NULL, &exe_ctx, NULL, strm))
-                window.PutCString(strm.GetString().c_str());
+            {
+                int right_pad = 1;
+                window.PutCStringTruncated(strm.GetString().c_str(), right_pad);
+            }
         }
     }
     virtual void
@@ -2712,15 +2828,21 @@ public:
                 StateType state = process_sp->GetState();
                 if (StateIsStoppedState(state, true))
                 {
-                    item.ClearChildren();
-                    item.Expand();
                     ThreadSP thread_sp = process_sp->GetThreadList().GetSelectedThread();
                     if (thread_sp)
                     {
                         if (m_stop_id == process_sp->GetStopID() && thread_sp->GetID() == m_tid)
                             return; // Children are already up to date
-                        if (!m_frame_delegate_sp)
-                            m_frame_delegate_sp.reset (new FrameTreeDelegate());
+                        if (m_frame_delegate_sp)
+                            m_frame_delegate_sp->SetThread(thread_sp);
+                        else
+                        {
+                            // Always expand the thread item the first time we show it
+                            item.Expand();
+                            m_frame_delegate_sp.reset (new FrameTreeDelegate(thread_sp));
+                        }
+
+                        m_stop_id = process_sp->GetStopID();
                         m_thread_wp = thread_sp;
                         m_tid = thread_sp->GetID();
                         
@@ -2729,16 +2851,34 @@ public:
                         item.Resize (num_frames, t);
                         for (size_t i=0; i<num_frames; ++i)
                         {
-                            item[i].SetUserData (thread_sp->GetStackFrameAtIndex(i).get());
+                            item[i].SetIdentifier(i);
                         }
                     }
+                    return;
                 }
-                return;
             }
         }
         item.ClearChildren();
     }
     
+    virtual bool
+    TreeDelegateItemSelected (TreeItem &item)
+    {
+        ThreadSP thread_sp = m_thread_wp.lock();
+        if (thread_sp)
+        {
+            ThreadList &thread_list = thread_sp->GetProcess()->GetThreadList();
+            Mutex::Locker locker (thread_list.GetMutex());
+            ThreadSP selected_thread_sp = thread_list.GetSelectedThread();
+            if (selected_thread_sp->GetID() != thread_sp->GetID())
+            {
+                thread_list.SetSelectedThreadByID(thread_sp->GetID());
+                return true;
+            }
+        }
+        return false;
+    }
+
 protected:
     Debugger &m_debugger;
     ThreadWP m_thread_wp;
@@ -3566,6 +3706,9 @@ public:
         m_debugger (debugger),
         m_sc (),
         m_file_sp (),
+        m_disassembly_scope (NULL),
+        m_disassembly_sp (),
+        m_disassembly_range (),
         m_line_width (4),
         m_selected_line (0),
         m_pc_line (0),
@@ -3601,130 +3744,321 @@ public:
     {
         window.Erase();
         window.DrawTitleBox ("Sources");
-        m_min_x = 1;
-        m_min_y = 1;
-        m_max_x = window.GetMaxX()-1;
-        m_max_y = window.GetMaxY()-1;
-        const uint32_t num_visible_lines = NumVisibleLines();
         
         ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
         Process *process = exe_ctx.GetProcessPtr();
         Thread *thread = NULL;
-        StackFrameSP frame_sp;
-        const bool process_alive = process ? process->IsAlive() : false;
-        if (process_alive)
-        {
-            thread = exe_ctx.GetThreadPtr();
-            if (thread)
-                frame_sp = thread->GetSelectedFrame();
-        }
-        const uint32_t stop_id = process ? process->GetStopID() : 0;
-        const bool stop_id_changed = stop_id != m_stop_id;
-        m_stop_id = stop_id;
-        if (frame_sp)
-        {
-            m_sc = frame_sp->GetSymbolContext(eSymbolContextEverything);
-        }
-        else
-        {
-            m_sc.Clear(true);
-        }
-        
-        if (process_alive)
-        {
-            if (m_sc.line_entry.IsValid())
-            {
-                m_pc_line = m_sc.line_entry.line;
-                if (m_pc_line != UINT32_MAX)
-                    --m_pc_line; // Convert to zero based line number...
-                // Update the selected line if the stop ID changed...
-                if (stop_id_changed)
-                    m_selected_line = m_pc_line;
 
-                if (m_file_sp && m_file_sp->FileSpecMatches(m_sc.line_entry.file))
+        bool display_content = false;
+        
+        if (process)
+        {
+            StateType state = process->GetState();
+            if (StateIsStoppedState(state, true))
+            {
+                // We are stopped, so it is ok to
+                display_content = true;
+            }
+            else if (StateIsRunningState(state))
+            {
+                return true; // Don't do any updating when we are running
+            }
+        }
+
+        m_min_x = 1;
+        m_min_y = 1;
+        m_max_x = window.GetMaxX()-1;
+        m_max_y = window.GetMaxY()-1;
+        
+        if (display_content)
+        {
+            bool set_selected_line_to_pc = false;
+            const uint32_t num_visible_lines = NumVisibleLines();
+            
+            StackFrameSP frame_sp;
+            const bool process_alive = process ? process->IsAlive() : false;
+            if (process_alive)
+            {
+                thread = exe_ctx.GetThreadPtr();
+                if (thread)
+                    frame_sp = thread->GetSelectedFrame();
+            }
+            const uint32_t stop_id = process ? process->GetStopID() : 0;
+            const bool stop_id_changed = stop_id != m_stop_id;
+            m_stop_id = stop_id;
+            if (frame_sp)
+            {
+                m_sc = frame_sp->GetSymbolContext(eSymbolContextEverything);
+            }
+            else
+            {
+                m_sc.Clear(true);
+            }
+            
+            if (process_alive)
+            {
+                if (m_sc.line_entry.IsValid())
                 {
-                    // Same file, noting to do, we should either have the
-                    // lines or not (source file missing)
-                    if (m_selected_line >= m_first_visible_line)
+                    m_pc_line = m_sc.line_entry.line;
+                    if (m_pc_line != UINT32_MAX)
+                        --m_pc_line; // Convert to zero based line number...
+                    // Update the selected line if the stop ID changed...
+                    if (stop_id_changed)
+                        m_selected_line = m_pc_line;
+
+                    if (m_file_sp && m_file_sp->FileSpecMatches(m_sc.line_entry.file))
                     {
-                        if (m_selected_line >= m_first_visible_line + num_visible_lines)
-                            m_first_visible_line = m_selected_line - 10;
+                        // Same file, nothing to do, we should either have the
+                        // lines or not (source file missing)
+                        if (m_selected_line >= m_first_visible_line)
+                        {
+                            if (m_selected_line >= m_first_visible_line + num_visible_lines)
+                                m_first_visible_line = m_selected_line - 10;
+                        }
+                        else
+                        {
+                            if (m_selected_line > 10)
+                                m_first_visible_line = m_selected_line - 10;
+                            else
+                                m_first_visible_line = 0;
+                        }
                     }
                     else
                     {
-                        if (m_selected_line > 10)
-                            m_first_visible_line = m_selected_line - 10;
-                        else
-                            m_first_visible_line = 0;
+                        // File changed, set selected line to the line with the PC
+                        m_selected_line = m_pc_line;
+                        m_file_sp = m_debugger.GetSourceManager().GetFile(m_sc.line_entry.file);
+                        if (m_file_sp)
+                        {
+                            const size_t num_lines = m_file_sp->GetNumLines();
+                            int m_line_width = 1;
+                            for (size_t n = num_lines; n >= 10; n = n / 10)
+                                ++m_line_width;
+                            
+                            snprintf (m_line_format, sizeof(m_line_format), " %%%iu ", m_line_width);
+                            if (num_lines < num_visible_lines || m_selected_line < num_visible_lines)
+                                m_first_visible_line = 0;
+                            else
+                                m_first_visible_line = m_selected_line - 10;
+                        }
                     }
                 }
                 else
                 {
-                    // File changed, set selected line to the line with the PC
-                    m_selected_line = m_pc_line;
-                    m_file_sp = m_debugger.GetSourceManager().GetFile(m_sc.line_entry.file);
-                    if (m_file_sp)
-                    {
-                        const size_t num_lines = m_file_sp->GetNumLines();
-                        int m_line_width = 1;
-                        for (size_t n = num_lines; n >= 10; n = n / 10)
-                            ++m_line_width;
-                        
-                        snprintf (m_line_format, sizeof(m_line_format), " %%%iu ", m_line_width);
-                        if (num_lines < num_visible_lines || m_selected_line < num_visible_lines)
-                            m_first_visible_line = 0;
-                        else
-                            m_first_visible_line = m_selected_line - 10;
-                    }
+                    m_file_sp.reset();
                 }
-            }
-        }
-        else
-        {
-            m_pc_line = UINT32_MAX;
-        }
-        
-        if (m_file_sp)
-        {
-            BreakpointLines bp_lines;
-            Target *target = exe_ctx.GetTargetPtr();
-            if (target)
-            {
-                BreakpointList &bp_list = target->GetBreakpointList();
-                const size_t num_bps = bp_list.GetSize();
-                for (size_t bp_idx=0; bp_idx<num_bps; ++bp_idx)
+                
+                if (!m_file_sp || m_file_sp->GetNumLines() == 0)
                 {
-                    BreakpointSP bp_sp = bp_list.GetBreakpointAtIndex(bp_idx);
-                    const size_t num_bps_locs = bp_sp->GetNumLocations();
-                    for (size_t bp_loc_idx=0; bp_loc_idx<num_bps_locs; ++bp_loc_idx)
+                    // Show disassembly
+                    bool prefer_file_cache = false;
+                    if (m_sc.function)
                     {
-                        BreakpointLocationSP bp_loc_sp = bp_sp->GetLocationAtIndex(bp_loc_idx);
-                        LineEntry bp_loc_line_entry;
-                        if (bp_loc_sp->GetAddress().CalculateSymbolContextLineEntry (bp_loc_line_entry))
+                        if (m_disassembly_scope != m_sc.function)
                         {
-                            if (m_file_sp->GetFileSpec() == bp_loc_line_entry.file)
+                            m_disassembly_scope = m_sc.function;
+                            m_disassembly_sp = m_sc.function->GetInstructions (exe_ctx, NULL, prefer_file_cache);
+                            if (m_disassembly_sp)
                             {
-                                bp_lines.insert(bp_loc_line_entry.line);
+                                set_selected_line_to_pc = true;
+                                m_disassembly_range = m_sc.function->GetAddressRange();
                             }
+                            else
+                            {
+                                m_disassembly_range.Clear();
+                            }
+                        }
+                        else
+                        {
+                            set_selected_line_to_pc = stop_id_changed;
+                        }
+                    }
+                    else if (m_sc.symbol)
+                    {
+                        if (m_disassembly_scope != m_sc.symbol)
+                        {
+                            m_disassembly_scope = m_sc.symbol;
+                            m_disassembly_sp = m_sc.symbol->GetInstructions (exe_ctx, NULL, prefer_file_cache);
+                            if (m_disassembly_sp)
+                            {
+                                set_selected_line_to_pc = true;
+                                m_disassembly_range.GetBaseAddress() = m_sc.symbol->GetAddress();
+                                m_disassembly_range.SetByteSize(m_sc.symbol->GetByteSize());
+                            }
+                            else
+                            {
+                                m_disassembly_range.Clear();
+                            }
+                        }
+                        else
+                        {
+                            set_selected_line_to_pc = stop_id_changed;
                         }
                     }
                 }
             }
-            
-        
-            const attr_t selected_highlight_attr = A_REVERSE;
-            const attr_t pc_highlight_attr = COLOR_PAIR(1);
-
-            const size_t num_lines = m_file_sp->GetNumLines();
-            for (int i=0; i<num_visible_lines; ++i)
+            else
             {
-                const uint32_t curr_line = m_first_visible_line + i;
-                if (curr_line < num_lines)
+                m_pc_line = UINT32_MAX;
+            }
+            
+            Target *target = exe_ctx.GetTargetPtr();
+            if (m_file_sp && m_file_sp->GetNumLines() > 0)
+            {
+                // Display source
+                BreakpointLines bp_lines;
+                if (target)
                 {
-                    const int line_y = 1+i;
-                    window.MoveCursor(1, line_y);
-                    const bool is_pc_line = curr_line == m_pc_line;
-                    const bool line_is_selected = m_selected_line == curr_line;
+                    BreakpointList &bp_list = target->GetBreakpointList();
+                    const size_t num_bps = bp_list.GetSize();
+                    for (size_t bp_idx=0; bp_idx<num_bps; ++bp_idx)
+                    {
+                        BreakpointSP bp_sp = bp_list.GetBreakpointAtIndex(bp_idx);
+                        const size_t num_bps_locs = bp_sp->GetNumLocations();
+                        for (size_t bp_loc_idx=0; bp_loc_idx<num_bps_locs; ++bp_loc_idx)
+                        {
+                            BreakpointLocationSP bp_loc_sp = bp_sp->GetLocationAtIndex(bp_loc_idx);
+                            LineEntry bp_loc_line_entry;
+                            if (bp_loc_sp->GetAddress().CalculateSymbolContextLineEntry (bp_loc_line_entry))
+                            {
+                                if (m_file_sp->GetFileSpec() == bp_loc_line_entry.file)
+                                {
+                                    bp_lines.insert(bp_loc_line_entry.line);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+            
+                const attr_t selected_highlight_attr = A_REVERSE;
+                const attr_t pc_highlight_attr = COLOR_PAIR(1);
+
+                const size_t num_lines = m_file_sp->GetNumLines();
+                for (int i=0; i<num_visible_lines; ++i)
+                {
+                    const uint32_t curr_line = m_first_visible_line + i;
+                    if (curr_line < num_lines)
+                    {
+                        const int line_y = 1+i;
+                        window.MoveCursor(1, line_y);
+                        const bool is_pc_line = curr_line == m_pc_line;
+                        const bool line_is_selected = m_selected_line == curr_line;
+                        // Highlight the line as the PC line first, then if the selected line
+                        // isn't the same as the PC line, highlight it differently
+                        attr_t highlight_attr = 0;
+                        attr_t bp_attr = 0;
+                        if (is_pc_line)
+                            highlight_attr = pc_highlight_attr;
+                        else if (line_is_selected)
+                            highlight_attr = selected_highlight_attr;
+                        
+                        if (bp_lines.find(curr_line+1) != bp_lines.end())
+                            bp_attr = COLOR_PAIR(2);
+
+                        if (bp_attr)
+                            window.AttributeOn(bp_attr);
+                        
+                        window.Printf (m_line_format, curr_line + 1);
+
+                        if (bp_attr)
+                            window.AttributeOff(bp_attr);
+
+                        window.PutChar(ACS_VLINE);
+                        // Mark the line with the PC with a diamond
+                        if (is_pc_line)
+                            window.PutChar(ACS_DIAMOND);
+                        else
+                            window.PutChar(' ');
+                        
+                        if (highlight_attr)
+                            window.AttributeOn(highlight_attr);
+                        const uint32_t line_len = m_file_sp->GetLineLength(curr_line + 1, false);
+                        if (line_len > 0)
+                            window.PutCString(m_file_sp->PeekLineData(curr_line + 1), line_len);
+
+                        if (is_pc_line && frame_sp && frame_sp->GetConcreteFrameIndex() == 0)
+                        {
+                            StopInfoSP stop_info_sp;
+                            if (thread)
+                                stop_info_sp = thread->GetStopInfo();
+                            if (stop_info_sp)
+                            {
+                                const char *stop_description = stop_info_sp->GetDescription();
+                                if (stop_description && stop_description[0])
+                                {
+                                    size_t stop_description_len = strlen(stop_description);
+                                    int desc_x = window.GetWidth() - stop_description_len - 16;
+                                    window.Printf ("%*s", desc_x - window.GetCursorX(), "");
+                                    //window.MoveCursor(window.GetWidth() - stop_description_len - 15, line_y);
+                                    window.Printf ("<<< Thread %u: %s ", thread->GetIndexID(), stop_description);
+                                }
+                            }
+                            else
+                            {
+                                window.Printf ("%*s", window.GetWidth() - window.GetCursorX() - 1, "");
+                            }
+                        }
+                        if (highlight_attr)
+                            window.AttributeOff(highlight_attr);
+
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+            else
+            {
+    //            // Display disassembly
+    //            BreakpointLines bp_lines;
+    //            Target *target = exe_ctx.GetTargetPtr();
+    //            if (target)
+    //            {
+    //                BreakpointList &bp_list = target->GetBreakpointList();
+    //                const size_t num_bps = bp_list.GetSize();
+    //                for (size_t bp_idx=0; bp_idx<num_bps; ++bp_idx)
+    //                {
+    //                    BreakpointSP bp_sp = bp_list.GetBreakpointAtIndex(bp_idx);
+    //                    const size_t num_bps_locs = bp_sp->GetNumLocations();
+    //                    for (size_t bp_loc_idx=0; bp_loc_idx<num_bps_locs; ++bp_loc_idx)
+    //                    {
+    //                        BreakpointLocationSP bp_loc_sp = bp_sp->GetLocationAtIndex(bp_loc_idx);
+    //                        LineEntry bp_loc_line_entry;
+    //                        if (bp_loc_sp->GetAddress().CalculateSymbolContextLineEntry (bp_loc_line_entry))
+    //                        {
+    //                            if (m_file_sp->GetFileSpec() == bp_loc_line_entry.file)
+    //                            {
+    //                                bp_lines.insert(bp_loc_line_entry.line);
+    //                            }
+    //                        }
+    //                    }
+    //                }
+    //            }
+                
+                
+                const attr_t selected_highlight_attr = A_REVERSE;
+                const attr_t pc_highlight_attr = COLOR_PAIR(1);
+                
+                StreamString strm;
+
+                InstructionList &insts = m_disassembly_sp->GetInstructionList();
+                Address pc_address = frame_sp->GetFrameCodeAddress();
+                const uint32_t pc_idx = insts.GetIndexOfInstructionAtAddress (pc_address);
+                if (set_selected_line_to_pc)
+                    m_selected_line = pc_idx;
+
+                for (size_t i=0; i<num_visible_lines; ++i)
+                {
+                    const uint32_t inst_idx = m_first_visible_line + i;
+                    Instruction *inst = insts.GetInstructionAtIndex(inst_idx).get();
+                    if (!inst)
+                        break;
+                    
+                    window.MoveCursor(1, i+1);
+                    const bool is_pc_line = inst_idx == pc_idx;
+                    const bool line_is_selected = m_selected_line == inst_idx;
                     // Highlight the line as the PC line first, then if the selected line
                     // isn't the same as the PC line, highlight it differently
                     attr_t highlight_attr = 0;
@@ -3733,18 +4067,18 @@ public:
                         highlight_attr = pc_highlight_attr;
                     else if (line_is_selected)
                         highlight_attr = selected_highlight_attr;
+                        
+    //                    if (bp_lines.find(curr_line+1) != bp_lines.end())
+    //                        bp_attr = COLOR_PAIR(2);
                     
-                    if (bp_lines.find(curr_line+1) != bp_lines.end())
-                        bp_attr = COLOR_PAIR(2);
-
                     if (bp_attr)
                         window.AttributeOn(bp_attr);
                     
-                    window.Printf (m_line_format, curr_line + 1);
-
+                    window.Printf (" 0x%16.16llx ", inst->GetAddress().GetLoadAddress(target));
+                        
                     if (bp_attr)
                         window.AttributeOff(bp_attr);
-
+                        
                     window.PutChar(ACS_VLINE);
                     // Mark the line with the PC with a diamond
                     if (is_pc_line)
@@ -3754,10 +4088,30 @@ public:
                     
                     if (highlight_attr)
                         window.AttributeOn(highlight_attr);
-                    const uint32_t line_len = m_file_sp->GetLineLength(curr_line + 1, false);
-                    if (line_len > 0)
-                        window.PutCString(m_file_sp->PeekLineData(curr_line + 1), line_len);
+                    
+                    const char *mnemonic = inst->GetMnemonic(&exe_ctx);
+                    const char *operands = inst->GetOperands(&exe_ctx);
+                    const char *comment = inst->GetComment(&exe_ctx);
 
+                    if (mnemonic && mnemonic[0] == '\0')
+                        mnemonic = NULL;
+                    if (operands && operands[0] == '\0')
+                        operands = NULL;
+                    if (comment && comment[0] == '\0')
+                        comment = NULL;
+                    
+                    strm.Clear();
+
+                    if (mnemonic && operands && comment)
+                        strm.Printf ("%-8s %-25s ; %s", mnemonic, operands, comment);
+                    else if (mnemonic && operands)
+                        strm.Printf ("%-8s %s", mnemonic, operands);
+                    else if (mnemonic)
+                        strm.Printf ("%s", mnemonic);
+                    
+                    int right_pad = 1;
+                    window.PutCStringTruncated(strm.GetString().c_str(), right_pad);
+                    
                     if (is_pc_line && frame_sp && frame_sp->GetConcreteFrameIndex() == 0)
                     {
                         StopInfoSP stop_info_sp;
@@ -3782,11 +4136,6 @@ public:
                     }
                     if (highlight_attr)
                         window.AttributeOff(highlight_attr);
-
-                }
-                else
-                {
-                    break;
                 }
             }
         }
@@ -3938,8 +4287,8 @@ public:
                     }
                 }
                 return eKeyHandled;
-            case 'n':
-                // 'n' == step over
+            case 'n':   // 'n' == step over
+            case 'N':   // 'N' == step over instruction
                 {
                     ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
                     if (exe_ctx.HasThreadScope() && StateIsStoppedState (exe_ctx.GetProcessRef().GetState(), true))
@@ -3953,7 +4302,7 @@ public:
                             lldb::RunMode stop_other_threads = eOnlyThisThread;
                             ThreadPlanSP new_plan_sp;
                             
-                            if (frame_sp->HasDebugInformation ())
+                            if (c == 'n' && frame_sp->HasDebugInformation ())
                             {
                                 SymbolContext sc(frame_sp->GetSymbolContext(eSymbolContextEverything));
                                 new_plan_sp = thread->QueueThreadPlanForStepOverRange (abort_other_plans,
@@ -3977,8 +4326,8 @@ public:
                     }
                 }
                 return eKeyHandled;
-            case 's':
-                // 's' == step into
+            case 's':   // 's' == step into
+            case 'S':   // 'S' == step into instruction
                 {
                     ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
                     if (exe_ctx.HasThreadScope() && StateIsStoppedState (exe_ctx.GetProcessRef().GetState(), true))
@@ -3990,7 +4339,7 @@ public:
                         lldb::RunMode stop_other_threads = eOnlyThisThread;
                         ThreadPlanSP new_plan_sp;
                         
-                        if (frame_sp && frame_sp->HasDebugInformation ())
+                        if (c == 's' && frame_sp && frame_sp->HasDebugInformation ())
                         {
                             bool avoid_code_without_debug_info = true;
                             SymbolContext sc(frame_sp->GetSymbolContext(eSymbolContextEverything));
@@ -4017,6 +4366,7 @@ public:
                     }
                 }
                 return eKeyHandled;
+
             default:
                 break;
         }
@@ -4029,6 +4379,9 @@ protected:
     Debugger &m_debugger;
     SymbolContext m_sc;
     SourceManager::FileSP m_file_sp;
+    SymbolContextScope *m_disassembly_scope;
+    lldb::DisassemblerSP m_disassembly_sp;
+    AddressRange m_disassembly_range;
     char m_line_format[8];
     int m_line_width;
     uint32_t m_selected_line;       // The selected line
@@ -4113,7 +4466,10 @@ IOHandlerCursesGUI::Activate ()
         Rect status_bounds = content_bounds.MakeStatusBar();
         Rect source_bounds;
         Rect variables_bounds;
-        content_bounds.HorizontalSplitPercentage(0.70, source_bounds, variables_bounds);
+        Rect threads_bounds;
+        Rect source_variables_bounds;
+        content_bounds.VerticalSplitPercentage(0.80, source_variables_bounds, threads_bounds);
+        source_variables_bounds.HorizontalSplitPercentage(0.70, source_bounds, variables_bounds);
         
         WindowSP menubar_window_sp = main_window_sp->CreateSubWindow("Menubar", menubar_bounds, false);
         // Let the menubar get keys if the active window doesn't handle the
@@ -4127,6 +4483,9 @@ IOHandlerCursesGUI::Activate ()
         WindowSP variables_window_sp (main_window_sp->CreateSubWindow("Variables",
                                                                       variables_bounds,
                                                                       false));
+        WindowSP threads_window_sp (main_window_sp->CreateSubWindow("Threads",
+                                                                      threads_bounds,
+                                                                      false));
         WindowSP status_window_sp (main_window_sp->CreateSubWindow("Status",
                                                                    status_bounds,
                                                                    false));
@@ -4134,8 +4493,8 @@ IOHandlerCursesGUI::Activate ()
         main_window_sp->SetDelegate (std::static_pointer_cast<WindowDelegate>(app_delegate_sp));
         source_window_sp->SetDelegate (WindowDelegateSP(new SourceFileWindowDelegate(m_debugger)));
         variables_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
-//        TreeDelegateSP thread_delegate_sp (new ThreadTreeDelegate(m_debugger));
-//        threads_window_sp->SetDelegate (WindowDelegateSP(new TreeWindowDelegate(thread_delegate_sp)));
+        TreeDelegateSP thread_delegate_sp (new ThreadTreeDelegate(m_debugger));
+        threads_window_sp->SetDelegate (WindowDelegateSP(new TreeWindowDelegate(m_debugger, thread_delegate_sp)));
         status_window_sp->SetDelegate (WindowDelegateSP(new StatusBarWindowDelegate(m_debugger)));
         
         init_pair (1, COLOR_WHITE   , COLOR_BLUE  );
