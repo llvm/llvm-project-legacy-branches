@@ -2262,7 +2262,23 @@ public:
         m_is_expanded (false)
     {
     }
-    
+
+    TreeItem &
+    operator=(const TreeItem &rhs)
+    {
+        if (this != &rhs)
+        {
+            m_parent = rhs.m_parent;
+            m_delegate = rhs.m_delegate;
+            m_identifier = rhs.m_identifier;
+            m_row_idx = rhs.m_row_idx;
+            m_children = rhs.m_children;
+            m_might_have_children = rhs.m_might_have_children;
+            m_is_expanded = rhs.m_is_expanded;
+        }
+        return *this;
+    }
+
     size_t
     GetDepth () const
     {
