@@ -956,10 +956,9 @@ protected:
     {
         if (line_idx == UINT32_MAX)
         {
-            // Remove the last "DONE" line from "lines" so it doesn't appear
-            // in our final commands and return true to indicate we are done
-            // getting lines
-            lines.PopBack();
+            // Return true to indicate we are done getting lines (this
+            // is a "fake" line - the real terminating blank line was
+            // removed during a previous call with the code below)
             error.Clear();
             return LineStatus::Done;
         }
