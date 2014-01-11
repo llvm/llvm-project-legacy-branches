@@ -2200,11 +2200,11 @@ Process::CreateBreakpointSite (const BreakpointLocationSP &owner, bool use_hardw
             load_addr = ResolveIndirectFunction (&symbol->GetAddress(), error);
             if (!error.Success() && show_error)
             {
-                m_target.GetDebugger().GetErrorFile().Printf ("warning: failed to resolve indirect function at 0x%" PRIx64 " for breakpoint %i.%i: %s\n",
-                                                              symbol->GetAddress().GetLoadAddress(&m_target),
-                                                              owner->GetBreakpoint().GetID(),
-                                                              owner->GetID(),
-                                                              error.AsCString() ? error.AsCString() : "unkown error");
+                m_target.GetDebugger().GetErrorFile()->Printf ("warning: failed to resolve indirect function at 0x%" PRIx64 " for breakpoint %i.%i: %s\n",
+                                                               symbol->GetAddress().GetLoadAddress(&m_target),
+                                                               owner->GetBreakpoint().GetID(),
+                                                               owner->GetID(),
+                                                               error.AsCString() ? error.AsCString() : "unkown error");
                 return LLDB_INVALID_BREAK_ID;
             }
             Address resolved_address(load_addr);
