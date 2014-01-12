@@ -3587,7 +3587,7 @@ public:
                         WindowSP new_window_sp = main_window_sp->CreateSubWindow ("Variables",
                                                                                   new_variables_rect,
                                                                                   false);
-                        new_window_sp->SetDelegate (WindowDelegateSP(new RegistersWindowDelegate(m_debugger)));
+                        new_window_sp->SetDelegate (WindowDelegateSP(new FrameVariablesWindowDelegate(m_debugger)));
                     }
                     touchwin(stdscr);
                 }
@@ -3729,6 +3729,7 @@ public:
         m_selected_line (0),
         m_pc_line (0),
         m_stop_id (0),
+        m_frame_idx (UINT32_MAX),
         m_first_visible_line (0),
         m_min_x (0),
         m_min_y (0),
@@ -3793,23 +3794,45 @@ public:
             
             StackFrameSP frame_sp;
             const bool process_alive = process ? process->IsAlive() : false;
+            bool thread_changed = false;
             if (process_alive)
             {
                 thread = exe_ctx.GetThreadPtr();
                 if (thread)
+                {
                     frame_sp = thread->GetSelectedFrame();
+                    auto tid = thread->GetID();
+                    thread_changed = tid != m_tid;
+                    m_tid = tid;
+                }
+                else
+                {
+                    if (m_tid != LLDB_INVALID_THREAD_ID)
+                    {
+                        thread_changed = true;
+                        m_tid = LLDB_INVALID_THREAD_ID;
+                    }
+                }
             }
             const uint32_t stop_id = process ? process->GetStopID() : 0;
             const bool stop_id_changed = stop_id != m_stop_id;
+            bool frame_changed = false;
             m_stop_id = stop_id;
             if (frame_sp)
             {
                 m_sc = frame_sp->GetSymbolContext(eSymbolContextEverything);
+                const uint32_t frame_idx = frame_sp->GetFrameIndex();
+                frame_changed = frame_idx != m_frame_idx;
+                m_frame_idx = frame_idx;
             }
             else
             {
                 m_sc.Clear(true);
+                frame_changed = m_frame_idx != UINT32_MAX;
+                m_frame_idx = UINT32_MAX;
             }
+            
+            const bool context_changed = thread_changed || frame_changed || stop_id_changed;
             
             if (process_alive)
             {
@@ -3819,7 +3842,7 @@ public:
                     if (m_pc_line != UINT32_MAX)
                         --m_pc_line; // Convert to zero based line number...
                     // Update the selected line if the stop ID changed...
-                    if (stop_id_changed)
+                    if (context_changed)
                         m_selected_line = m_pc_line;
 
                     if (m_file_sp && m_file_sp->FileSpecMatches(m_sc.line_entry.file))
@@ -3886,7 +3909,7 @@ public:
                         }
                         else
                         {
-                            set_selected_line_to_pc = stop_id_changed;
+                            set_selected_line_to_pc = context_changed;
                         }
                     }
                     else if (m_sc.symbol)
@@ -3908,7 +3931,7 @@ public:
                         }
                         else
                         {
-                            set_selected_line_to_pc = stop_id_changed;
+                            set_selected_line_to_pc = context_changed;
                         }
                     }
                 }
@@ -3919,7 +3942,8 @@ public:
             }
             
             Target *target = exe_ctx.GetTargetPtr();
-            if (m_file_sp && m_file_sp->GetNumLines() > 0)
+            const size_t num_source_lines = GetNumSourceLines();
+            if (num_source_lines > 0)
             {
                 // Display source
                 BreakpointLines bp_lines;
@@ -3950,11 +3974,10 @@ public:
                 const attr_t selected_highlight_attr = A_REVERSE;
                 const attr_t pc_highlight_attr = COLOR_PAIR(1);
 
-                const size_t num_lines = m_file_sp->GetNumLines();
                 for (int i=0; i<num_visible_lines; ++i)
                 {
                     const uint32_t curr_line = m_first_visible_line + i;
-                    if (curr_line < num_lines)
+                    if (curr_line < num_source_lines)
                     {
                         const int line_y = 1+i;
                         window.MoveCursor(1, line_y);
@@ -4027,131 +4050,147 @@ public:
             }
             else
             {
-    //            // Display disassembly
-    //            BreakpointLines bp_lines;
-    //            Target *target = exe_ctx.GetTargetPtr();
-    //            if (target)
-    //            {
-    //                BreakpointList &bp_list = target->GetBreakpointList();
-    //                const size_t num_bps = bp_list.GetSize();
-    //                for (size_t bp_idx=0; bp_idx<num_bps; ++bp_idx)
-    //                {
-    //                    BreakpointSP bp_sp = bp_list.GetBreakpointAtIndex(bp_idx);
-    //                    const size_t num_bps_locs = bp_sp->GetNumLocations();
-    //                    for (size_t bp_loc_idx=0; bp_loc_idx<num_bps_locs; ++bp_loc_idx)
-    //                    {
-    //                        BreakpointLocationSP bp_loc_sp = bp_sp->GetLocationAtIndex(bp_loc_idx);
-    //                        LineEntry bp_loc_line_entry;
-    //                        if (bp_loc_sp->GetAddress().CalculateSymbolContextLineEntry (bp_loc_line_entry))
-    //                        {
-    //                            if (m_file_sp->GetFileSpec() == bp_loc_line_entry.file)
-    //                            {
-    //                                bp_lines.insert(bp_loc_line_entry.line);
-    //                            }
-    //                        }
-    //                    }
-    //                }
-    //            }
-                
-                
-                const attr_t selected_highlight_attr = A_REVERSE;
-                const attr_t pc_highlight_attr = COLOR_PAIR(1);
-                
-                StreamString strm;
-
-                InstructionList &insts = m_disassembly_sp->GetInstructionList();
-                Address pc_address = frame_sp->GetFrameCodeAddress();
-                const uint32_t pc_idx = insts.GetIndexOfInstructionAtAddress (pc_address);
-                if (set_selected_line_to_pc)
-                    m_selected_line = pc_idx;
-
-                for (size_t i=0; i<num_visible_lines; ++i)
+                size_t num_disassembly_lines = GetNumDisassemblyLines();
+                if (num_disassembly_lines > 0)
                 {
-                    const uint32_t inst_idx = m_first_visible_line + i;
-                    Instruction *inst = insts.GetInstructionAtIndex(inst_idx).get();
-                    if (!inst)
-                        break;
-                    
-                    window.MoveCursor(1, i+1);
-                    const bool is_pc_line = inst_idx == pc_idx;
-                    const bool line_is_selected = m_selected_line == inst_idx;
-                    // Highlight the line as the PC line first, then if the selected line
-                    // isn't the same as the PC line, highlight it differently
-                    attr_t highlight_attr = 0;
-                    attr_t bp_attr = 0;
-                    if (is_pc_line)
-                        highlight_attr = pc_highlight_attr;
-                    else if (line_is_selected)
-                        highlight_attr = selected_highlight_attr;
-                        
-    //                    if (bp_lines.find(curr_line+1) != bp_lines.end())
-    //                        bp_attr = COLOR_PAIR(2);
-                    
-                    if (bp_attr)
-                        window.AttributeOn(bp_attr);
-                    
-                    window.Printf (" 0x%16.16llx ", inst->GetAddress().GetLoadAddress(target));
-                        
-                    if (bp_attr)
-                        window.AttributeOff(bp_attr);
-                        
-                    window.PutChar(ACS_VLINE);
-                    // Mark the line with the PC with a diamond
-                    if (is_pc_line)
-                        window.PutChar(ACS_DIAMOND);
-                    else
-                        window.PutChar(' ');
-                    
-                    if (highlight_attr)
-                        window.AttributeOn(highlight_attr);
-                    
-                    const char *mnemonic = inst->GetMnemonic(&exe_ctx);
-                    const char *operands = inst->GetOperands(&exe_ctx);
-                    const char *comment = inst->GetComment(&exe_ctx);
-
-                    if (mnemonic && mnemonic[0] == '\0')
-                        mnemonic = NULL;
-                    if (operands && operands[0] == '\0')
-                        operands = NULL;
-                    if (comment && comment[0] == '\0')
-                        comment = NULL;
-                    
-                    strm.Clear();
-
-                    if (mnemonic && operands && comment)
-                        strm.Printf ("%-8s %-25s ; %s", mnemonic, operands, comment);
-                    else if (mnemonic && operands)
-                        strm.Printf ("%-8s %s", mnemonic, operands);
-                    else if (mnemonic)
-                        strm.Printf ("%s", mnemonic);
-                    
-                    int right_pad = 1;
-                    window.PutCStringTruncated(strm.GetString().c_str(), right_pad);
-                    
-                    if (is_pc_line && frame_sp && frame_sp->GetConcreteFrameIndex() == 0)
+                    // Display disassembly
+                    BreakpointAddrs bp_file_addrs;
+                    Target *target = exe_ctx.GetTargetPtr();
+                    if (target)
                     {
-                        StopInfoSP stop_info_sp;
-                        if (thread)
-                            stop_info_sp = thread->GetStopInfo();
-                        if (stop_info_sp)
+                        BreakpointList &bp_list = target->GetBreakpointList();
+                        const size_t num_bps = bp_list.GetSize();
+                        for (size_t bp_idx=0; bp_idx<num_bps; ++bp_idx)
                         {
-                            const char *stop_description = stop_info_sp->GetDescription();
-                            if (stop_description && stop_description[0])
+                            BreakpointSP bp_sp = bp_list.GetBreakpointAtIndex(bp_idx);
+                            const size_t num_bps_locs = bp_sp->GetNumLocations();
+                            for (size_t bp_loc_idx=0; bp_loc_idx<num_bps_locs; ++bp_loc_idx)
                             {
-                                size_t stop_description_len = strlen(stop_description);
-                                int desc_x = window.GetWidth() - stop_description_len - 16;
-                                window.Printf ("%*s", desc_x - window.GetCursorX(), "");
-                                //window.MoveCursor(window.GetWidth() - stop_description_len - 15, line_y);
-                                window.Printf ("<<< Thread %u: %s ", thread->GetIndexID(), stop_description);
+                                BreakpointLocationSP bp_loc_sp = bp_sp->GetLocationAtIndex(bp_loc_idx);
+                                LineEntry bp_loc_line_entry;
+                                const lldb::addr_t file_addr = bp_loc_sp->GetAddress().GetFileAddress();
+                                if (file_addr != LLDB_INVALID_ADDRESS)
+                                {
+                                    if (m_disassembly_range.ContainsFileAddress(file_addr))
+                                        bp_file_addrs.insert(file_addr);
+                                }
                             }
                         }
-                        else
-                        {
-                            window.Printf ("%*s", window.GetWidth() - window.GetCursorX() - 1, "");
-                        }
                     }
-                    if (highlight_attr)
-                        window.AttributeOff(highlight_attr);
+                    
+                    
+                    const attr_t selected_highlight_attr = A_REVERSE;
+                    const attr_t pc_highlight_attr = COLOR_PAIR(1);
+                    
+                    StreamString strm;
+
+                    InstructionList &insts = m_disassembly_sp->GetInstructionList();
+                    Address pc_address = frame_sp->GetFrameCodeAddress();
+                    const uint32_t pc_idx = insts.GetIndexOfInstructionAtAddress (pc_address);
+                    if (set_selected_line_to_pc)
+                    {
+                        m_selected_line = pc_idx;
+                    }
+
+                    const uint32_t non_visible_pc_offset = (num_visible_lines / 5);
+                    if (m_first_visible_line >= num_disassembly_lines)
+                        m_first_visible_line = 0;
+
+                    if (pc_idx < num_disassembly_lines)
+                    {
+                        if (pc_idx < m_first_visible_line ||
+                            pc_idx >= m_first_visible_line + num_visible_lines)
+                            m_first_visible_line = pc_idx - non_visible_pc_offset;
+                    }
+
+                    for (size_t i=0; i<num_visible_lines; ++i)
+                    {
+                        const uint32_t inst_idx = m_first_visible_line + i;
+                        Instruction *inst = insts.GetInstructionAtIndex(inst_idx).get();
+                        if (!inst)
+                            break;
+                        
+                        window.MoveCursor(1, i+1);
+                        const bool is_pc_line = inst_idx == pc_idx;
+                        const bool line_is_selected = m_selected_line == inst_idx;
+                        // Highlight the line as the PC line first, then if the selected line
+                        // isn't the same as the PC line, highlight it differently
+                        attr_t highlight_attr = 0;
+                        attr_t bp_attr = 0;
+                        if (is_pc_line)
+                            highlight_attr = pc_highlight_attr;
+                        else if (line_is_selected)
+                            highlight_attr = selected_highlight_attr;
+                        
+                        if (bp_file_addrs.find(inst->GetAddress().GetFileAddress()) != bp_file_addrs.end())
+                            bp_attr = COLOR_PAIR(2);
+                        
+                        if (bp_attr)
+                            window.AttributeOn(bp_attr);
+                        
+                        window.Printf (" 0x%16.16llx ", inst->GetAddress().GetLoadAddress(target));
+                            
+                        if (bp_attr)
+                            window.AttributeOff(bp_attr);
+                            
+                        window.PutChar(ACS_VLINE);
+                        // Mark the line with the PC with a diamond
+                        if (is_pc_line)
+                            window.PutChar(ACS_DIAMOND);
+                        else
+                            window.PutChar(' ');
+                        
+                        if (highlight_attr)
+                            window.AttributeOn(highlight_attr);
+                        
+                        const char *mnemonic = inst->GetMnemonic(&exe_ctx);
+                        const char *operands = inst->GetOperands(&exe_ctx);
+                        const char *comment = inst->GetComment(&exe_ctx);
+
+                        if (mnemonic && mnemonic[0] == '\0')
+                            mnemonic = NULL;
+                        if (operands && operands[0] == '\0')
+                            operands = NULL;
+                        if (comment && comment[0] == '\0')
+                            comment = NULL;
+                        
+                        strm.Clear();
+
+                        if (mnemonic && operands && comment)
+                            strm.Printf ("%-8s %-25s ; %s", mnemonic, operands, comment);
+                        else if (mnemonic && operands)
+                            strm.Printf ("%-8s %s", mnemonic, operands);
+                        else if (mnemonic)
+                            strm.Printf ("%s", mnemonic);
+                        
+                        int right_pad = 1;
+                        window.PutCStringTruncated(strm.GetString().c_str(), right_pad);
+                        
+                        if (is_pc_line && frame_sp && frame_sp->GetConcreteFrameIndex() == 0)
+                        {
+                            StopInfoSP stop_info_sp;
+                            if (thread)
+                                stop_info_sp = thread->GetStopInfo();
+                            if (stop_info_sp)
+                            {
+                                const char *stop_description = stop_info_sp->GetDescription();
+                                if (stop_description && stop_description[0])
+                                {
+                                    size_t stop_description_len = strlen(stop_description);
+                                    int desc_x = window.GetWidth() - stop_description_len - 16;
+                                    window.Printf ("%*s", desc_x - window.GetCursorX(), "");
+                                    //window.MoveCursor(window.GetWidth() - stop_description_len - 15, line_y);
+                                    window.Printf ("<<< Thread %u: %s ", thread->GetIndexID(), stop_description);
+                                }
+                            }
+                            else
+                            {
+                                window.Printf ("%*s", window.GetWidth() - window.GetCursorX() - 1, "");
+                            }
+                        }
+                        if (highlight_attr)
+                            window.AttributeOff(highlight_attr);
+                    }
                 }
             }
         }
@@ -4159,11 +4198,35 @@ public:
         return true; // Drawing handled
     }
     
+    size_t
+    GetNumLines ()
+    {
+        size_t num_lines = GetNumSourceLines();
+        if (num_lines == 0)
+            num_lines = GetNumDisassemblyLines();
+        return num_lines;
+    }
+    
+    size_t
+    GetNumSourceLines () const
+    {
+        if (m_file_sp)
+            return m_file_sp->GetNumLines();
+        return 0;
+    }
+    size_t
+    GetNumDisassemblyLines () const
+    {
+        if (m_disassembly_sp)
+            return m_disassembly_sp->GetInstructionList().GetSize();
+        return 0;
+    }
+
     virtual HandleCharResult
     WindowDelegateHandleChar (Window &window, int c)
     {
         const uint32_t num_visible_lines = NumVisibleLines();
-        const size_t num_lines = m_file_sp ? m_file_sp->GetNumLines() : 0;
+        const size_t num_lines = GetNumLines ();
 
         switch (c)
         {
@@ -4213,7 +4276,7 @@ public:
             case '\n':
             case KEY_ENTER:
                 // Set a breakpoint and run to the line using a one shot breakpoint
-                if (m_file_sp && m_selected_line > 0)
+                if (GetNumSourceLines() > 0)
                 {
                     ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
                     if (exe_ctx.HasProcessScope() && exe_ctx.GetProcessRef().IsAlive())
@@ -4230,10 +4293,25 @@ public:
                         exe_ctx.GetProcessRef().Resume();
                     }
                 }
+                else if (m_selected_line < GetNumDisassemblyLines())
+                {
+                    const Instruction *inst = m_disassembly_sp->GetInstructionList().GetInstructionAtIndex(m_selected_line).get();
+                    ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
+                    if (exe_ctx.HasTargetScope())
+                    {
+                        Address addr = inst->GetAddress();
+                        BreakpointSP bp_sp = exe_ctx.GetTargetRef().CreateBreakpoint (addr,     // lldb_private::Address
+                                                                                      false,    // internal
+                                                                                      false);   // request_hardware
+                        // Make breakpoint one shot
+                        bp_sp->GetOptions()->SetOneShot(true);
+                        exe_ctx.GetProcessRef().Resume();
+                    }
+                }
                 return eKeyHandled;
 
             case 'b':   // 'b' == toggle breakpoint on currently selected line
-                if (m_file_sp && m_selected_line > 0)
+                if (m_selected_line < GetNumSourceLines())
                 {
                     ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
                     if (exe_ctx.HasTargetScope())
@@ -4245,6 +4323,18 @@ public:
                                                                                       eLazyBoolCalculate,        // Skip prologue using global setting,
                                                                                       false,                     // internal
                                                                                       false);                    // request_hardware
+                    }
+                }
+                else if (m_selected_line < GetNumDisassemblyLines())
+                {
+                    const Instruction *inst = m_disassembly_sp->GetInstructionList().GetInstructionAtIndex(m_selected_line).get();
+                    ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
+                    if (exe_ctx.HasTargetScope())
+                    {
+                        Address addr = inst->GetAddress();
+                        BreakpointSP bp_sp = exe_ctx.GetTargetRef().CreateBreakpoint (addr,     // lldb_private::Address
+                                                                                      false,    // internal
+                                                                                      false);   // request_hardware
                     }
                 }
                 return eKeyHandled;
@@ -4391,6 +4481,7 @@ public:
     
 protected:
     typedef std::set<uint32_t> BreakpointLines;
+    typedef std::set<lldb::addr_t> BreakpointAddrs;
 
     Debugger &m_debugger;
     SymbolContext m_sc;
@@ -4398,11 +4489,13 @@ protected:
     SymbolContextScope *m_disassembly_scope;
     lldb::DisassemblerSP m_disassembly_sp;
     AddressRange m_disassembly_range;
+    lldb::user_id_t m_tid;
     char m_line_format[8];
     int m_line_width;
     uint32_t m_selected_line;       // The selected line
     uint32_t m_pc_line;             // The line with the PC
     uint32_t m_stop_id;
+    uint32_t m_frame_idx;
     int m_first_visible_line;
     int m_min_x;
     int m_min_y;
