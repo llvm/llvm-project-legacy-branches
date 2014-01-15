@@ -31,9 +31,8 @@
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/ThreadPlan.h"
 
-
-
 #include <ncurses.h>
+#include <panel.h>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -776,6 +775,11 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         Quit    // Exit all menus and quit
     };
 
+    struct KeyHelp
+    {
+        int ch;
+        const char *description;
+    };
 
     class WindowDelegate
     {
@@ -796,8 +800,39 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         {
             return eKeyNotHandled;
         }
+        
+        virtual const char *
+        WindowDelegateGetHelpText ()
+        {
+            return NULL;
+        }
+
+        virtual KeyHelp *
+        WindowDelegateGetKeyHelp ()
+        {
+            return NULL;
+        }
     };
     
+    class HelpDialogDelegate :
+        public WindowDelegate
+    {
+    public:
+        HelpDialogDelegate (const char *text, KeyHelp *key_help_array);
+        
+        virtual
+        ~HelpDialogDelegate();
+        
+        virtual bool
+        WindowDelegateDraw (Window &window, bool force);
+        
+        virtual HandleCharResult
+        WindowDelegateHandleChar (Window &window, int key);
+    protected:
+        StringList m_text;
+        int m_first_visible_line;
+    };
+
 
     class Window
     {
@@ -806,6 +841,7 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         Window (const char *name) :
             m_name (name),
             m_window (NULL),
+            m_panel (NULL),
             m_parent (NULL),
             m_subwindows (),
             m_delegate_sp (),
@@ -820,7 +856,8 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         
         Window (const char *name, WINDOW *w, bool del = true) :
             m_name (name),
-            m_window (w),
+            m_window (NULL),
+            m_panel (NULL),
             m_parent (NULL),
             m_subwindows (),
             m_delegate_sp (),
@@ -831,11 +868,13 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             m_can_activate (true),
             m_is_subwin (false)
         {
+            if (w)
+                Reset(w);
         }
         
         Window (const char *name, const Rect &bounds) :
             m_name (name),
-            m_window (::newwin (bounds.size.height, bounds.size.width, bounds.origin.y, bounds.origin.y)),
+            m_window (NULL),
             m_parent (NULL),
             m_subwindows (),
             m_delegate_sp (),
@@ -846,6 +885,7 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             m_can_activate (true),
             m_is_subwin (false)
         {
+            Reset (::newwin (bounds.size.height, bounds.size.width, bounds.origin.y, bounds.origin.y));
         }
         
         virtual
@@ -861,6 +901,11 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             if (m_window == w)
                 return;
             
+            if (m_panel)
+            {
+                ::del_panel (m_panel);
+                m_panel = NULL;
+            }
             if (m_window && m_delete)
             {
                 ::delwin (m_window);
@@ -870,6 +915,7 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             if (w)
             {
                 m_window = w;
+                m_panel = ::new_panel (m_window);
                 m_delete = del;
             }
         }
@@ -899,7 +945,10 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         void    PutChar (int ch)    { ::waddch (m_window, ch); }
         void    PutCString (const char *s, int len = -1) { ::waddnstr (m_window, s, len); }
         void    Refresh ()  { ::wrefresh (m_window); }
-        void    DeferredRefresh ()  { ::wnoutrefresh(m_window); }
+        void    DeferredRefresh ()
+        {
+            //::wnoutrefresh(m_window);
+        }
         void    SetBackground (int color_pair_idx) { ::wbkgd (m_window,COLOR_PAIR(color_pair_idx)); }
         void    UnderlineOn ()  { AttributeOn(A_UNDERLINE); }
         void    UnderlineOff () { AttributeOff(A_UNDERLINE); }
@@ -1109,14 +1158,39 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             if (m_delegate_sp && m_delegate_sp->WindowDelegateDraw (*this, force))
                 return;
 
-            //Erase();
             for (auto &subwindow_sp : m_subwindows)
-            {
                 subwindow_sp->Draw(force);
-            }
-            //DeferredRefresh();
         }
-        
+
+        bool
+        CreateHelpSubwindow ()
+        {
+            if (m_delegate_sp)
+            {
+                const char *text = m_delegate_sp->WindowDelegateGetHelpText ();
+                KeyHelp *key_help = m_delegate_sp->WindowDelegateGetKeyHelp ();
+                if ((text && text[0]) || key_help)
+                {
+                    Rect bounds = GetBounds();
+                    const int inset_w = bounds.size.width / 4;
+                    const int inset_h = bounds.size.height / 4;
+                    bounds.origin.x += inset_w;
+                    bounds.size.width -= 2*inset_w;
+                    bounds.origin.y += inset_h;
+                    bounds.size.height -= 2*inset_h;
+//                    Rect bounds;
+//                    bounds.origin.x = 10;
+//                    bounds.origin.y = 10;
+//                    bounds.size.width = 40;
+//                    bounds.size.height = 40;
+                    WindowSP help_window_sp = GetParent()->CreateSubWindow("Help", bounds, true);
+                    help_window_sp->SetDelegate(WindowDelegateSP(new HelpDialogDelegate(text, key_help)));
+                    return true;
+                }
+            }
+            return false;
+        }
+
         virtual HandleCharResult
         HandleChar (int key)
         {
@@ -1313,6 +1387,7 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
     protected:
         std::string m_name;
         WINDOW *m_window;
+        PANEL *m_panel;
         Window *m_parent;
         Windows m_subwindows;
         WindowDelegateSP m_delegate_sp;
@@ -1981,11 +2056,14 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
                 if (update)
                 {
                     m_window_sp->Draw(false);
-                    // Cursor hiding isn't working on MacOSX, so hide it in the top left corner
-                    m_window_sp->MoveCursor(0, 0);
                     // All windows should be calling Window::DeferredRefresh() instead
                     // of Window::Refresh() so we can do a single update and avoid
                     // any screen blinking
+                    update_panels();
+
+                    // Cursor hiding isn't working on MacOSX, so hide it in the top left corner
+                    m_window_sp->MoveCursor(0, 0);
+
                     doupdate();
                     update = false;
                 }
@@ -3416,6 +3494,201 @@ protected:
     StackID m_stack_id;
 };
 
+static const char *
+CursesKeyToCString (int ch)
+{
+    static char g_desc[32];
+    if (ch >= KEY_F0 && ch < KEY_F0 + 64)
+    {
+        snprintf(g_desc, sizeof(g_desc), "F%u", ch - KEY_F0);
+        return g_desc;
+    }
+    switch (ch)
+    {
+        case KEY_DOWN:  return "down";
+        case KEY_UP:    return "up";
+        case KEY_LEFT:  return "left";
+        case KEY_RIGHT: return "right";
+        case KEY_HOME:  return "home";
+        case KEY_BACKSPACE: return "backspace";
+        case KEY_DL:        return "delete-line";
+        case KEY_IL:        return "insert-line";
+        case KEY_DC:        return "delete-char";
+        case KEY_IC:        return "insert-char";
+        case KEY_CLEAR:     return "clear";
+        case KEY_EOS:       return "clear-to-eos";
+        case KEY_EOL:       return "clear-to-eol";
+        case KEY_SF:        return "scroll-forward";
+        case KEY_SR:        return "scroll-backward";
+        case KEY_NPAGE:     return "page-down";
+        case KEY_PPAGE:     return "page-up";
+        case KEY_STAB:      return "set-tab";
+        case KEY_CTAB:      return "clear-tab";
+        case KEY_CATAB:     return "clear-all-tabs";
+        case KEY_ENTER:     return "enter";
+        case KEY_PRINT:     return "print";
+        case KEY_LL:        return "lower-left key";
+        case KEY_A1:        return "upper left of keypad";
+        case KEY_A3:        return "upper right of keypad";
+        case KEY_B2:        return "center of keypad";
+        case KEY_C1:        return "lower left of keypad";
+        case KEY_C3:        return "lower right of keypad";
+        case KEY_BTAB:      return "back-tab key";
+        case KEY_BEG:       return "begin key";
+        case KEY_CANCEL:    return "cancel key";
+        case KEY_CLOSE:     return "close key";
+        case KEY_COMMAND:   return "command key";
+        case KEY_COPY:      return "copy key";
+        case KEY_CREATE:    return "create key";
+        case KEY_END:       return "end key";
+        case KEY_EXIT:      return "exit key";
+        case KEY_FIND:      return "find key";
+        case KEY_HELP:      return "help key";
+        case KEY_MARK:      return "mark key";
+        case KEY_MESSAGE:   return "message key";
+        case KEY_MOVE:      return "move key";
+        case KEY_NEXT:      return "next key";
+        case KEY_OPEN:      return "open key";
+        case KEY_OPTIONS:   return "options key";
+        case KEY_PREVIOUS:  return "previous key";
+        case KEY_REDO:      return "redo key";
+        case KEY_REFERENCE: return "reference key";
+        case KEY_REFRESH:   return "refresh key";
+        case KEY_REPLACE:   return "replace key";
+        case KEY_RESTART:   return "restart key";
+        case KEY_RESUME:    return "resume key";
+        case KEY_SAVE:      return "save key";
+        case KEY_SBEG:      return "shifted begin key";
+        case KEY_SCANCEL:   return "shifted cancel key";
+        case KEY_SCOMMAND:  return "shifted command key";
+        case KEY_SCOPY:     return "shifted copy key";
+        case KEY_SCREATE:   return "shifted create key";
+        case KEY_SDC:       return "shifted delete-character key";
+        case KEY_SDL:       return "shifted delete-line key";
+        case KEY_SELECT:    return "select key";
+        case KEY_SEND:      return "shifted end key";
+        case KEY_SEOL:      return "shifted clear-to-end-of-line key";
+        case KEY_SEXIT:     return "shifted exit key";
+        case KEY_SFIND:     return "shifted find key";
+        case KEY_SHELP:     return "shifted help key";
+        case KEY_SHOME:     return "shifted home key";
+        case KEY_SIC:       return "shifted insert-character key";
+        case KEY_SLEFT:     return "shifted left-arrow key";
+        case KEY_SMESSAGE:  return "shifted message key";
+        case KEY_SMOVE:     return "shifted move key";
+        case KEY_SNEXT:     return "shifted next key";
+        case KEY_SOPTIONS:  return "shifted options key";
+        case KEY_SPREVIOUS: return "shifted previous key";
+        case KEY_SPRINT:    return "shifted print key";
+        case KEY_SREDO:     return "shifted redo key";
+        case KEY_SREPLACE:  return "shifted replace key";
+        case KEY_SRIGHT:    return "shifted right-arrow key";
+        case KEY_SRSUME:    return "shifted resume key";
+        case KEY_SSAVE:     return "shifted save key";
+        case KEY_SSUSPEND:  return "shifted suspend key";
+        case KEY_SUNDO:     return "shifted undo key";
+        case KEY_SUSPEND:   return "suspend key";
+        case KEY_UNDO:      return "undo key";
+        case KEY_MOUSE:     return "Mouse event has occurred";
+        case KEY_RESIZE:    return "Terminal resize event";
+        case KEY_EVENT:     return "We were interrupted by an event";
+        case KEY_RETURN:    return "return";
+        case ' ':           return "space";
+        case KEY_ESCAPE:    return "escape";
+        default:
+            if (isprint(ch))
+                snprintf(g_desc, sizeof(g_desc), "%c", ch);
+            else
+                snprintf(g_desc, sizeof(g_desc), "\\x%2.2x", ch);
+            return g_desc;
+    }
+    return NULL;
+}
+
+HelpDialogDelegate::HelpDialogDelegate (const char *text, KeyHelp *key_help_array) :
+    m_text (),
+    m_first_visible_line (0)
+{
+    if (text && text[0])
+    {
+        m_text.SplitIntoLines(text);
+        m_text.AppendString("");
+    }
+    if (key_help_array)
+    {
+        for (KeyHelp *key = key_help_array; key->ch; ++key)
+        {
+            StreamString key_description;
+            key_description.Printf("%10s - %s", CursesKeyToCString(key->ch), key->description);
+            m_text.AppendString(std::move(key_description.GetString()));
+        }
+    }
+}
+
+HelpDialogDelegate::~HelpDialogDelegate()
+{
+}
+    
+bool
+HelpDialogDelegate::WindowDelegateDraw (Window &window, bool force)
+{
+    window.Erase();
+    window.DrawTitleBox(window.GetName());
+    int x = 2;
+    int y = 1;
+    const int min_y = y;
+    const int max_y = window.GetHeight() - 1 - y;
+    while (y < max_y)
+    {
+        window.MoveCursor(x, y);
+        window.PutCStringTruncated(m_text.GetStringAtIndex(m_first_visible_line + y - min_y), 1);
+        ++y;
+    }
+    return true;
+}
+
+HandleCharResult
+HelpDialogDelegate::WindowDelegateHandleChar (Window &window, int key)
+{
+    bool done = false;
+    const size_t num_lines = m_text.GetSize();
+    const size_t num_visible_lines = window.GetHeight() - 2;
+    switch (key)
+    {
+        case KEY_UP:
+            if (m_first_visible_line > 0)
+                --m_first_visible_line;
+            break;
+
+        case KEY_DOWN:
+            if (m_first_visible_line + 1 < num_lines)
+                ++m_first_visible_line;
+            break;
+
+        case KEY_PPAGE:
+        case ',':
+            if (m_first_visible_line > 0)
+            {
+                if (m_first_visible_line >= num_visible_lines)
+                    m_first_visible_line -= num_visible_lines;
+                else
+                    m_first_visible_line = 0;
+            }
+            break;
+        case KEY_NPAGE:
+        case '.':
+            if (m_first_visible_line + num_visible_lines < num_lines)
+                m_first_visible_line += num_visible_lines;
+            break;
+        default:
+            done = true;
+            break;
+    }
+    if (done)
+        window.GetParent()->RemoveSubWindow(&window);
+    return eKeyHandled;
+}
+
 class ApplicationDelegate :
     public WindowDelegate,
     public MenuDelegate
@@ -3756,12 +4029,41 @@ public:
         return m_max_y - m_min_y;
     }
     
+    virtual const char *
+    WindowDelegateGetHelpText ()
+    {
+        return "Source/Disassembly window keyboard shortcuts:";
+    }
+    
+    virtual KeyHelp *
+    WindowDelegateGetKeyHelp ()
+    {
+        static curses::KeyHelp g_source_view_key_help[] = {
+            { KEY_RETURN, "Run to selected line with one shot breakpoint" },
+            { KEY_UP, "Move selection to previous line" },
+            { KEY_DOWN, "Move selection to next line" },
+            { KEY_PPAGE, "Page up" },
+            { KEY_NPAGE, "Page down" },
+            { 'b', "Set breakpoint on selected source/disassembly line" },
+            { 'c', "Continue process" },
+            { 'd', "Detach and resume process" },
+            { 'D', "Detach with process suspended" },
+            { 'k', "Kill process" },
+            { 'n', "Step over (source line)" },
+            { 'N', "Step over (single instruction)" },
+            { 'o', "Step out" },
+            { 's', "Step in (source line)" },
+            { 'S', "Step in (single instruction)" },
+            { ',', "Page up" },
+            { '.', "Page down" },
+            { '\0', NULL }
+        };
+        return g_source_view_key_help;
+    }
+    
     virtual bool
     WindowDelegateDraw (Window &window, bool force)
     {
-        window.Erase();
-        window.DrawTitleBox ("Sources");
-        
         ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
         Process *process = exe_ctx.GetProcessPtr();
         Thread *thread = NULL;
@@ -3782,13 +4084,16 @@ public:
             }
         }
 
-        m_min_x = 1;
-        m_min_y = 1;
-        m_max_x = window.GetMaxX()-1;
-        m_max_y = window.GetMaxY()-1;
-        
         if (display_content)
         {
+            m_min_x = 1;
+            m_min_y = 1;
+            m_max_x = window.GetMaxX()-1;
+            m_max_y = window.GetMaxY()-1;
+            
+            window.Erase();
+            window.DrawTitleBox ("Sources");
+            
             bool set_selected_line_to_pc = false;
             const uint32_t num_visible_lines = NumVisibleLines();
             
@@ -4471,6 +4776,10 @@ public:
                         process->Resume();
                     }
                 }
+                return eKeyHandled;
+                
+            case 'h':
+                window.CreateHelpSubwindow ();
                 return eKeyHandled;
 
             default:

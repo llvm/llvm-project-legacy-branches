@@ -51,6 +51,9 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		260157C61885F51C00F875CF /* libpanel.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 260157C41885F4FF00F875CF /* libpanel.dylib */; };
+		260157C71885F52500F875CF /* libpanel.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 260157C41885F4FF00F875CF /* libpanel.dylib */; };
+		260157C81885F53100F875CF /* libpanel.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 260157C41885F4FF00F875CF /* libpanel.dylib */; };
 		2606EDDE184E68940034641B /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 260C876910F538E700BB2B04 /* Foundation.framework */; };
 		2606EDDF184E68A10034641B /* liblldb-core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 2689FFCA13353D7A00698AC0 /* liblldb-core.a */; };
 		260A248E15D06C50009981B0 /* OptionValues.h in Headers */ = {isa = PBXBuildFile; fileRef = 260A248D15D06C4F009981B0 /* OptionValues.h */; };
@@ -800,6 +803,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		260157C41885F4FF00F875CF /* libpanel.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libpanel.dylib; path = ../../../../../../../usr/lib/libpanel.dylib; sourceTree = "<group>"; };
 		260223E7115F06D500A601A2 /* SBCommunication.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SBCommunication.h; path = include/lldb/API/SBCommunication.h; sourceTree = "<group>"; };
 		260223E8115F06E500A601A2 /* SBCommunication.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBCommunication.cpp; path = source/API/SBCommunication.cpp; sourceTree = "<group>"; };
 		26022531115F27FA00A601A2 /* SBFileSpec.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SBFileSpec.h; path = include/lldb/API/SBFileSpec.h; sourceTree = "<group>"; };
@@ -1861,6 +1865,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				260157C81885F53100F875CF /* libpanel.dylib in Frameworks */,
 				2670F8121862B44A006B332C /* libncurses.dylib in Frameworks */,
 				26CEB5EF18761CB2008F575A /* libedit.dylib in Frameworks */,
 				26D55235159A7DB100708D8D /* libxml2.dylib in Frameworks */,
@@ -1882,6 +1887,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				260157C71885F52500F875CF /* libpanel.dylib in Frameworks */,
 				26780C651867C34500234593 /* libncurses.dylib in Frameworks */,
 				26CFDCA71861646C000E63E5 /* libedit.dylib in Frameworks */,
 				26D6F3FA183E888800194858 /* liblldb-core.a in Frameworks */,
@@ -1893,6 +1899,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				260157C61885F51C00F875CF /* libpanel.dylib in Frameworks */,
 				26780C611867C33D00234593 /* libncurses.dylib in Frameworks */,
 				26CFDCA818616473000E63E5 /* libedit.dylib in Frameworks */,
 				2606EDDF184E68A10034641B /* liblldb-core.a in Frameworks */,
@@ -1929,6 +1936,7 @@
 		08FB7794FE84155DC02AAC07 /* lldb */ = {
 			isa = PBXGroup;
 			children = (
+				260157C41885F4FF00F875CF /* libpanel.dylib */,
 				26F5C32810F3DF7D009D5894 /* Libraries */,
 				264E8576159BE51A00E9D7A2 /* Resources */,
 				08FB7795FE84155DC02AAC07 /* Source */,
