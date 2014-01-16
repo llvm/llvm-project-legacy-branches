@@ -2998,7 +2998,7 @@ CommandInterpreter::RunCommandInterpreter(bool auto_handle_events,
     
     if (spawn_thread)
     {
-        m_debugger.StartEventHandlerThread();
+        m_debugger.StartIOHandlerThread();
     }
     else
     {
