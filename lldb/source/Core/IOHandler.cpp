@@ -191,10 +191,43 @@ IOHandlerConfirm::IOHandlerComplete (IOHandler &io_handler,
 void
 IOHandlerConfirm::IOHandlerInputComplete (IOHandler &io_handler, std::string &line)
 {
-    if (line == "y" || line == "Y" || line == "yes" || line == "YES" || line == "Yes")
+    if (line.empty())
+    {
+        // User just hit enter, set the response to the default
+        m_user_response = m_default_response;
         io_handler.SetIsDone(true);
-    if (line == "n" || line == "N" || line == "no" || line == "NO" || line == "No")
+        return;
+    }
+
+    if (line.size() == 1)
+    {
+        switch (line[0])
+        {
+            case 'y':
+            case 'Y':
+                m_user_response = true;
+                io_handler.SetIsDone(true);
+                return;
+            case 'n':
+            case 'N':
+                m_user_response = false;
+                io_handler.SetIsDone(true);
+                return;
+            default:
+                break;
+        }
+    }
+
+    if (line == "yes" || line == "YES" || line == "Yes")
+    {
+        m_user_response = true;
         io_handler.SetIsDone(true);
+    }
+    else if (line == "no" || line == "NO" || line == "No")
+    {
+        m_user_response = false;
+        io_handler.SetIsDone(true);
+    }
 }
 
 int
