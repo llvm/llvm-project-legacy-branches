@@ -122,6 +122,16 @@ public:
     
     SBCommandInterpreter (lldb_private::CommandInterpreter *interpreter_ptr = NULL);   // Access using SBDebugger::GetCommandInterpreter();
     
+    //----------------------------------------------------------------------
+    /// Return true if the command interpreter is the active IO handler.
+    ///
+    /// This indicates that any input coming into the debugger handles will
+    /// go to the command interpreter and will result in LLDB command line
+    /// commands being executed.
+    //----------------------------------------------------------------------
+    bool
+    IsActive ();
+
 protected:
 
     lldb_private::CommandInterpreter &

@@ -2968,6 +2968,13 @@ CommandInterpreter::GetPythonCommandsFromIOHandler (const char *prompt,
     }
 
 }
+
+bool
+CommandInterpreter::IsActive ()
+{
+    return m_debugger.IsTopIOHandler (m_command_io_handler_sp);
+}
+
 void
 CommandInterpreter::RunCommandInterpreter(bool auto_handle_events,
                                           bool spawn_thread,

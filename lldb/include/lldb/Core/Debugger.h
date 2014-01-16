@@ -210,6 +210,9 @@ public:
     RunIOHandler (const lldb::IOHandlerSP& reader_sp);
     
     bool
+    IsTopIOHandler (const lldb::IOHandlerSP& reader_sp);
+
+    bool
     HideTopIOHandler();
 
     void

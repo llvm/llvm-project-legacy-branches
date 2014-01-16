@@ -434,6 +434,9 @@ public:
         return m_command_history;
     }
     
+    bool
+    IsActive ();
+
     void
     RunCommandInterpreter (bool auto_handle_events,
                            bool spawn_thread,
