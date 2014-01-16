@@ -629,6 +629,7 @@ Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
     m_instance_name (),
     m_loaded_plugins (),
     m_event_handler_thread (LLDB_INVALID_HOST_THREAD),
+    m_io_handler_thread (LLDB_INVALID_HOST_THREAD),
     m_event_handler_thread_alive(false)
 {
     char instance_cstr[256];
@@ -673,6 +674,8 @@ void
 Debugger::Clear()
 {
     ClearIOHandlers();
+    StopIOHandlerThread();
+    StopEventHandlerThread();
     m_listener.Clear();
     int num_targets = m_target_list.GetNumTargets();
     for (int i = 0; i < num_targets; i++)
@@ -3109,6 +3112,37 @@ Debugger::StopEventHandlerThread()
     {
         GetCommandInterpreter().BroadcastEvent(CommandInterpreter::eBroadcastBitQuitCommandReceived);
         Host::ThreadJoin(m_event_handler_thread, NULL, NULL);
+        m_event_handler_thread = LLDB_INVALID_HOST_THREAD;
+    }
+}
+
+
+lldb::thread_result_t
+Debugger::IOHandlerThread (lldb::thread_arg_t arg)
+{
+    Debugger *debugger = (Debugger *)arg;
+    debugger->ExecuteIOHanders();
+    debugger->StopEventHandlerThread();
+    return NULL;
+}
+
+bool
+Debugger::StartIOHandlerThread()
+{
+    if (!IS_VALID_LLDB_HOST_THREAD(m_io_handler_thread))
+        m_io_handler_thread = Host::ThreadCreate("lldb.debugger.io-handler", IOHandlerThread, this, NULL);
+    return IS_VALID_LLDB_HOST_THREAD(m_io_handler_thread);
+}
+
+void
+Debugger::StopIOHandlerThread()
+{
+    if (IS_VALID_LLDB_HOST_THREAD(m_io_handler_thread))
+    {
+        if (m_input_file_sp)
+            m_input_file_sp->GetFile().Close();
+        Host::ThreadJoin(m_io_handler_thread, NULL, NULL);
+        m_io_handler_thread = LLDB_INVALID_HOST_THREAD;
     }
 }
 

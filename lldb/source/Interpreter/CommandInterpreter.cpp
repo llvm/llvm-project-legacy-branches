@@ -109,6 +109,7 @@ CommandInterpreter::CommandInterpreter
     m_script_interpreter_ap (),
     m_command_io_handler_sp (),
     m_comment_char ('#'),
+    m_prompt_delimiter_char ('\0'),
     m_batch_command_mode (false),
     m_truncation_warning(eNoTruncation),
     m_command_source_depth (0)
@@ -2968,8 +2969,11 @@ CommandInterpreter::GetPythonCommandsFromIOHandler (const char *prompt,
 
 }
 void
-CommandInterpreter::RunCommandInterpreter(bool auto_handle_events)
+CommandInterpreter::RunCommandInterpreter(bool auto_handle_events,
+                                          bool spawn_thread,
+                                          char prompt_delimiter)
 {
+    m_prompt_delimiter_char = prompt_delimiter;
     const bool multiple_lines = false; // Only get one line at a time
     if (!m_command_io_handler_sp)
         m_command_io_handler_sp.reset(new IOHandlerEditline (m_debugger,
@@ -2985,10 +2989,17 @@ CommandInterpreter::RunCommandInterpreter(bool auto_handle_events)
     if (auto_handle_events)
         m_debugger.StartEventHandlerThread();
     
-    m_debugger.ExecuteIOHanders();
+    if (spawn_thread)
+    {
+        m_debugger.StartEventHandlerThread();
+    }
+    else
+    {
+        m_debugger.ExecuteIOHanders();
     
-    if (auto_handle_events)
-        m_debugger.StopEventHandlerThread();
+        if (auto_handle_events)
+            m_debugger.StopEventHandlerThread();
+    }
 
 }
 

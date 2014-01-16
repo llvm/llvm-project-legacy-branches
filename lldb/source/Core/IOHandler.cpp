@@ -293,8 +293,7 @@ IOHandlerEditline::IOHandlerEditline (Debugger &debugger,
     m_multi_line (multi_line),
     m_interactive (false)
 {
-    if (prompt && prompt[0])
-        m_prompt = prompt;
+    SetPrompt(prompt);
 
     const int in_fd = GetInputFD();
     struct winsize window_size;
@@ -428,12 +427,22 @@ IOHandlerEditline::GetPrompt ()
 bool
 IOHandlerEditline::SetPrompt (const char *p)
 {
+    const char prompt_delimiter_char = m_debugger.GetCommandInterpreter().GetPromptDelimiterChar();
     if (p && p[0])
-        m_prompt = p;
+    {
+        if (prompt_delimiter_char)
+        {
+            m_prompt.assign(1, prompt_delimiter_char);
+            m_prompt.append(p);
+            m_prompt.append(1, prompt_delimiter_char);
+        }
+        else
+            m_prompt = p;
+    }
     else
         m_prompt.clear();
     if (m_editline_ap)
-        m_editline_ap->SetPrompt (p);
+        m_editline_ap->SetPrompt (m_prompt.empty() ? NULL : m_prompt.c_str());
     return true;
 }
 

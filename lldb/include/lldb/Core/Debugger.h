@@ -355,11 +355,19 @@ protected:
 
     void
     StopEventHandlerThread();
-    
 
     static lldb::thread_result_t
     EventHandlerThread (lldb::thread_arg_t arg);
+
+    bool
+    StartIOHandlerThread();
     
+    void
+    StopIOHandlerThread();
+    
+    static lldb::thread_result_t
+    IOHandlerThread (lldb::thread_arg_t arg);
+
     void
     DefaultEventHandler();
 
@@ -404,6 +412,7 @@ protected:
     typedef std::vector<lldb::DynamicLibrarySP> LoadedPluginsList;
     LoadedPluginsList m_loaded_plugins;
     lldb::thread_t m_event_handler_thread;
+    lldb::thread_t m_io_handler_thread;
     lldb::ListenerSP m_forward_listener_sp;
     bool m_event_handler_thread_alive;
     void

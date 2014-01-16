@@ -940,8 +940,11 @@ Driver::MainLoop ()
         result.PutError(m_debugger.GetErrorFileHandle());
         result.PutOutput(m_debugger.GetOutputFileHandle());
     }
-        
-    m_debugger.RunCommandInterpreter(true);
+    
+    bool handle_events = true;
+    bool spawn_thread = false;
+    char prompt_delimiter = '\0';
+    m_debugger.RunCommandInterpreter(handle_events, spawn_thread, prompt_delimiter);
     
     reset_stdin_termios();
     fclose (stdin);

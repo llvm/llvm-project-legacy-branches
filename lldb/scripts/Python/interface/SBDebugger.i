@@ -365,7 +365,9 @@ public:
     GetSyntheticForType (lldb::SBTypeNameSpecifier);
     
     void
-    RunCommandInterpreter (bool auto_handle_events);
+    RunCommandInterpreter (bool auto_handle_events,
+                           bool spawn_thread,
+                           char prompt_delimiter);
 
 }; // class SBDebugger
 

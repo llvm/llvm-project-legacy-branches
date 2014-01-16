@@ -56,23 +56,9 @@ SBInputReader::~SBInputReader()
 {
 }
 
-static lldb::thread_result_t
-RunCI (lldb::thread_arg_t baton)
-{
-    Debugger *debugger = (Debugger *)baton;
-    debugger->GetCommandInterpreter().RunCommandInterpreter(false);
-    return NULL;
-}
-
 SBError
 SBInputReader::Initialize(lldb::SBDebugger& sb_debugger, unsigned long (*)(void*, lldb::SBInputReader*, lldb::InputReaderAction, char const*, unsigned long), void*, lldb::InputReaderGranularity, char const*, char const*, bool)
 {
-    Debugger *debugger = sb_debugger.get();
-    if (debugger)
-    {
-        lldb::thread_t thread = Host::ThreadCreate("lldb.SBInputReader.command_interpreter", RunCI, debugger, NULL);
-        Host::ThreadDetach(thread, NULL);
-    }
     return SBError();
 }
 
@@ -968,10 +954,12 @@ SBDebugger::PushInputReader (SBInputReader &reader)
 }
 
 void
-SBDebugger::RunCommandInterpreter (bool auto_handle_events)
+SBDebugger::RunCommandInterpreter (bool auto_handle_events,
+                                   bool spawn_thread,
+                                   char prompt_delimiter)
 {
     if (m_opaque_sp)
-        m_opaque_sp->GetCommandInterpreter().RunCommandInterpreter(auto_handle_events);
+        m_opaque_sp->GetCommandInterpreter().RunCommandInterpreter(auto_handle_events, spawn_thread, prompt_delimiter);
 }
 
 void
