@@ -487,7 +487,8 @@ namespace lldb_private {
         
         IOHandlerStack () :
             m_stack(),
-            m_mutex(Mutex::eMutexTypeRecursive)
+            m_mutex(Mutex::eMutexTypeRecursive),
+            m_top (NULL)
         {
         }
         
@@ -509,6 +510,8 @@ namespace lldb_private {
             {
                 Mutex::Locker locker (m_mutex);
                 m_stack.push (sp);
+                // Set m_top the non-locking IsTop() call
+                m_top = sp.get();
             }
         }
         
@@ -537,6 +540,11 @@ namespace lldb_private {
             Mutex::Locker locker (m_mutex);
             if (!m_stack.empty())
                 m_stack.pop();
+            // Set m_top the non-locking IsTop() call
+            if (m_stack.empty())
+                m_top = NULL;
+            else
+                m_top = m_stack.top().get();
         }
 
         Mutex &
@@ -545,10 +553,17 @@ namespace lldb_private {
             return m_mutex;
         }
         
+        bool
+        IsTop (const lldb::IOHandlerSP &io_handler_sp) const
+        {
+            return m_top == io_handler_sp.get();
+        }
+        
     protected:
         
         std::stack<lldb::IOHandlerSP> m_stack;
         mutable Mutex m_mutex;
+        IOHandler *m_top;
         
     private:
         

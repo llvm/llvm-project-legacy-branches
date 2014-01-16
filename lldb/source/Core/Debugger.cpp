@@ -881,8 +881,7 @@ Debugger::ExecuteIOHanders()
 bool
 Debugger::IsTopIOHandler (const lldb::IOHandlerSP& reader_sp)
 {
-    IOHandlerSP top_reader_sp (m_input_reader_stack.Top());
-    return top_reader_sp.get() == reader_sp.get();
+    return m_input_reader_stack.IsTop (reader_sp);
 }
 
 
