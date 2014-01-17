@@ -159,13 +159,7 @@ ScriptInterpreterPython::ScriptInterpreterPython (CommandInterpreter &interprete
     m_command_thread_state (NULL)
 {
 
-    static int g_initialized = false;
-    
-    if (!g_initialized)
-    {
-        g_initialized = true;
-        ScriptInterpreterPython::InitializePrivate ();
-    }
+    ScriptInterpreterPython::InitializePrivate ();
 
     m_dictionary_name.append("_dict");
     StreamString run_string;
@@ -417,14 +411,25 @@ ScriptInterpreterPython::EnterSession (bool init_lldb_globals,
     PythonDictionary &sys_module_dict = GetSysModuleDictionary ();
     if (sys_module_dict)
     {
+        lldb::StreamFileSP in_sp;
+        lldb::StreamFileSP out_sp;
+        lldb::StreamFileSP err_sp;
+        if (in == NULL || out == NULL || err == NULL)
+            m_interpreter.GetDebugger().AdoptTopIOHandlerFilesIfInvalid (in_sp, out_sp, err_sp);
+
+        if (in == NULL && in_sp)
+            in = in_sp->GetFile().GetStream();
         if (in)
         {
             m_saved_stdin.Reset(sys_module_dict.GetItemForKey("stdin"));
+            
             sys_module_dict.SetItemForKey ("stdin", PyFile_FromFile (in, (char *) "", (char *) "r", 0));
         }
         else
             m_saved_stdin.Reset();
         
+        if (out == NULL && out_sp)
+            out = out_sp->GetFile().GetStream();
         if (out)
         {
             m_saved_stdout.Reset(sys_module_dict.GetItemForKey("stdout"));
@@ -432,7 +437,9 @@ ScriptInterpreterPython::EnterSession (bool init_lldb_globals,
         }
         else
             m_saved_stdout.Reset();
-        
+
+        if (err == NULL && err_sp)
+            err = err_sp->GetFile().GetStream();
         if (err)
         {
             m_saved_stderr.Reset(sys_module_dict.GetItemForKey("stderr"));
@@ -2472,6 +2479,13 @@ ScriptInterpreterPython::InitializeInterpreter (SWIGInitCallback swig_init_callb
 void
 ScriptInterpreterPython::InitializePrivate ()
 {
+    static int g_initialized = false;
+    
+    if (g_initialized)
+        return;
+    
+    g_initialized = true;
+
     Timer scoped_timer (__PRETTY_FUNCTION__, __PRETTY_FUNCTION__);
 
     // Python will muck with STDIN terminal state, so save off any current TTY
