@@ -41,35 +41,62 @@ def setquit():
     __builtin__.quit = LLDBQuitter('quit')
     __builtin__.exit = LLDBQuitter('exit')
 
-def run_python_interpreter (dict):
-    global g_builtin_override_called
-    setquit()
-    try:
-        code.interact ("Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.", None, dict)
-    except SystemExit as e:
-        if not g_builtin_override_called:
-            print 'Script exited with %s' %(e)
-
 # When running one line, we might place the string to run in this string
 # in case it would be hard to correctly escape a string's contents
 
 g_run_one_line_str = None
 
-def run_python_interpreter (dict):
+
+def get_terminal_size(fd):
+    try:
+        import fcntl, termios, struct
+        hw = struct.unpack('hh', fcntl.ioctl(fd, termios.TIOCGWINSZ, '1234'))
+    except:
+        hw = (0,0)
+    return hw
+
+def readfunc_stdio(prompt):
+    sys.stdout.write(prompt)
+    return sys.stdin.readline()
+
+def run_python_interpreter (local_dict):
     # Pass in the dictionary, for continuity from one session to the next.
     setquit()
     try:
-        code.interact(banner="Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.", local=dict)
+        fd = sys.stdin.fileno();
+        interacted = False
+        if get_terminal_size(fd)[1] == 0:
+            try:
+                import termios
+                old = termios.tcgetattr(fd)
+                if old[3] & termios.ECHO:
+                    # Need to turn off echoing and restore
+                    new = termios.tcgetattr(fd)
+                    new[3] = new[3] & ~termios.ECHO
+                    try:
+                        termios.tcsetattr(fd, termios.TCSADRAIN, new)
+                        interacted = True
+                        code.interact(banner="Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.", readfunc=readfunc_stdio, local=local_dict)
+                    finally:
+                        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            except:
+                pass
+            # Don't need to turn off echoing
+            if not interacted:
+                code.interact(banner="Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.", readfunc=readfunc_stdio, local=local_dict)
+        else:
+            # We have a real interactive terminal
+            code.interact(banner="Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.", local=local_dict)
     except SystemExit as e:
         global g_builtin_override_called
         if not g_builtin_override_called:
             print 'Script exited with %s' %(e)
 
-def run_one_line (dict, input_string):
+def run_one_line (local_dict, input_string):
     global g_run_one_line_str
     setquit()
     try:
-        repl = code.InteractiveConsole(dict);
+        repl = code.InteractiveConsole(local_dict);
         if input_string:
             repl.runsource (input_string)
         elif g_run_one_line_str:
