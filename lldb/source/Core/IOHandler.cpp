@@ -643,6 +643,13 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             y += rhs.y;
             return *this;
         }
+        
+        void
+        Dump ()
+        {
+            printf ("(x=%i, y=%i)\n", x, y);
+        }
+
     };
     
     bool operator == (const Point &lhs, const Point &rhs)
@@ -670,6 +677,13 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             width = 0;
             height = 0;
         }
+
+        void
+        Dump ()
+        {
+            printf ("(w=%i, h=%i)\n", width, height);
+        }
+
     };
     
     bool operator == (const Size &lhs, const Size &rhs)
@@ -705,6 +719,23 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             size.Clear();
         }
         
+        void
+        Dump ()
+        {
+            printf ("(x=%i, y=%i), w=%i, h=%i)\n", origin.x, origin.y, size.width, size.height);
+        }
+        
+        void
+        Inset (int w, int h)
+        {
+            if (size.width > w*2)
+                size.width -= w*2;
+            origin.x += w;
+
+            if (size.height > h*2)
+                size.height -= h*2;
+            origin.y += h;
+        }
         // Return a status bar rectangle which is the last line of
         // this rectangle. This rectangle will be modified to not
         // include the status bar area.
@@ -870,6 +901,19 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         
         virtual HandleCharResult
         WindowDelegateHandleChar (Window &window, int key);
+        
+        size_t
+        GetNumLines() const
+        {
+            return m_text.GetSize();
+        }
+
+        size_t
+        GetMaxLineLength () const
+        {
+            return m_text.GetMaxStringLength();
+        }
+
     protected:
         StringList m_text;
         int m_first_visible_line;
@@ -989,6 +1033,7 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         void    Refresh ()  { ::wrefresh (m_window); }
         void    DeferredRefresh ()
         {
+            // We are using panels, so we don't need to call this...
             //::wnoutrefresh(m_window);
         }
         void    SetBackground (int color_pair_idx) { ::wbkgd (m_window,COLOR_PAIR(color_pair_idx)); }
@@ -1091,6 +1136,7 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
                 m_curr_active_window_idx = m_subwindows.size();
             }
             m_subwindows.push_back(subwindow_sp);
+            ::top_panel (subwindow_sp->m_panel);
             m_needs_update = true;
             return subwindow_sp;
         }
@@ -1171,7 +1217,7 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
         // Window drawing utilities
         //----------------------------------------------------------------------
         void
-        DrawTitleBox (const char *title)
+        DrawTitleBox (const char *title, const char *bottom_message = NULL)
         {
             attr_t attr = 0;
             if (IsActive())
@@ -1186,12 +1232,33 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
             
             if (title && title[0])
             {
-                PutCString ("<");
-                PutCString(title);
-                PutCString (">");
+                PutChar ('<');
+                PutCString (title);
+                PutChar ('>');
+            }
+            
+            if (bottom_message && bottom_message[0])
+            {
+                int bottom_message_length = strlen(bottom_message);
+                int x = GetWidth() - 3 - (bottom_message_length + 2);
+                
+                if (x > 0)
+                {
+                    MoveCursor (x, GetHeight() - 1);
+                    PutChar ('[');
+                    PutCString(bottom_message);
+                    PutChar (']');
+                }
+                else
+                {
+                    MoveCursor (1, GetHeight() - 1);
+                    PutChar ('[');
+                    PutCStringTruncated (bottom_message, 1);
+                }
             }
             if (attr)
                 AttributeOff(attr);
+            
         }
 
         virtual void
@@ -1213,20 +1280,42 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
                 KeyHelp *key_help = m_delegate_sp->WindowDelegateGetKeyHelp ();
                 if ((text && text[0]) || key_help)
                 {
+                    std::auto_ptr<HelpDialogDelegate> help_delegate_ap(new HelpDialogDelegate(text, key_help));
+                    const size_t num_lines = help_delegate_ap->GetNumLines();
+                    const size_t max_length = help_delegate_ap->GetMaxLineLength();
                     Rect bounds = GetBounds();
-                    const int inset_w = bounds.size.width / 4;
-                    const int inset_h = bounds.size.height / 4;
-                    bounds.origin.x += inset_w;
-                    bounds.size.width -= 2*inset_w;
-                    bounds.origin.y += inset_h;
-                    bounds.size.height -= 2*inset_h;
-//                    Rect bounds;
-//                    bounds.origin.x = 10;
-//                    bounds.origin.y = 10;
-//                    bounds.size.width = 40;
-//                    bounds.size.height = 40;
+                    bounds.Inset(1, 1);
+                    if (max_length + 4 < bounds.size.width)
+                    {
+                        bounds.origin.x += (bounds.size.width - max_length + 4)/2;
+                        bounds.size.width = max_length + 4;
+                    }
+                    else
+                    {
+                        if (bounds.size.width > 100)
+                        {
+                            const int inset_w = bounds.size.width / 4;
+                            bounds.origin.x += inset_w;
+                            bounds.size.width -= 2*inset_w;
+                        }
+                    }
+                    
+                    if (num_lines + 2 < bounds.size.height)
+                    {
+                        bounds.origin.y += (bounds.size.height - num_lines + 2)/2;
+                        bounds.size.height = num_lines + 2;
+                    }
+                    else
+                    {
+                        if (bounds.size.height > 100)
+                        {
+                            const int inset_h = bounds.size.height / 4;
+                            bounds.origin.y += inset_h;
+                            bounds.size.height -= 2*inset_h;
+                        }
+                    }
                     WindowSP help_window_sp = GetParent()->CreateSubWindow("Help", bounds, true);
-                    help_window_sp->SetDelegate(WindowDelegateSP(new HelpDialogDelegate(text, key_help)));
+                    help_window_sp->SetDelegate(WindowDelegateSP(help_delegate_ap.release()));
                     return true;
                 }
             }
@@ -1282,6 +1371,7 @@ type summary add -s "${var.origin%S} ${var.size%S}" curses::Rect
                 if (m_subwindows[i].get() == window)
                 {
                     m_prev_active_window_idx = m_curr_active_window_idx;
+                    ::top_panel (window->m_panel);
                     m_curr_active_window_idx = i;
                     return true;
                 }
@@ -2742,6 +2832,32 @@ public:
         return true; // Drawing handled
     }
     
+    
+    virtual const char *
+    WindowDelegateGetHelpText ()
+    {
+        return "Thread window keyboard shortcuts:";
+    }
+    
+    virtual KeyHelp *
+    WindowDelegateGetKeyHelp ()
+    {
+        static curses::KeyHelp g_source_view_key_help[] = {
+            { KEY_UP, "Select previous item" },
+            { KEY_DOWN, "Select next item" },
+            { KEY_RIGHT, "Expand the selected item" },
+            { KEY_LEFT, "Unexpand the selected item or select parent if not expanded" },
+            { KEY_PPAGE, "Page up" },
+            { KEY_NPAGE, "Page down" },
+            { 'h', "Show help dialog" },
+            { ' ', "Toggle item expansion" },
+            { ',', "Page up" },
+            { '.', "Page down" },
+            { '\0', NULL }
+        };
+        return g_source_view_key_help;
+    }
+    
     virtual HandleCharResult
     WindowDelegateHandleChar (Window &window, int c)
     {
@@ -2830,6 +2946,10 @@ public:
                     else
                         m_selected_item->Expand();
                 }
+                return eKeyHandled;
+                
+            case 'h':
+                window.CreateHelpSubwindow ();
                 return eKeyHandled;
                 
             default:
@@ -3113,6 +3233,41 @@ public:
         return true; // Drawing handled
     }
     
+    virtual KeyHelp *
+    WindowDelegateGetKeyHelp ()
+    {
+        static curses::KeyHelp g_source_view_key_help[] = {
+            { KEY_UP, "Select previous item" },
+            { KEY_DOWN, "Select next item" },
+            { KEY_RIGHT, "Expand selected item" },
+            { KEY_LEFT, "Unexpand selected item or select parent if not expanded" },
+            { KEY_PPAGE, "Page up" },
+            { KEY_NPAGE, "Page down" },
+            { 'A', "Format as annotated address" },
+            { 'b', "Format as binary" },
+            { 'B', "Format as hex bytes with ASCII" },
+            { 'c', "Format as character" },
+            { 'd', "Format as a signed integer" },
+            { 'D', "Format selected value using the default format for the type" },
+            { 'f', "Format as float" },
+            { 'h', "Show help dialog" },
+            { 'i', "Format as instructions" },
+            { 'o', "Format as octal" },
+            { 'p', "Format as pointer" },
+            { 's', "Format as C string" },
+            { 't', "Toggle showing/hiding type names" },
+            { 'u', "Format as an unsigned integer" },
+            { 'x', "Format as hex" },
+            { 'X', "Format as uppercase hex" },
+            { ' ', "Toggle item expansion" },
+            { ',', "Page up" },
+            { '.', "Page down" },
+            { '\0', NULL }
+        };
+        return g_source_view_key_help;
+    }
+
+    
     virtual HandleCharResult
     WindowDelegateHandleChar (Window &window, int c)
     {
@@ -3206,6 +3361,10 @@ public:
                 }
                 return eKeyHandled;
                 
+            case 'h':
+                window.CreateHelpSubwindow ();
+                return eKeyHandled;
+
             default:
                 break;
         }
@@ -3418,6 +3577,12 @@ public:
     {
     }
     
+    virtual const char *
+    WindowDelegateGetHelpText ()
+    {
+        return "Frame variable window keyboard shortcuts:";
+    }
+    
     virtual bool
     WindowDelegateDraw (Window &window, bool force)
     {
@@ -3492,6 +3657,12 @@ public:
     {
     }
     
+    virtual const char *
+    WindowDelegateGetHelpText ()
+    {
+        return "Register window keyboard shortcuts:";
+    }
+
     virtual bool
     WindowDelegateDraw (Window &window, bool force)
     {
@@ -3675,12 +3846,20 @@ bool
 HelpDialogDelegate::WindowDelegateDraw (Window &window, bool force)
 {
     window.Erase();
-    window.DrawTitleBox(window.GetName());
+    const int window_height = window.GetHeight();
     int x = 2;
     int y = 1;
     const int min_y = y;
-    const int max_y = window.GetHeight() - 1 - y;
-    while (y < max_y)
+    const int max_y = window_height - 1 - y;
+    const int num_visible_lines = max_y - min_y + 1;
+    const size_t num_lines = m_text.GetSize();
+    const char *bottom_message;
+    if (num_lines <= num_visible_lines)
+        bottom_message = "Press any key to exit";
+    else
+        bottom_message = "Use arrows to scroll, any other key to exit";
+    window.DrawTitleBox(window.GetName(), bottom_message);
+    while (y <= max_y)
     {
         window.MoveCursor(x, y);
         window.PutCStringTruncated(m_text.GetStringAtIndex(m_first_visible_line + y - min_y), 1);
@@ -3695,36 +3874,50 @@ HelpDialogDelegate::WindowDelegateHandleChar (Window &window, int key)
     bool done = false;
     const size_t num_lines = m_text.GetSize();
     const size_t num_visible_lines = window.GetHeight() - 2;
-    switch (key)
+    
+    if (num_lines <= num_visible_lines)
     {
-        case KEY_UP:
-            if (m_first_visible_line > 0)
-                --m_first_visible_line;
-            break;
+        done = true;
+        // If we have all lines visible and don't need scrolling, then any
+        // key press will cause us to exit
+    }
+    else
+    {
+        switch (key)
+        {
+            case KEY_UP:
+                if (m_first_visible_line > 0)
+                    --m_first_visible_line;
+                break;
 
-        case KEY_DOWN:
-            if (m_first_visible_line + 1 < num_lines)
-                ++m_first_visible_line;
-            break;
+            case KEY_DOWN:
+                if (m_first_visible_line + num_visible_lines < num_lines)
+                    ++m_first_visible_line;
+                break;
 
-        case KEY_PPAGE:
-        case ',':
-            if (m_first_visible_line > 0)
-            {
-                if (m_first_visible_line >= num_visible_lines)
-                    m_first_visible_line -= num_visible_lines;
-                else
-                    m_first_visible_line = 0;
-            }
-            break;
-        case KEY_NPAGE:
-        case '.':
-            if (m_first_visible_line + num_visible_lines < num_lines)
-                m_first_visible_line += num_visible_lines;
-            break;
-        default:
-            done = true;
-            break;
+            case KEY_PPAGE:
+            case ',':
+                if (m_first_visible_line > 0)
+                {
+                    if (m_first_visible_line >= num_visible_lines)
+                        m_first_visible_line -= num_visible_lines;
+                    else
+                        m_first_visible_line = 0;
+                }
+                break;
+            case KEY_NPAGE:
+            case '.':
+                if (m_first_visible_line + num_visible_lines < num_lines)
+                {
+                    m_first_visible_line += num_visible_lines;
+                    if (m_first_visible_line > num_lines)
+                        m_first_visible_line = num_lines - num_visible_lines;
+                }
+                break;
+            default:
+                done = true;
+                break;
+        }
     }
     if (done)
         window.GetParent()->RemoveSubWindow(&window);
@@ -3802,6 +3995,90 @@ public:
     {
         switch (menu.GetIdentifier())
         {
+            case eMenuID_ThreadStepIn:
+                {
+                    ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
+                    if (exe_ctx.HasThreadScope())
+                    {
+                        Process *process = exe_ctx.GetProcessPtr();
+                        if (process && process->IsAlive() && StateIsStoppedState (process->GetState(), true))
+                            exe_ctx.GetThreadRef().StepIn(true, true);
+                    }
+                }
+                return MenuActionResult::Handled;
+                
+            case eMenuID_ThreadStepOut:
+                {
+                    ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
+                    if (exe_ctx.HasThreadScope())
+                    {
+                        Process *process = exe_ctx.GetProcessPtr();
+                        if (process && process->IsAlive() && StateIsStoppedState (process->GetState(), true))
+                            exe_ctx.GetThreadRef().StepOut();
+                    }
+                }
+                return MenuActionResult::Handled;
+                
+            case eMenuID_ThreadStepOver:
+                {
+                    ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
+                    if (exe_ctx.HasThreadScope())
+                    {
+                        Process *process = exe_ctx.GetProcessPtr();
+                        if (process && process->IsAlive() && StateIsStoppedState (process->GetState(), true))
+                            exe_ctx.GetThreadRef().StepOver(true);
+                    }
+                }
+                return MenuActionResult::Handled;
+
+            case eMenuID_ProcessContinue:
+                {
+                    ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
+                    if (exe_ctx.HasProcessScope())
+                    {
+                        Process *process = exe_ctx.GetProcessPtr();
+                        if (process && process->IsAlive() && StateIsStoppedState (process->GetState(), true))
+                            process->Resume();
+                    }
+                }
+                return MenuActionResult::Handled;
+
+            case eMenuID_ProcessKill:
+                {
+                    ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
+                    if (exe_ctx.HasProcessScope())
+                    {
+                        Process *process = exe_ctx.GetProcessPtr();
+                        if (process && process->IsAlive())
+                            process->Destroy();
+                    }
+                }
+                return MenuActionResult::Handled;
+
+            case eMenuID_ProcessHalt:
+                {
+                    ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
+                    if (exe_ctx.HasProcessScope())
+                    {
+                        Process *process = exe_ctx.GetProcessPtr();
+                        if (process && process->IsAlive())
+                            process->Halt();
+                    }
+                }
+                return MenuActionResult::Handled;
+
+            case eMenuID_ProcessDetach:
+                {
+                    ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
+                    if (exe_ctx.HasProcessScope())
+                    {
+                        Process *process = exe_ctx.GetProcessPtr();
+                        if (process && process->IsAlive())
+                            process->Detach(false);
+                    }
+                }
+                return MenuActionResult::Handled;
+
             case eMenuID_Process:
                 {
                     // Populate the menu with all of the threads if the process is stopped when
@@ -3907,6 +4184,7 @@ public:
                     touchwin(stdscr);
                 }
                 return MenuActionResult::Handled;
+
             case eMenuID_ViewRegisters:
                 {
                     WindowSP main_window_sp = m_app.GetMainWindow();
@@ -3962,6 +4240,10 @@ public:
                     touchwin(stdscr);
                 }
                 return MenuActionResult::Handled;
+                
+            case eMenuID_HelpGUIHelp:
+                return MenuActionResult::Handled;
+        
             default:
                 break;
         }
@@ -4082,14 +4364,15 @@ public:
     {
         static curses::KeyHelp g_source_view_key_help[] = {
             { KEY_RETURN, "Run to selected line with one shot breakpoint" },
-            { KEY_UP, "Move selection to previous line" },
-            { KEY_DOWN, "Move selection to next line" },
+            { KEY_UP, "Select previous source line" },
+            { KEY_DOWN, "Select next source line" },
             { KEY_PPAGE, "Page up" },
             { KEY_NPAGE, "Page down" },
             { 'b', "Set breakpoint on selected source/disassembly line" },
             { 'c', "Continue process" },
             { 'd', "Detach and resume process" },
             { 'D', "Detach with process suspended" },
+            { 'h', "Show help dialog" },
             { 'k', "Kill process" },
             { 'n', "Step over (source line)" },
             { 'N', "Step over (single instruction)" },
@@ -4110,36 +4393,24 @@ public:
         Process *process = exe_ctx.GetProcessPtr();
         Thread *thread = NULL;
 
-        bool display_content = false;
-        
+        bool update_location = false;
         if (process)
         {
             StateType state = process->GetState();
             if (StateIsStoppedState(state, true))
             {
                 // We are stopped, so it is ok to
-                display_content = true;
-            }
-            else if (StateIsRunningState(state))
-            {
-                return true; // Don't do any updating when we are running
+                update_location = true;
             }
         }
+        
+        const uint32_t num_visible_lines = NumVisibleLines();
+        StackFrameSP frame_sp;
+        bool set_selected_line_to_pc = false;
 
-        if (display_content)
+        if (update_location)
         {
-            m_min_x = 1;
-            m_min_y = 1;
-            m_max_x = window.GetMaxX()-1;
-            m_max_y = window.GetMaxY()-1;
             
-            window.Erase();
-            window.DrawTitleBox ("Sources");
-            
-            bool set_selected_line_to_pc = false;
-            const uint32_t num_visible_lines = NumVisibleLines();
-            
-            StackFrameSP frame_sp;
             const bool process_alive = process ? process->IsAlive() : false;
             bool thread_changed = false;
             if (process_alive)
@@ -4287,13 +4558,133 @@ public:
             {
                 m_pc_line = UINT32_MAX;
             }
+        }
+        
             
-            Target *target = exe_ctx.GetTargetPtr();
-            const size_t num_source_lines = GetNumSourceLines();
-            if (num_source_lines > 0)
+        m_min_x = 1;
+        m_min_y = 1;
+        m_max_x = window.GetMaxX()-1;
+        m_max_y = window.GetMaxY()-1;
+        
+        window.Erase();
+        window.DrawTitleBox ("Sources");
+        
+
+        Target *target = exe_ctx.GetTargetPtr();
+        const size_t num_source_lines = GetNumSourceLines();
+        if (num_source_lines > 0)
+        {
+            // Display source
+            BreakpointLines bp_lines;
+            if (target)
             {
-                // Display source
-                BreakpointLines bp_lines;
+                BreakpointList &bp_list = target->GetBreakpointList();
+                const size_t num_bps = bp_list.GetSize();
+                for (size_t bp_idx=0; bp_idx<num_bps; ++bp_idx)
+                {
+                    BreakpointSP bp_sp = bp_list.GetBreakpointAtIndex(bp_idx);
+                    const size_t num_bps_locs = bp_sp->GetNumLocations();
+                    for (size_t bp_loc_idx=0; bp_loc_idx<num_bps_locs; ++bp_loc_idx)
+                    {
+                        BreakpointLocationSP bp_loc_sp = bp_sp->GetLocationAtIndex(bp_loc_idx);
+                        LineEntry bp_loc_line_entry;
+                        if (bp_loc_sp->GetAddress().CalculateSymbolContextLineEntry (bp_loc_line_entry))
+                        {
+                            if (m_file_sp->GetFileSpec() == bp_loc_line_entry.file)
+                            {
+                                bp_lines.insert(bp_loc_line_entry.line);
+                            }
+                        }
+                    }
+                }
+            }
+            
+        
+            const attr_t selected_highlight_attr = A_REVERSE;
+            const attr_t pc_highlight_attr = COLOR_PAIR(1);
+
+            for (int i=0; i<num_visible_lines; ++i)
+            {
+                const uint32_t curr_line = m_first_visible_line + i;
+                if (curr_line < num_source_lines)
+                {
+                    const int line_y = 1+i;
+                    window.MoveCursor(1, line_y);
+                    const bool is_pc_line = curr_line == m_pc_line;
+                    const bool line_is_selected = m_selected_line == curr_line;
+                    // Highlight the line as the PC line first, then if the selected line
+                    // isn't the same as the PC line, highlight it differently
+                    attr_t highlight_attr = 0;
+                    attr_t bp_attr = 0;
+                    if (is_pc_line)
+                        highlight_attr = pc_highlight_attr;
+                    else if (line_is_selected)
+                        highlight_attr = selected_highlight_attr;
+                    
+                    if (bp_lines.find(curr_line+1) != bp_lines.end())
+                        bp_attr = COLOR_PAIR(2);
+
+                    if (bp_attr)
+                        window.AttributeOn(bp_attr);
+                    
+                    window.Printf (m_line_format, curr_line + 1);
+
+                    if (bp_attr)
+                        window.AttributeOff(bp_attr);
+
+                    window.PutChar(ACS_VLINE);
+                    // Mark the line with the PC with a diamond
+                    if (is_pc_line)
+                        window.PutChar(ACS_DIAMOND);
+                    else
+                        window.PutChar(' ');
+                    
+                    if (highlight_attr)
+                        window.AttributeOn(highlight_attr);
+                    const uint32_t line_len = m_file_sp->GetLineLength(curr_line + 1, false);
+                    if (line_len > 0)
+                        window.PutCString(m_file_sp->PeekLineData(curr_line + 1), line_len);
+
+                    if (is_pc_line && frame_sp && frame_sp->GetConcreteFrameIndex() == 0)
+                    {
+                        StopInfoSP stop_info_sp;
+                        if (thread)
+                            stop_info_sp = thread->GetStopInfo();
+                        if (stop_info_sp)
+                        {
+                            const char *stop_description = stop_info_sp->GetDescription();
+                            if (stop_description && stop_description[0])
+                            {
+                                size_t stop_description_len = strlen(stop_description);
+                                int desc_x = window.GetWidth() - stop_description_len - 16;
+                                window.Printf ("%*s", desc_x - window.GetCursorX(), "");
+                                //window.MoveCursor(window.GetWidth() - stop_description_len - 15, line_y);
+                                window.Printf ("<<< Thread %u: %s ", thread->GetIndexID(), stop_description);
+                            }
+                        }
+                        else
+                        {
+                            window.Printf ("%*s", window.GetWidth() - window.GetCursorX() - 1, "");
+                        }
+                    }
+                    if (highlight_attr)
+                        window.AttributeOff(highlight_attr);
+
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+        else
+        {
+            size_t num_disassembly_lines = GetNumDisassemblyLines();
+            if (num_disassembly_lines > 0)
+            {
+                // Display disassembly
+                BreakpointAddrs bp_file_addrs;
+                Target *target = exe_ctx.GetTargetPtr();
                 if (target)
                 {
                     BreakpointList &bp_list = target->GetBreakpointList();
@@ -4306,238 +4697,128 @@ public:
                         {
                             BreakpointLocationSP bp_loc_sp = bp_sp->GetLocationAtIndex(bp_loc_idx);
                             LineEntry bp_loc_line_entry;
-                            if (bp_loc_sp->GetAddress().CalculateSymbolContextLineEntry (bp_loc_line_entry))
+                            const lldb::addr_t file_addr = bp_loc_sp->GetAddress().GetFileAddress();
+                            if (file_addr != LLDB_INVALID_ADDRESS)
                             {
-                                if (m_file_sp->GetFileSpec() == bp_loc_line_entry.file)
-                                {
-                                    bp_lines.insert(bp_loc_line_entry.line);
-                                }
+                                if (m_disassembly_range.ContainsFileAddress(file_addr))
+                                    bp_file_addrs.insert(file_addr);
                             }
                         }
                     }
                 }
                 
-            
+                
                 const attr_t selected_highlight_attr = A_REVERSE;
                 const attr_t pc_highlight_attr = COLOR_PAIR(1);
+                
+                StreamString strm;
 
-                for (int i=0; i<num_visible_lines; ++i)
+                InstructionList &insts = m_disassembly_sp->GetInstructionList();
+                Address pc_address = frame_sp->GetFrameCodeAddress();
+                const uint32_t pc_idx = insts.GetIndexOfInstructionAtAddress (pc_address);
+                if (set_selected_line_to_pc)
                 {
-                    const uint32_t curr_line = m_first_visible_line + i;
-                    if (curr_line < num_source_lines)
-                    {
-                        const int line_y = 1+i;
-                        window.MoveCursor(1, line_y);
-                        const bool is_pc_line = curr_line == m_pc_line;
-                        const bool line_is_selected = m_selected_line == curr_line;
-                        // Highlight the line as the PC line first, then if the selected line
-                        // isn't the same as the PC line, highlight it differently
-                        attr_t highlight_attr = 0;
-                        attr_t bp_attr = 0;
-                        if (is_pc_line)
-                            highlight_attr = pc_highlight_attr;
-                        else if (line_is_selected)
-                            highlight_attr = selected_highlight_attr;
-                        
-                        if (bp_lines.find(curr_line+1) != bp_lines.end())
-                            bp_attr = COLOR_PAIR(2);
-
-                        if (bp_attr)
-                            window.AttributeOn(bp_attr);
-                        
-                        window.Printf (m_line_format, curr_line + 1);
-
-                        if (bp_attr)
-                            window.AttributeOff(bp_attr);
-
-                        window.PutChar(ACS_VLINE);
-                        // Mark the line with the PC with a diamond
-                        if (is_pc_line)
-                            window.PutChar(ACS_DIAMOND);
-                        else
-                            window.PutChar(' ');
-                        
-                        if (highlight_attr)
-                            window.AttributeOn(highlight_attr);
-                        const uint32_t line_len = m_file_sp->GetLineLength(curr_line + 1, false);
-                        if (line_len > 0)
-                            window.PutCString(m_file_sp->PeekLineData(curr_line + 1), line_len);
-
-                        if (is_pc_line && frame_sp && frame_sp->GetConcreteFrameIndex() == 0)
-                        {
-                            StopInfoSP stop_info_sp;
-                            if (thread)
-                                stop_info_sp = thread->GetStopInfo();
-                            if (stop_info_sp)
-                            {
-                                const char *stop_description = stop_info_sp->GetDescription();
-                                if (stop_description && stop_description[0])
-                                {
-                                    size_t stop_description_len = strlen(stop_description);
-                                    int desc_x = window.GetWidth() - stop_description_len - 16;
-                                    window.Printf ("%*s", desc_x - window.GetCursorX(), "");
-                                    //window.MoveCursor(window.GetWidth() - stop_description_len - 15, line_y);
-                                    window.Printf ("<<< Thread %u: %s ", thread->GetIndexID(), stop_description);
-                                }
-                            }
-                            else
-                            {
-                                window.Printf ("%*s", window.GetWidth() - window.GetCursorX() - 1, "");
-                            }
-                        }
-                        if (highlight_attr)
-                            window.AttributeOff(highlight_attr);
-
-                    }
-                    else
-                    {
-                        break;
-                    }
+                    m_selected_line = pc_idx;
                 }
-            }
-            else
-            {
-                size_t num_disassembly_lines = GetNumDisassemblyLines();
-                if (num_disassembly_lines > 0)
+
+                const uint32_t non_visible_pc_offset = (num_visible_lines / 5);
+                if (m_first_visible_line >= num_disassembly_lines)
+                    m_first_visible_line = 0;
+
+                if (pc_idx < num_disassembly_lines)
                 {
-                    // Display disassembly
-                    BreakpointAddrs bp_file_addrs;
-                    Target *target = exe_ctx.GetTargetPtr();
-                    if (target)
+                    if (pc_idx < m_first_visible_line ||
+                        pc_idx >= m_first_visible_line + num_visible_lines)
+                        m_first_visible_line = pc_idx - non_visible_pc_offset;
+                }
+
+                for (size_t i=0; i<num_visible_lines; ++i)
+                {
+                    const uint32_t inst_idx = m_first_visible_line + i;
+                    Instruction *inst = insts.GetInstructionAtIndex(inst_idx).get();
+                    if (!inst)
+                        break;
+                    
+                    window.MoveCursor(1, i+1);
+                    const bool is_pc_line = frame_sp && inst_idx == pc_idx;
+                    const bool line_is_selected = m_selected_line == inst_idx;
+                    // Highlight the line as the PC line first, then if the selected line
+                    // isn't the same as the PC line, highlight it differently
+                    attr_t highlight_attr = 0;
+                    attr_t bp_attr = 0;
+                    if (is_pc_line)
+                        highlight_attr = pc_highlight_attr;
+                    else if (line_is_selected)
+                        highlight_attr = selected_highlight_attr;
+                    
+                    if (bp_file_addrs.find(inst->GetAddress().GetFileAddress()) != bp_file_addrs.end())
+                        bp_attr = COLOR_PAIR(2);
+                    
+                    if (bp_attr)
+                        window.AttributeOn(bp_attr);
+                    
+                    window.Printf (" 0x%16.16llx ", inst->GetAddress().GetLoadAddress(target));
+                        
+                    if (bp_attr)
+                        window.AttributeOff(bp_attr);
+                        
+                    window.PutChar(ACS_VLINE);
+                    // Mark the line with the PC with a diamond
+                    if (is_pc_line)
+                        window.PutChar(ACS_DIAMOND);
+                    else
+                        window.PutChar(' ');
+                    
+                    if (highlight_attr)
+                        window.AttributeOn(highlight_attr);
+                    
+                    const char *mnemonic = inst->GetMnemonic(&exe_ctx);
+                    const char *operands = inst->GetOperands(&exe_ctx);
+                    const char *comment = inst->GetComment(&exe_ctx);
+
+                    if (mnemonic && mnemonic[0] == '\0')
+                        mnemonic = NULL;
+                    if (operands && operands[0] == '\0')
+                        operands = NULL;
+                    if (comment && comment[0] == '\0')
+                        comment = NULL;
+                    
+                    strm.Clear();
+
+                    if (mnemonic && operands && comment)
+                        strm.Printf ("%-8s %-25s ; %s", mnemonic, operands, comment);
+                    else if (mnemonic && operands)
+                        strm.Printf ("%-8s %s", mnemonic, operands);
+                    else if (mnemonic)
+                        strm.Printf ("%s", mnemonic);
+                    
+                    int right_pad = 1;
+                    window.PutCStringTruncated(strm.GetString().c_str(), right_pad);
+                    
+                    if (is_pc_line && frame_sp && frame_sp->GetConcreteFrameIndex() == 0)
                     {
-                        BreakpointList &bp_list = target->GetBreakpointList();
-                        const size_t num_bps = bp_list.GetSize();
-                        for (size_t bp_idx=0; bp_idx<num_bps; ++bp_idx)
+                        StopInfoSP stop_info_sp;
+                        if (thread)
+                            stop_info_sp = thread->GetStopInfo();
+                        if (stop_info_sp)
                         {
-                            BreakpointSP bp_sp = bp_list.GetBreakpointAtIndex(bp_idx);
-                            const size_t num_bps_locs = bp_sp->GetNumLocations();
-                            for (size_t bp_loc_idx=0; bp_loc_idx<num_bps_locs; ++bp_loc_idx)
+                            const char *stop_description = stop_info_sp->GetDescription();
+                            if (stop_description && stop_description[0])
                             {
-                                BreakpointLocationSP bp_loc_sp = bp_sp->GetLocationAtIndex(bp_loc_idx);
-                                LineEntry bp_loc_line_entry;
-                                const lldb::addr_t file_addr = bp_loc_sp->GetAddress().GetFileAddress();
-                                if (file_addr != LLDB_INVALID_ADDRESS)
-                                {
-                                    if (m_disassembly_range.ContainsFileAddress(file_addr))
-                                        bp_file_addrs.insert(file_addr);
-                                }
+                                size_t stop_description_len = strlen(stop_description);
+                                int desc_x = window.GetWidth() - stop_description_len - 16;
+                                window.Printf ("%*s", desc_x - window.GetCursorX(), "");
+                                //window.MoveCursor(window.GetWidth() - stop_description_len - 15, line_y);
+                                window.Printf ("<<< Thread %u: %s ", thread->GetIndexID(), stop_description);
                             }
                         }
-                    }
-                    
-                    
-                    const attr_t selected_highlight_attr = A_REVERSE;
-                    const attr_t pc_highlight_attr = COLOR_PAIR(1);
-                    
-                    StreamString strm;
-
-                    InstructionList &insts = m_disassembly_sp->GetInstructionList();
-                    Address pc_address = frame_sp->GetFrameCodeAddress();
-                    const uint32_t pc_idx = insts.GetIndexOfInstructionAtAddress (pc_address);
-                    if (set_selected_line_to_pc)
-                    {
-                        m_selected_line = pc_idx;
-                    }
-
-                    const uint32_t non_visible_pc_offset = (num_visible_lines / 5);
-                    if (m_first_visible_line >= num_disassembly_lines)
-                        m_first_visible_line = 0;
-
-                    if (pc_idx < num_disassembly_lines)
-                    {
-                        if (pc_idx < m_first_visible_line ||
-                            pc_idx >= m_first_visible_line + num_visible_lines)
-                            m_first_visible_line = pc_idx - non_visible_pc_offset;
-                    }
-
-                    for (size_t i=0; i<num_visible_lines; ++i)
-                    {
-                        const uint32_t inst_idx = m_first_visible_line + i;
-                        Instruction *inst = insts.GetInstructionAtIndex(inst_idx).get();
-                        if (!inst)
-                            break;
-                        
-                        window.MoveCursor(1, i+1);
-                        const bool is_pc_line = inst_idx == pc_idx;
-                        const bool line_is_selected = m_selected_line == inst_idx;
-                        // Highlight the line as the PC line first, then if the selected line
-                        // isn't the same as the PC line, highlight it differently
-                        attr_t highlight_attr = 0;
-                        attr_t bp_attr = 0;
-                        if (is_pc_line)
-                            highlight_attr = pc_highlight_attr;
-                        else if (line_is_selected)
-                            highlight_attr = selected_highlight_attr;
-                        
-                        if (bp_file_addrs.find(inst->GetAddress().GetFileAddress()) != bp_file_addrs.end())
-                            bp_attr = COLOR_PAIR(2);
-                        
-                        if (bp_attr)
-                            window.AttributeOn(bp_attr);
-                        
-                        window.Printf (" 0x%16.16llx ", inst->GetAddress().GetLoadAddress(target));
-                            
-                        if (bp_attr)
-                            window.AttributeOff(bp_attr);
-                            
-                        window.PutChar(ACS_VLINE);
-                        // Mark the line with the PC with a diamond
-                        if (is_pc_line)
-                            window.PutChar(ACS_DIAMOND);
                         else
-                            window.PutChar(' ');
-                        
-                        if (highlight_attr)
-                            window.AttributeOn(highlight_attr);
-                        
-                        const char *mnemonic = inst->GetMnemonic(&exe_ctx);
-                        const char *operands = inst->GetOperands(&exe_ctx);
-                        const char *comment = inst->GetComment(&exe_ctx);
-
-                        if (mnemonic && mnemonic[0] == '\0')
-                            mnemonic = NULL;
-                        if (operands && operands[0] == '\0')
-                            operands = NULL;
-                        if (comment && comment[0] == '\0')
-                            comment = NULL;
-                        
-                        strm.Clear();
-
-                        if (mnemonic && operands && comment)
-                            strm.Printf ("%-8s %-25s ; %s", mnemonic, operands, comment);
-                        else if (mnemonic && operands)
-                            strm.Printf ("%-8s %s", mnemonic, operands);
-                        else if (mnemonic)
-                            strm.Printf ("%s", mnemonic);
-                        
-                        int right_pad = 1;
-                        window.PutCStringTruncated(strm.GetString().c_str(), right_pad);
-                        
-                        if (is_pc_line && frame_sp && frame_sp->GetConcreteFrameIndex() == 0)
                         {
-                            StopInfoSP stop_info_sp;
-                            if (thread)
-                                stop_info_sp = thread->GetStopInfo();
-                            if (stop_info_sp)
-                            {
-                                const char *stop_description = stop_info_sp->GetDescription();
-                                if (stop_description && stop_description[0])
-                                {
-                                    size_t stop_description_len = strlen(stop_description);
-                                    int desc_x = window.GetWidth() - stop_description_len - 16;
-                                    window.Printf ("%*s", desc_x - window.GetCursorX(), "");
-                                    //window.MoveCursor(window.GetWidth() - stop_description_len - 15, line_y);
-                                    window.Printf ("<<< Thread %u: %s ", thread->GetIndexID(), stop_description);
-                                }
-                            }
-                            else
-                            {
-                                window.Printf ("%*s", window.GetWidth() - window.GetCursorX() - 1, "");
-                            }
+                            window.Printf ("%*s", window.GetWidth() - window.GetCursorX() - 1, "");
                         }
-                        if (highlight_attr)
-                            window.AttributeOff(highlight_attr);
                     }
+                    if (highlight_attr)
+                        window.AttributeOff(highlight_attr);
                 }
             }
         }
@@ -4693,7 +4974,7 @@ public:
                     if (exe_ctx.HasProcessScope())
                         exe_ctx.GetProcessRef().Detach(c == 'D');
                 }
-                return eKeyHandled;;
+                return eKeyHandled;
 
             case 'k':
                 // 'k' == kill
@@ -4719,24 +5000,7 @@ public:
                     ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
                     if (exe_ctx.HasThreadScope() && StateIsStoppedState (exe_ctx.GetProcessRef().GetState(), true))
                     {
-                        Process *process = exe_ctx.GetProcessPtr();
-                        Thread *thread = exe_ctx.GetThreadPtr();
-                        bool abort_other_plans = false;
-                        bool stop_other_threads = false;
-                        ThreadPlanSP new_plan_sp(thread->QueueThreadPlanForStepOut (abort_other_plans,
-                                                                                    NULL,
-                                                                                    false,
-                                                                                    stop_other_threads,
-                                                                                    eVoteYes,
-                                                                                    eVoteNoOpinion,
-                                                                                    0));
-                        
-                        new_plan_sp->SetIsMasterPlan(true);
-                        new_plan_sp->SetOkayToDiscard(false);
-                        
-                        // Why do we need to set the current thread by ID here???
-                        process->GetThreadList().SetSelectedThreadByID (thread->GetID());
-                        process->Resume();
+                        exe_ctx.GetThreadRef().StepOut();
                     }
                 }
                 return eKeyHandled;
@@ -4746,36 +5010,8 @@ public:
                     ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
                     if (exe_ctx.HasThreadScope() && StateIsStoppedState (exe_ctx.GetProcessRef().GetState(), true))
                     {
-                        Process *process = exe_ctx.GetProcessPtr();
-                        Thread *thread = exe_ctx.GetThreadPtr();
-                        StackFrameSP frame_sp = thread->GetStackFrameAtIndex (0);
-                        if (frame_sp)
-                        {
-                            bool abort_other_plans = false;
-                            lldb::RunMode stop_other_threads = eOnlyThisThread;
-                            ThreadPlanSP new_plan_sp;
-                            
-                            if (c == 'n' && frame_sp->HasDebugInformation ())
-                            {
-                                SymbolContext sc(frame_sp->GetSymbolContext(eSymbolContextEverything));
-                                new_plan_sp = thread->QueueThreadPlanForStepOverRange (abort_other_plans,
-                                                                                       sc.line_entry.range,
-                                                                                       sc,
-                                                                                       stop_other_threads);
-                            }
-                            else
-                            {
-                                new_plan_sp = thread->QueueThreadPlanForStepSingleInstruction (true,
-                                                                                               abort_other_plans, 
-                                                                                               stop_other_threads);
-                            }
-                            new_plan_sp->SetIsMasterPlan(true);
-                            new_plan_sp->SetOkayToDiscard(false);
-                            
-                            // Why do we need to set the current thread by ID here???
-                            process->GetThreadList().SetSelectedThreadByID (thread->GetID());
-                            process->Resume();
-                        }
+                        bool source_step = (c == 'n');
+                        exe_ctx.GetThreadRef().StepOver(source_step);
                     }
                 }
                 return eKeyHandled;
@@ -4785,37 +5021,9 @@ public:
                     ExecutionContext exe_ctx = m_debugger.GetCommandInterpreter().GetExecutionContext();
                     if (exe_ctx.HasThreadScope() && StateIsStoppedState (exe_ctx.GetProcessRef().GetState(), true))
                     {
-                        Process *process = exe_ctx.GetProcessPtr();
-                        Thread *thread = exe_ctx.GetThreadPtr();
-                        StackFrameSP frame_sp = thread->GetStackFrameAtIndex (0);
-                        bool abort_other_plans = false;
-                        lldb::RunMode stop_other_threads = eOnlyThisThread;
-                        ThreadPlanSP new_plan_sp;
-                        
-                        if (c == 's' && frame_sp && frame_sp->HasDebugInformation ())
-                        {
-                            bool avoid_code_without_debug_info = true;
-                            SymbolContext sc(frame_sp->GetSymbolContext(eSymbolContextEverything));
-                            new_plan_sp = thread->QueueThreadPlanForStepInRange (abort_other_plans,
-                                                                                 sc.line_entry.range,
-                                                                                 sc,
-                                                                                 NULL,
-                                                                                 stop_other_threads,
-                                                                                 avoid_code_without_debug_info);
-                        }
-                        else
-                        {
-                            new_plan_sp = thread->QueueThreadPlanForStepSingleInstruction (false,
-                                                                                           abort_other_plans, 
-                                                                                           stop_other_threads);
-                        }
-                        
-                        new_plan_sp->SetIsMasterPlan(true);
-                        new_plan_sp->SetOkayToDiscard(false);
-                        
-                        // Why do we need to set the current thread by ID here???
-                        process->GetThreadList().SetSelectedThreadByID (thread->GetID());
-                        process->Resume();
+                        bool source_step = (c == 's');
+                        bool avoid_code_without_debug_info = true;
+                        exe_ctx.GetThreadRef().StepIn(source_step, avoid_code_without_debug_info);
                     }
                 }
                 return eKeyHandled;

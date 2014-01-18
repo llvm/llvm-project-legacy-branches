@@ -59,6 +59,9 @@ public:
     {
         m_strings.resize(n);
     }
+
+    size_t
+    GetMaxStringLength () const;
     
     std::string &
     operator [](size_t idx)
