@@ -369,46 +369,55 @@ IOHandlerEditline::GetLine (std::string &line)
     }
     else
     {
-        if (m_interactive)
+        line.clear();
+
+        FILE *in = GetInputFILE();
+        if (in)
         {
-            const char *prompt = GetPrompt();
-            if (prompt && prompt[0])
+            if (m_interactive)
             {
-                FILE *out = GetOutputFILE();
-                if (out)
+                const char *prompt = GetPrompt();
+                if (prompt && prompt[0])
                 {
-                    ::fprintf(out, "%s", prompt);
-                    ::fflush(out);
+                    FILE *out = GetOutputFILE();
+                    if (out)
+                    {
+                        ::fprintf(out, "%s", prompt);
+                        ::fflush(out);
+                    }
+                }
+            }
+            char buffer[256];
+            bool done = false;
+            while (!done)
+            {
+                if (fgets(buffer, sizeof(buffer), in) == NULL)
+                    done = true;
+                else
+                {
+                    size_t buffer_len = strlen(buffer);
+                    assert (buffer[buffer_len] == '\0');
+                    char last_char = buffer[buffer_len-1];
+                    if (last_char == '\r' || last_char == '\n')
+                    {
+                        done = true;
+                        // Strip trailing newlines
+                        while (last_char == '\r' || last_char == '\n')
+                        {
+                            --buffer_len;
+                            if (buffer_len == 0)
+                                break;
+                            last_char = buffer[buffer_len-1];
+                        }
+                    }
+                    line.append(buffer, buffer_len);
                 }
             }
         }
-        line.clear();
-        FILE *in = GetInputFILE();
-        char buffer[256];
-        bool done = false;
-        while (!done)
+        else
         {
-            if (fgets(buffer, sizeof(buffer), in) == NULL)
-                done = true;
-            else
-            {
-                size_t buffer_len = strlen(buffer);
-                assert (buffer[buffer_len] == '\0');
-                char last_char = buffer[buffer_len-1];
-                if (last_char == '\r' || last_char == '\n')
-                {
-                    done = true;
-                    // Strip trailing newlines
-                    while (last_char == '\r' || last_char == '\n')
-                    {
-                        --buffer_len;
-                        if (buffer_len == 0)
-                            break;
-                        last_char = buffer[buffer_len-1];
-                    }
-                }
-                line.append(buffer, buffer_len);
-            }
+            // No more input file, we are done...
+            SetIsDone(true);
         }
         return !line.empty();
     }
