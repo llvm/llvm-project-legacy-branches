@@ -76,7 +76,7 @@ def run_python_interpreter (local_dict):
                     try:
                         termios.tcsetattr(fd, termios.TCSADRAIN, new)
                         interacted = True
-                        code.interact(banner="Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.", readfunc=readfunc_stdio, local=local_dict)
+                        code.interact(banner="Python Interactive Interpreter. To exit, type 'quit()', 'exit()'.", readfunc=readfunc_stdio, local=local_dict)
                     finally:
                         termios.tcsetattr(fd, termios.TCSADRAIN, old)
             except:
