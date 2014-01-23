@@ -212,6 +212,9 @@ public:
     bool
     IsTopIOHandler (const lldb::IOHandlerSP& reader_sp);
 
+    ConstString
+    GetTopIOHandlerControlSequence(char ch);
+
     bool
     HideTopIOHandler();
 

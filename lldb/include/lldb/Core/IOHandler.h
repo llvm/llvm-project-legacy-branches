@@ -16,6 +16,7 @@
 
 #include "lldb/lldb-public.h"
 #include "lldb/lldb-enumerations.h"
+#include "lldb/Core/ConstString.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/StringList.h"
 #include "lldb/Core/ValueObjectList.h"
@@ -108,6 +109,12 @@ namespace lldb_private {
         {
             // Prompt support isn't mandatory
             return false;
+        }
+        
+        virtual ConstString
+        GetControlSequence (char ch)
+        {
+            return ConstString();
         }
         
         int
@@ -249,6 +256,13 @@ namespace lldb_private {
             // that are getting single lines.
         }
         
+        
+        virtual ConstString
+        GetControlSequence (char ch)
+        {
+            return ConstString();
+        }
+        
     protected:
         Completion m_completion; // Support for common builtin completions
         bool m_io_handler_done;
@@ -277,6 +291,14 @@ namespace lldb_private {
         {
         }
         
+        virtual ConstString
+        GetControlSequence (char ch)
+        {
+            if (ch == 'd')
+                return ConstString (m_end_line + "\n");
+            return ConstString();
+        }
+
         virtual LineStatus
         IOHandlerLinesUpdated (IOHandler &io_handler,
                                StringList &lines,
@@ -346,6 +368,12 @@ namespace lldb_private {
         {
             IOHandler::Activate();
             m_delegate.IOHandlerActivated(*this);
+        }
+
+        virtual ConstString
+        GetControlSequence (char ch)
+        {
+            return m_delegate.GetControlSequence (ch);
         }
 
         virtual const char *
@@ -552,13 +580,21 @@ namespace lldb_private {
         {
             return m_mutex;
         }
-        
+      
         bool
         IsTop (const lldb::IOHandlerSP &io_handler_sp) const
         {
             return m_top == io_handler_sp.get();
         }
-        
+
+        ConstString
+        GetTopIOHandlerControlSequence (char ch)
+        {
+            if (m_top)
+                return m_top->GetControlSequence(ch);
+            return ConstString();
+        }
+
     protected:
         
         std::stack<lldb::IOHandlerSP> m_stack;

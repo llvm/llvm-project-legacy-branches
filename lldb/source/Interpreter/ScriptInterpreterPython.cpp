@@ -695,6 +695,15 @@ public:
     {
         
     }
+    
+    virtual ConstString
+    GetControlSequence (char ch)
+    {
+        if (ch == 'd')
+            return ConstString("quit()\n");
+        return ConstString();
+    }
+
     virtual void
     Run ()
     {

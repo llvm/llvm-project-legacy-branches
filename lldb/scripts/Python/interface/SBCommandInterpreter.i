@@ -78,6 +78,9 @@ public:
     bool
     IsValid() const;
 
+    const char *
+    GetIOHandlerControlSequence(char ch);
+
     bool
     CommandExists (const char *cmd);
 

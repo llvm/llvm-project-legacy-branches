@@ -885,6 +885,12 @@ Debugger::IsTopIOHandler (const lldb::IOHandlerSP& reader_sp)
 }
 
 
+ConstString
+Debugger::GetTopIOHandlerControlSequence(char ch)
+{
+    return m_input_reader_stack.GetTopIOHandlerControlSequence (ch);
+}
+
 void
 Debugger::RunIOHandler (const IOHandlerSP& reader_sp)
 {

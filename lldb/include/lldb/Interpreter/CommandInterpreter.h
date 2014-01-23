@@ -476,11 +476,19 @@ protected:
     friend class Debugger;
 
     //------------------------------------------------------------------
-    // IOHandler::Delegate functions
+    // IOHandlerDelegate functions
     //------------------------------------------------------------------
     virtual void
     IOHandlerInputComplete (IOHandler &io_handler,
                             std::string &line);
+
+    virtual ConstString
+    GetControlSequence (char ch)
+    {
+        if (ch == 'd')
+            return ConstString("quit\n");
+        return ConstString();
+    }
 
     size_t
     GetProcessOutput ();

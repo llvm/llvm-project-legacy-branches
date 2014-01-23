@@ -131,6 +131,26 @@ public:
     //----------------------------------------------------------------------
     bool
     IsActive ();
+    
+    //----------------------------------------------------------------------
+    /// Get the string that needs to be written to the debugger stdin file
+    /// handle when a control character is typed.
+    ///
+    /// Some GUI programs will intercept "control + char" sequences and want
+    /// to have them do what normally would happen when using a real
+    /// terminal, so this function allows GUI programs to emulate this
+    /// functionality.
+    ///
+    /// @param[in] ch
+    ///     The character that was typed along with the control key
+    ///
+    /// @return
+    ///     The string that should be written into the file handle that is
+    ///     feeding the input stream for the debugger, or NULL if there is
+    ///     no string for this control key.
+    //----------------------------------------------------------------------
+    const char *
+    GetIOHandlerControlSequence(char ch);
 
 protected:
 
