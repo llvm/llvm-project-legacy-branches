@@ -943,8 +943,7 @@ Driver::MainLoop ()
     
     bool handle_events = true;
     bool spawn_thread = false;
-    char prompt_delimiter = '\0';
-    m_debugger.RunCommandInterpreter(handle_events, spawn_thread, prompt_delimiter);
+    m_debugger.RunCommandInterpreter(handle_events, spawn_thread);
     
     reset_stdin_termios();
     fclose (stdin);

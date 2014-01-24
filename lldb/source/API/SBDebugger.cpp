@@ -955,11 +955,10 @@ SBDebugger::PushInputReader (SBInputReader &reader)
 
 void
 SBDebugger::RunCommandInterpreter (bool auto_handle_events,
-                                   bool spawn_thread,
-                                   char prompt_delimiter)
+                                   bool spawn_thread)
 {
     if (m_opaque_sp)
-        m_opaque_sp->GetCommandInterpreter().RunCommandInterpreter(auto_handle_events, spawn_thread, prompt_delimiter);
+        m_opaque_sp->GetCommandInterpreter().RunCommandInterpreter(auto_handle_events, spawn_thread);
 }
 
 void

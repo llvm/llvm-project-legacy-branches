@@ -319,8 +319,7 @@ public:
 
     void
     RunCommandInterpreter (bool auto_handle_events,
-                           bool spawn_thread,
-                           char prompt_delimiter);
+                           bool spawn_thread);
 
 private:
 

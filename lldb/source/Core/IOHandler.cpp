@@ -469,18 +469,8 @@ IOHandlerEditline::GetPrompt ()
 bool
 IOHandlerEditline::SetPrompt (const char *p)
 {
-    const char prompt_delimiter_char = m_debugger.GetCommandInterpreter().GetPromptDelimiterChar();
     if (p && p[0])
-    {
-        if (prompt_delimiter_char)
-        {
-            m_prompt.assign(1, prompt_delimiter_char);
-            m_prompt.append(p);
-            m_prompt.append(1, prompt_delimiter_char);
-        }
-        else
-            m_prompt = p;
-    }
+        m_prompt = p;
     else
         m_prompt.clear();
     if (m_editline_ap)

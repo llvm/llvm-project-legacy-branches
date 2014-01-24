@@ -439,8 +439,7 @@ public:
 
     void
     RunCommandInterpreter (bool auto_handle_events,
-                           bool spawn_thread,
-                           char prompt_delimiter);
+                           bool spawn_thread);
 
     void
     GetLLDBCommandsFromIOHandler (const char *prompt,
@@ -466,12 +465,6 @@ public:
     bool
     GetStopCmdSourceOnError () const;
     
-    char
-    GetPromptDelimiterChar () const
-    {
-        return m_prompt_delimiter_char;
-    }
-
 protected:
     friend class Debugger;
 
@@ -519,7 +512,6 @@ private:
     std::unique_ptr<ScriptInterpreter> m_script_interpreter_ap;
     lldb::IOHandlerSP m_command_io_handler_sp;
     char m_comment_char;
-    char m_prompt_delimiter_char;                    // If set to a non-NULL character, all prompts should be emitted as %c%s%c where both %c's are this character and the '%s' is the prompt
     bool m_batch_command_mode;
     ChildrenTruncatedWarningStatus m_truncation_warning;    // Whether we truncated children and whether the user has been told
     uint32_t m_command_source_depth;
