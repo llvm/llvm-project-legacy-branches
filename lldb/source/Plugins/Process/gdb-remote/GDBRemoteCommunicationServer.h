@@ -138,6 +138,53 @@ public:
         m_port_offset = port_offset;
     }
 
+    //------------------------------------------------------------------
+    /// Specify the program to launch and its arguments.
+    ///
+    /// The LaunchProcess () command can be executed to do the lauching.
+    ///
+    /// @param[in] args
+    ///     The command line to launch.
+    ///
+    /// @param[in] argc
+    ///     The number of elements in the args array of cstring pointers.
+    ///
+    /// @return
+    ///     An Error object indicating the success or failure of making
+    ///     the setting.
+    //------------------------------------------------------------------
+    lldb_private::Error
+    SetLaunchArguments (const char *const args[], int argc);
+
+    //------------------------------------------------------------------
+    /// Specify the launch flags for the process.
+    ///
+    /// The LaunchProcess () command can be executed to do the lauching.
+    ///
+    /// @param[in] launch_flags
+    ///     The launch flags to use when launching this process.
+    ///
+    /// @return
+    ///     An Error object indicating the success or failure of making
+    ///     the setting.
+    //------------------------------------------------------------------
+    lldb_private::Error
+    SetLaunchFlags (unsigned int launch_flags);
+
+    //------------------------------------------------------------------
+    /// Launch a process with the current launch settings.
+    ///
+    /// This method supports running an lldb-gdbserver or similar
+    /// server in a situation where the startup code has been provided
+    /// with all the information for a child process to be launched.
+    ///
+    /// @return
+    ///     An Error object indicating the success or failure of the
+    ///     launch.
+    //------------------------------------------------------------------
+    lldb_private::Error
+    LaunchProcess ();
+
 protected:
     lldb::thread_t m_async_thread;
     lldb_private::ProcessLaunchInfo m_process_launch_info;
@@ -173,6 +220,9 @@ protected:
     
     PacketResult
     Handle_qKillSpawnedProcess (StringExtractorGDBRemote &packet);
+
+    PacketResult
+    Handle_k (StringExtractorGDBRemote &packet);
 
     PacketResult
     Handle_qPlatform_mkdir (StringExtractorGDBRemote &packet);
@@ -274,6 +324,19 @@ private:
                             bool exited,
                             int signal,
                             int status);
+
+    bool
+    DebuggedProcessReaped (lldb::pid_t pid);
+
+    static bool
+    ReapDebuggedProcess (void *callback_baton,
+                         lldb::pid_t pid,
+                         bool exited,
+                         int signal,
+                         int status);
+
+    bool
+    KillSpawnedProcess (lldb::pid_t pid);
 
     //------------------------------------------------------------------
     // For GDBRemoteCommunicationServer only
