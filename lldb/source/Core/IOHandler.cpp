@@ -4403,10 +4403,16 @@ public:
             }
         }
         
+        m_min_x = 1;
+        m_min_y = 1;
+        m_max_x = window.GetMaxX()-1;
+        m_max_y = window.GetMaxY()-1;
+        
         const uint32_t num_visible_lines = NumVisibleLines();
         StackFrameSP frame_sp;
         bool set_selected_line_to_pc = false;
 
+        
         if (update_location)
         {
             
@@ -4560,11 +4566,6 @@ public:
         }
         
             
-        m_min_x = 1;
-        m_min_y = 1;
-        m_max_x = window.GetMaxX()-1;
-        m_max_y = window.GetMaxY()-1;
-        
         window.Erase();
         window.DrawTitleBox ("Sources");
         
@@ -4713,8 +4714,11 @@ public:
                 StreamString strm;
 
                 InstructionList &insts = m_disassembly_sp->GetInstructionList();
-                Address pc_address = frame_sp->GetFrameCodeAddress();
-                const uint32_t pc_idx = insts.GetIndexOfInstructionAtAddress (pc_address);
+                Address pc_address;
+                
+                if (frame_sp)
+                    pc_address = frame_sp->GetFrameCodeAddress();
+                const uint32_t pc_idx = pc_address.IsValid() ? insts.GetIndexOfInstructionAtAddress (pc_address) : UINT32_MAX;
                 if (set_selected_line_to_pc)
                 {
                     m_selected_line = pc_idx;
