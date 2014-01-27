@@ -1798,14 +1798,23 @@ ProcessMonitor::StopThread(lldb::tid_t tid)
         int ptrace_err;
         if (!GetSignalInfo(wait_pid, &info, ptrace_err))
         {
-            if (log)
+            // another signal causing a StopAllThreads may have been received
+            // before wait_pid's group-stop was processed, handle it now
+            if (ptrace_err == EINVAL)
             {
-                log->Printf ("ProcessMonitor::%s() GetSignalInfo failed.", __FUNCTION__);
+                assert(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
 
-                // This would be a particularly interesting case
-                if (ptrace_err == EINVAL)
-                    log->Printf ("ProcessMonitor::%s() in group-stop", __FUNCTION__);
+                if (log)
+                  log->Printf ("ProcessMonitor::%s() resuming from group-stop", __FUNCTION__);
+                // inferior process is in 'group-stop', so deliver SIGSTOP signal
+                if (!Resume(wait_pid, SIGSTOP)) {
+                  assert(0 && "SIGSTOP delivery failed while in 'group-stop' state");
+                }
+                continue;
             }
+
+            if (log)
+                log->Printf ("ProcessMonitor::%s() GetSignalInfo failed.", __FUNCTION__);
             return false;
         }
 
@@ -2062,7 +2071,12 @@ ProcessMonitor::ServeOperation(OperationArgs *args)
     for(;;)
     {
         // wait for next pending operation
-        sem_wait(&monitor->m_operation_pending);
+        if (sem_wait(&monitor->m_operation_pending))
+        {
+            if (errno == EINTR)
+                continue;
+            assert(false && "Unexpected errno from sem_wait");
+        }
 
         monitor->m_operation->Execute(monitor);
 
@@ -2082,7 +2096,12 @@ ProcessMonitor::DoOperation(Operation *op)
     sem_post(&m_operation_pending);
 
     // wait for operation to complete
-    sem_wait(&m_operation_done);
+    while (sem_wait(&m_operation_done))
+    {
+        if (errno == EINTR)
+            continue;
+        assert(false && "Unexpected errno from sem_wait");
+    }
 }
 
 size_t
