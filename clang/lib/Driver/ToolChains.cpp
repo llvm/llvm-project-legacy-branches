@@ -118,6 +118,7 @@ static const char *GetArmArchForMArch(StringRef Value) {
     .Cases("armv7k", "armv7-k", "armv7k")
     .Cases("armv7m", "armv7-m", "armv7m")
     .Cases("armv7s", "armv7-s", "armv7s")
+    .Cases("arm64", "armv7-s", "armv7s")
     .Default(0);
 }
 
@@ -485,7 +486,8 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
     // go ahead as assume we're targeting iOS.
     StringRef MachOArchName = getMachOArchName(Args);
     if (OSXTarget.empty() && iOSTarget.empty() &&
-        (MachOArchName == "armv7" || MachOArchName == "armv7s"))
+        (MachOArchName == "armv7" || MachOArchName == "armv7s" || 
+         MachOArchName == "arm64"))
         iOSTarget = iOSVersionMin;
 
     // Handle conflicting deployment targets
@@ -864,6 +866,8 @@ DerivedArgList *MachO::TranslateArgs(const DerivedArgList &Args,
     else if (Name == "armv7m")
       DAL->AddJoinedArg(0, MArch, "armv7m");
     else if (Name == "armv7s")
+      DAL->AddJoinedArg(0, MArch, "armv7s");
+    else if (Name == "arm64")
       DAL->AddJoinedArg(0, MArch, "armv7s");
 
   }

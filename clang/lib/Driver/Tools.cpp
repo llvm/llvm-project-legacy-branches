@@ -4676,6 +4676,9 @@ const char *arm::getARMCPUForMArch(const ArgList &Args,
     if (MArch == "armv6")
       return "arm1176jzf-s";
   }
+  
+  if (MArch == "arm64")
+    MArch = "armv7s";
 
   const char *result = llvm::StringSwitch<const char *>(MArch)
     .Cases("armv2", "armv2a","arm2")
@@ -4805,6 +4808,7 @@ llvm::Triple::ArchType darwin::getArchTypeForMachOArchName(StringRef Str) {
     .Cases("arm", "armv4t", "armv5", "armv6", "armv6m", llvm::Triple::arm)
     .Cases("armv7", "armv7em", "armv7k", "armv7m", llvm::Triple::arm)
     .Cases("armv7s", "xscale", llvm::Triple::arm)
+    .Case("arm64", llvm::Triple::arm)
     .Case("r600", llvm::Triple::r600)
     .Case("nvptx", llvm::Triple::nvptx)
     .Case("nvptx64", llvm::Triple::nvptx64)
