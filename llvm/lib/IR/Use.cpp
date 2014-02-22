@@ -91,14 +91,16 @@ Use *Use::initTags(Use * const Start, Use *Stop) {
   while (Done < 20) {
     if (Start == Stop--)
       return Start;
+#   define TAG_AT(N, TAG) ((unsigned long)TAG << (N * 2))
     static const unsigned long tags =
-      (unsigned long)fullStopTag << 38 | (unsigned long)oneDigitTag << 36 | (unsigned long)stopTag << 34 |
-      (unsigned long)oneDigitTag << 32 | oneDigitTag << 30 | stopTag << 28 |
-      zeroDigitTag << 26 | oneDigitTag << 24 | oneDigitTag << 22 |
-      stopTag << 20 | zeroDigitTag << 18 | oneDigitTag << 16 |
-      zeroDigitTag << 14 | oneDigitTag << 12 | stopTag << 10 |
-      oneDigitTag << 8 | oneDigitTag << 6 | oneDigitTag << 4 |
-      oneDigitTag << 2 | stopTag;
+      TAG_AT(19, fullStopTag) | TAG_AT(18, oneDigitTag) | TAG_AT(17, stopTag) |
+      TAG_AT(16, oneDigitTag) | TAG_AT(15, oneDigitTag) | TAG_AT(14, stopTag) |
+      TAG_AT(13, zeroDigitTag) | TAG_AT(12, oneDigitTag) | TAG_AT(11, oneDigitTag) |
+      TAG_AT(10, stopTag) | TAG_AT(9, zeroDigitTag) | TAG_AT(8, oneDigitTag) |
+      TAG_AT(7, zeroDigitTag) | TAG_AT(6, oneDigitTag) | TAG_AT(5, stopTag) |
+      TAG_AT(4, oneDigitTag) | TAG_AT(3, oneDigitTag) | TAG_AT(2, oneDigitTag) |
+      TAG_AT(1, oneDigitTag) | TAG_AT(0, stopTag);
+#   undef TAG_AT
     new(Stop) Use(PrevPtrTag((tags >> (19 - Done++) * 2) & 0x3));
   }
 
