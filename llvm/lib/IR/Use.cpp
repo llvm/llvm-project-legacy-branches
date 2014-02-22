@@ -88,7 +88,7 @@ const Use *Use::getImpliedUser() const {
 
 Use *Use::initTags(Use * const Start, Use *Stop) {
   ptrdiff_t Done = 0;
-  while (Done < 20) {
+  while (Done < 26) {
     if (Start == Stop--)
       return Start;
 #   define TAG_AT(N, TAG) ((unsigned long)(TAG) << ((N) * 2))
@@ -99,7 +99,9 @@ Use *Use::initTags(Use * const Start, Use *Stop) {
       TAG_AT(9, stopTag) | TAG_AT(10, zeroDigitTag) | TAG_AT(11, oneDigitTag) |
       TAG_AT(12, zeroDigitTag) | TAG_AT(13, oneDigitTag) | TAG_AT(14, stopTag) |
       TAG_AT(15, oneDigitTag) | TAG_AT(16, oneDigitTag) | TAG_AT(17, oneDigitTag) |
-      TAG_AT(18, oneDigitTag) | TAG_AT(19, stopTag);
+      TAG_AT(18, oneDigitTag) | TAG_AT(19, stopTag) |
+      TAG_AT(20, zeroDigitTag) | TAG_AT(21, zeroDigitTag) | TAG_AT(22, oneDigitTag) |
+      TAG_AT(23, zeroDigitTag) | TAG_AT(24, oneDigitTag) | TAG_AT(25, stopTag);
 #   undef TAG_AT
     new(Stop) Use(PrevPtrTag((tags >> Done++ * 2) & 0x3));
   }
