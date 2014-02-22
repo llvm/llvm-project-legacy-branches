@@ -24,17 +24,17 @@ Constant *char2constant(char c) {
 }
 
 
-TEST(WaymarkTest, NativeArray) {
-  static uint8_t tail[22] = "s02s33s30y2y0s1x0syxS";
-  Value * values[22];
-  std::transform(tail, tail + 22, values, char2constant);
+TEST(WaymarkTest, CallWithManyArgs) {
+  static uint8_t tail[24] = "qrs101qrs30qrs13qrs3rsS";
+  Value * values[23];
+  std::transform(tail, tail + 23, values, char2constant);
   FunctionType *FT = FunctionType::get(Type::getVoidTy(getGlobalContext()), true);
   Function *F = Function::Create(FT, GlobalValue::ExternalLinkage);
   const CallInst *A = CallInst::Create(F, makeArrayRef(values));
   ASSERT_NE(A, (const CallInst*)NULL);
-  ASSERT_EQ(1U + 22, A->getNumOperands());
+  ASSERT_EQ(1U + 23, A->getNumOperands());
   const Use *U = &A->getOperandUse(0);
-  const Use *Ue = &A->getOperandUse(22);
+  const Use *Ue = &A->getOperandUse(23);
   for (; U != Ue; ++U)
   {
     EXPECT_EQ(A, U->getUser());
