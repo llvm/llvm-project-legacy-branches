@@ -91,17 +91,17 @@ Use *Use::initTags(Use * const Start, Use *Stop) {
   while (Done < 26) {
     if (Start == Stop--)
       return Start;
-#   define TAG_AT(N, TAG) ((unsigned long)(TAG) << ((N) * 2))
+#   define TAG_AT(N, TAG) ((unsigned long)(TAG ## Tag) << ((N) * 2))
     static const unsigned long tags =
-      TAG_AT(0, fullStopTag) | TAG_AT(1, oneDigitTag) | TAG_AT(2, stopTag) |
-      TAG_AT(3, oneDigitTag) | TAG_AT(4, oneDigitTag) | TAG_AT(5, stopTag) |
-      TAG_AT(6, zeroDigitTag) | TAG_AT(7, oneDigitTag) | TAG_AT(8, oneDigitTag) |
-      TAG_AT(9, stopTag) | TAG_AT(10, zeroDigitTag) | TAG_AT(11, oneDigitTag) |
-      TAG_AT(12, zeroDigitTag) | TAG_AT(13, oneDigitTag) | TAG_AT(14, stopTag) |
-      TAG_AT(15, oneDigitTag) | TAG_AT(16, oneDigitTag) | TAG_AT(17, oneDigitTag) |
-      TAG_AT(18, oneDigitTag) | TAG_AT(19, stopTag) |
-      TAG_AT(20, zeroDigitTag) | TAG_AT(21, zeroDigitTag) | TAG_AT(22, oneDigitTag) |
-      TAG_AT(23, zeroDigitTag) | TAG_AT(24, oneDigitTag) | TAG_AT(25, stopTag);
+      TAG_AT(0, fullStop) | TAG_AT(1, oneDigit) | TAG_AT(2, stop) |
+      TAG_AT(3, oneDigit) | TAG_AT(4, oneDigit) | TAG_AT(5, stop) |
+      TAG_AT(6, zeroDigit) | TAG_AT(7, oneDigit) | TAG_AT(8, oneDigit) |
+      TAG_AT(9, stop) | TAG_AT(10, zeroDigit) | TAG_AT(11, oneDigit) |
+      TAG_AT(12, zeroDigit) | TAG_AT(13, oneDigit) | TAG_AT(14, stop) |
+      TAG_AT(15, oneDigit) | TAG_AT(16, oneDigit) | TAG_AT(17, oneDigit) |
+      TAG_AT(18, oneDigit) | TAG_AT(19, stop) |
+      TAG_AT(20, zeroDigit) | TAG_AT(21, zeroDigit) | TAG_AT(22, oneDigit) |
+      TAG_AT(23, zeroDigit) | TAG_AT(24, oneDigit) | TAG_AT(25, stop);
 #   undef TAG_AT
     new(Stop) Use(PrevPtrTag((tags >> Done++ * 2) & 0x3));
   }
