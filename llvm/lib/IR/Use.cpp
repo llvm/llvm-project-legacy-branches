@@ -91,7 +91,7 @@ Use *Use::initTags(Use * const Start, Use *Stop) {
   while (Done < 20) {
     if (Start == Stop--)
       return Start;
-#   define TAG_AT(N, TAG) ((unsigned long)TAG << (N * 2))
+#   define TAG_AT(N, TAG) ((unsigned long)(TAG) << ((19 - (N)) * 2))
     static const unsigned long tags =
       TAG_AT(19, fullStopTag) | TAG_AT(18, oneDigitTag) | TAG_AT(17, stopTag) |
       TAG_AT(16, oneDigitTag) | TAG_AT(15, oneDigitTag) | TAG_AT(14, stopTag) |
@@ -101,7 +101,7 @@ Use *Use::initTags(Use * const Start, Use *Stop) {
       TAG_AT(4, oneDigitTag) | TAG_AT(3, oneDigitTag) | TAG_AT(2, oneDigitTag) |
       TAG_AT(1, oneDigitTag) | TAG_AT(0, stopTag);
 #   undef TAG_AT
-    new(Stop) Use(PrevPtrTag((tags >> (19 - Done++) * 2) & 0x3));
+    new(Stop) Use(PrevPtrTag((tags >> Done++ * 2) & 0x3));
   }
 
   ptrdiff_t Count = Done;
