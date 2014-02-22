@@ -123,7 +123,9 @@ public:
   static void zap(Use *Start, const Use *Stop, bool del = false);
 
 private:
-  const Use* getImpliedUser() const;
+  inline const Use *getImpliedUser() const;
+  template <size_t>
+  const Use *getImpliedUser() const;
   template <size_t>
   static Use *newInitTags(Use * const Start, Use *Stop);
 
@@ -152,10 +154,17 @@ private:
 
 // Out-of-class specializations/definitions.
 template<>
-Use * Use::newInitTags<8>(Use * const Start, Use *Stop);
+Use *Use::newInitTags<8>(Use * const Start, Use *Stop);
 
 inline Use * Use::initTags(Use *Start, Use *Stop) {
   return newInitTags<sizeof(Use*)>(Start, Stop);
+}
+
+template<>
+const Use *Use::getImpliedUser<8>() const;
+
+inline const Use *Use::getImpliedUser() const {
+  return getImpliedUser<sizeof(Use*)>();
 }
 
 

@@ -49,7 +49,8 @@ void Use::swap(Use &RHS) {
 //                         Use getImpliedUser Implementation
 //===----------------------------------------------------------------------===//
 
-const Use *Use::getImpliedUser() const {
+template<>
+const Use *Use::getImpliedUser<8>() const {
   const Use *Current = this;
 
   while (true) {
@@ -86,8 +87,8 @@ const Use *Use::getImpliedUser() const {
 //                         Use initTags Implementation
 //===----------------------------------------------------------------------===//
 
-template <>
-Use * Use::newInitTags<8>(Use * const Start, Use *Stop) {
+template<>
+Use *Use::newInitTags<8>(Use * const Start, Use *Stop) {
   ptrdiff_t Done = 0;
   while (Done < 32) {
     if (Start == Stop--)
