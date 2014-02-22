@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define private public
 #include "llvm/IR/Value.h"
 #include <new>
 
