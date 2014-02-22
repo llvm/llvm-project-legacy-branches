@@ -88,7 +88,7 @@ const Use *Use::getImpliedUser<8>() const {
 //===----------------------------------------------------------------------===//
 
 template<>
-Use *Use::newInitTags<8>(Use * const Start, Use *Stop) {
+Use *Use::initTags<8>(Use * const Start, Use *Stop) {
   ptrdiff_t Done = 0;
   while (Done < 32) {
     if (Start == Stop--)

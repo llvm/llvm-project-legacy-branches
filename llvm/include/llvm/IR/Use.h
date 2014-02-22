@@ -127,7 +127,7 @@ private:
   template <size_t>
   const Use *getImpliedUser() const;
   template <size_t>
-  static Use *newInitTags(Use * const Start, Use *Stop);
+  static Use *initTags(Use * const Start, Use *Stop);
 
   Value *Val;
   Use *Next;
@@ -154,10 +154,10 @@ private:
 
 // Out-of-class specializations/definitions.
 template<>
-Use *Use::newInitTags<8>(Use * const Start, Use *Stop);
+Use *Use::initTags<8>(Use * const Start, Use *Stop);
 
 inline Use * Use::initTags(Use *Start, Use *Stop) {
-  return newInitTags<sizeof(Use*)>(Start, Stop);
+  return initTags<sizeof(Use*)>(Start, Stop);
 }
 
 template<>
