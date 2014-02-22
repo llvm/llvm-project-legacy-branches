@@ -87,16 +87,13 @@ const Use *Use::getImpliedUser() const {
 //                         Use initTags Implementation
 //===----------------------------------------------------------------------===//
 
-template <size_t>
-Use *newInitTags(Use * const Start, Use *Stop);
-
 template <>
-Use *newInitTags<8>(Use * const Start, Use *Stop) {
+Use * Use::newInitTags<8>(Use * const Start, Use *Stop) {
   ptrdiff_t Done = 0;
   while (Done < 32) {
     if (Start == Stop--)
       return Start;
-#   define TAG_AT(N, TAG) ((unsigned long)(Use::TAG ## Tag) << ((N) * 2))
+#   define TAG_AT(N, TAG) ((unsigned long)(TAG ## Tag) << ((N) * 2))
     static const unsigned long tags =
       TAG_AT(0, fullStop) | TAG_AT(1, oneDigit) | TAG_AT(2, stop) |
       TAG_AT(3, oneDigit) | TAG_AT(4, oneDigit) | TAG_AT(5, stop) |
@@ -110,28 +107,24 @@ Use *newInitTags<8>(Use * const Start, Use *Stop) {
       TAG_AT(26, zeroDigit) | TAG_AT(27, oneDigit) | TAG_AT(28, zeroDigit) |
       TAG_AT(29, oneDigit) | TAG_AT(30, oneDigit) | TAG_AT(31, stop);
 #   undef TAG_AT
-    new(Stop) Use(Use::PrevPtrTag((tags >> Done++ * 2) & 0x3));
+    new(Stop) Use(PrevPtrTag((tags >> Done++ * 2) & 0x3));
   }
 
   ptrdiff_t Count = Done;
   while (Start != Stop) {
     --Stop;
     if (!Count) {
-      new(Stop) Use(Use::stopTag);
+      new(Stop) Use(stopTag);
       ++Done;
       Count = Done;
     } else {
-      new(Stop) Use(Use::PrevPtrTag(Count & 1));
+      new(Stop) Use(PrevPtrTag(Count & 1));
       Count >>= 1;
       ++Done;
     }
   }
 
   return Start;
-}
-
-Use *Use::initTags(Use * const Start, Use *Stop) {
-  return newInitTags<sizeof(Use*)>(Start, Stop);
 }
 
 //===----------------------------------------------------------------------===//

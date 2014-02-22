@@ -116,7 +116,7 @@ public:
   
   /// initTags - initialize the waymarking tags on an array of Uses, so that
   /// getUser() can find the User from any of those Uses.
-  static Use *initTags(Use *Start, Use *Stop);
+  inline static Use *initTags(Use *Start, Use *Stop);
 
   /// zap - This is used to destroy Use operands when the number of operands of
   /// a User changes.
@@ -124,7 +124,9 @@ public:
 
 private:
   const Use* getImpliedUser() const;
-  
+  template <size_t>
+  static Use *newInitTags(Use * const Start, Use *Stop);
+
   Value *Val;
   Use *Next;
   PointerIntPair<Use**, 2, PrevPtrTag> Prev;
@@ -146,6 +148,16 @@ private:
 
   friend class Value;
 };
+
+
+// Out-of-class specializations/definitions.
+template<>
+Use * Use::newInitTags<8>(Use * const Start, Use *Stop);
+
+inline Use * Use::initTags(Use *Start, Use *Stop) {
+  return newInitTags<sizeof(Use*)>(Start, Stop);
+}
+
 
 // simplify_type - Allow clients to treat uses just like values when using
 // casting operators.
