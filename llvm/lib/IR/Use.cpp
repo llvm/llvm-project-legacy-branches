@@ -49,13 +49,13 @@ void Use::swap(Use &RHS) {
 //                         Use getImpliedUser Implementation
 //===----------------------------------------------------------------------===//
 
+
 template<>
-const Use *Use::getImpliedUser<8>() const {
+const Use *Use::getImpliedUser<4>() const {
   const Use *Current = this;
 
   while (true) {
-    unsigned Tag = (Current++)->Prev.getInt();
-    switch (Tag) {
+    switch (unsigned Tag = (Current++)->Prev.getInt()) {
       case zeroDigitTag:
       case oneDigitTag:
         continue;
@@ -64,8 +64,7 @@ const Use *Use::getImpliedUser<8>() const {
         ++Current;
         ptrdiff_t Offset = 1;
         while (true) {
-          unsigned Tag = Current->Prev.getInt();
-          switch (Tag) {
+          switch (unsigned Tag = Current->Prev.getInt()) {
             case zeroDigitTag:
             case oneDigitTag:
               ++Current;
@@ -79,6 +78,50 @@ const Use *Use::getImpliedUser<8>() const {
 
       case fullStopTag:
         return Current;
+    }
+  }
+}
+
+
+enum Tag3 {
+  fullStopTag3,
+  stopTag3,
+  skipStopTag3,
+  skip2StopTag3,
+  zeroZeroDigitTag3,
+  zeroOneDigitTag3,
+  oneZeroDigitTag3,
+  oneOneDigitTag3
+};
+
+template<>
+const Use *Use::getImpliedUser<8>() const {
+  const Use *Current = this;
+
+  while (true) {
+    switch (unsigned Tag = Current->Prev.getInt()) {
+      case fullStopTag3: return Current + 1;
+      case stopTag3:
+      case skipStopTag3:
+      case skip2StopTag3: {
+        Current += Tag;
+        ptrdiff_t Offset = 0;
+        while (true) {
+          switch (unsigned Tag = Current->Prev.getInt()) {
+            case zeroZeroDigitTag3:
+            case zeroOneDigitTag3:
+            case oneZeroDigitTag3:
+            case oneOneDigitTag3:
+              ++Current;
+              Offset = (Offset << 2) | (Tag & 0x3);
+              continue;
+            default:
+              return Current + Offset;
+          }
+        }
+      }
+
+      default: Current += 3; continue;
     }
   }
 }
