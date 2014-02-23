@@ -131,13 +131,13 @@ const Use *Use::getImpliedUser<8>() const {
 //===----------------------------------------------------------------------===//
 
 template<>
-Use *Use::initTags<8>(Use * const Start, Use *Stop) {
+Use *Use::initTags<4>(Use * const Start, Use *Stop) {
   ptrdiff_t Done = 0;
   while (Done < 32) {
     if (Start == Stop--)
       return Start;
-#   define TAG_AT(N, TAG) ((unsigned long)(TAG ## Tag) << ((N) * 2))
-    static const unsigned long tags =
+#   define TAG_AT(N, TAG) (uintptr_t(TAG ## Tag) << ((N) * 2))
+    static const uintptr_t tags =
       TAG_AT(0, fullStop) | TAG_AT(1, oneDigit) | TAG_AT(2, stop) |
       TAG_AT(3, oneDigit) | TAG_AT(4, oneDigit) | TAG_AT(5, stop) |
       TAG_AT(6, zeroDigit) | TAG_AT(7, oneDigit) | TAG_AT(8, oneDigit) |
@@ -169,6 +169,42 @@ Use *Use::initTags<8>(Use * const Start, Use *Stop) {
 
   return Start;
 }
+
+template<>
+Use *Use::initTags<8>(Use * const Start, Use *Stop) {
+  ptrdiff_t Done = 0;
+  while (Done < 17) {
+    if (Start == Stop--)
+      return Start;
+#   define TAG_AT(N, TAG) (uintptr_t(TAG ## Tag3) << ((N) * 3))
+    static const uintptr_t tags =
+      TAG_AT(0, fullStop) | TAG_AT(1, stop) | TAG_AT(2, skipStop) |
+      TAG_AT(3, oneOneDigit) | TAG_AT(4, stop) | TAG_AT(5, skipStop) |
+      TAG_AT(6, skip2Stop) | TAG_AT(7, oneOneDigit) | TAG_AT(8, zeroOneDigit) |
+      TAG_AT(9, stop) | TAG_AT(10, skipStop) | TAG_AT(11, skip2Stop) |
+      TAG_AT(12, zeroZeroDigit) | TAG_AT(13, oneOneDigit) | TAG_AT(14, stop) |
+      TAG_AT(15, skipStop) | TAG_AT(16, skip2Stop);
+#   undef TAG_AT
+    new(Stop) Use(PrevPtrTag((tags >> Done++ * 2) & 0x3));
+  }
+
+  ptrdiff_t Count = Done;
+  while (Start != Stop) {
+    --Stop;
+    if (!Count) {
+      new(Stop) Use(stopTag3);
+      ++Done;
+      Count = Done;
+    } else {
+      new(Stop) Use(Tag3(zeroOneDigitTag3 | (Count & 0x3)));
+      Count >>= 2;
+      ++Done;
+    }
+  }
+
+  return Start;
+}
+
 
 //===----------------------------------------------------------------------===//
 //                         Use zap Implementation
