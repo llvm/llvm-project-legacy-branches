@@ -49,7 +49,7 @@ void Use::swap(Use &RHS) {
 //                         Use getImpliedUser Implementation
 //===----------------------------------------------------------------------===//
 
-
+/* NEED SFINAE tricks: http://stackoverflow.com/questions/14603163/how-to-use-sfinae-for-selecting-constructors
 template<>
 const Use *Use::getImpliedUser<4>() const {
   const Use *Current = this;
@@ -93,6 +93,7 @@ enum Tag3 {
   oneZeroDigitTag3,
   oneOneDigitTag3
 };
+*/
 
 template<>
 const Use *Use::getImpliedUser<8>() const {
@@ -130,6 +131,7 @@ const Use *Use::getImpliedUser<8>() const {
 //                         Use initTags Implementation
 //===----------------------------------------------------------------------===//
 
+/*
 template<>
 Use *Use::initTags<4>(Use * const Start, Use *Stop) {
   ptrdiff_t Done = 0;
@@ -169,6 +171,7 @@ Use *Use::initTags<4>(Use * const Start, Use *Stop) {
 
   return Start;
 }
+*/
 
 template<>
 Use *Use::initTags<8>(Use * const Start, Use *Stop) {
@@ -185,7 +188,7 @@ Use *Use::initTags<8>(Use * const Start, Use *Stop) {
       TAG_AT(12, zeroZeroDigit) | TAG_AT(13, oneOneDigit) | TAG_AT(14, stop) |
       TAG_AT(15, skipStop) | TAG_AT(16, skip2Stop);
 #   undef TAG_AT
-    new(Stop) Use(PrevPtrTag((tags >> Done++ * 2) & 0x3));
+    new(Stop) Use(Tag_t((tags >> Done++ * 2) & 0x3));
   }
 
   ptrdiff_t Count = Done;
@@ -195,8 +198,19 @@ Use *Use::initTags<8>(Use * const Start, Use *Stop) {
       new(Stop) Use(stopTag3);
       ++Done;
       Count = Done;
+      if (Start == Stop) return Start;
+      --Stop;
+      new(Stop) Use(skipStopTag3);
+      ++Done;
+      Count = Done;
+      if (Start == Stop) return Start;
+      --Stop;
+      new(Stop) Use(skip2StopTag3);
+      ++Done;
+      Count = Done;
+      if (Start == Stop) return Start;
     } else {
-      new(Stop) Use(Tag3(zeroOneDigitTag3 | (Count & 0x3)));
+      new(Stop) Use(Tag_t(zeroOneDigitTag3 | (Count & 0x3)));
       Count >>= 2;
       ++Done;
     }

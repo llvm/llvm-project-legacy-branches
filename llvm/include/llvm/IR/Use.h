@@ -40,7 +40,7 @@ class Use;
 template<typename>
 struct simplify_type;
 
-// Use** is only 4-byte aligned.
+// Use** is only 4-byte (8-byte on 64-bit archs) aligned.
 template<>
 class PointerLikeTypeTraits<Use**> {
 public:
@@ -48,8 +48,36 @@ public:
   static inline Use **getFromVoidPointer(void *P) {
     return static_cast<Use**>(P);
   }
-  enum { NumLowBitsAvailable = 2 };
+  enum { NumLowBitsAvailable = 2 + (sizeof(Use**) >= 8) };
 };
+
+  //PointerIntPair<Use**, 2 + (sizeof(Use**) >= 8), PrevPtrTag3> Prev;
+template <bool = (sizeof(Use**) >= 8)> struct PrevPointerIntPair;
+
+template <> struct PrevPointerIntPair<false> {
+  enum PrevPtrTag { zeroDigitTag
+                  , oneDigitTag
+                  , stopTag
+                  , fullStopTag };
+  typedef PrevPtrTag Tag_t;
+  typedef PointerIntPair<Use**, 2, PrevPtrTag> Pair;
+};
+
+template <> struct PrevPointerIntPair<true> {
+
+  enum PrevPtrTag3 { fullStopTag3,
+		     stopTag3,
+		     skipStopTag3,
+		     skip2StopTag3,
+		     zeroZeroDigitTag3,
+		     zeroOneDigitTag3,
+		     oneZeroDigitTag3,
+		     oneOneDigitTag3 };
+  typedef PrevPtrTag3 Tag_t;
+  typedef PointerIntPair<Use**, 3, PrevPtrTag3> Pair;
+};
+
+
 
 //===----------------------------------------------------------------------===//
 //                                  Use Class
@@ -57,7 +85,7 @@ public:
 
 /// Use is here to make keeping the "use" list of a Value up-to-date really
 /// easy.
-class Use {
+class Use : private PrevPointerIntPair<> {
 public:
   /// swap - provide a fast substitute to std::swap<Use>
   /// that also works with less standard-compliant compilers
@@ -75,13 +103,25 @@ private:
     if (Val) removeFromList();
   }
 
+  /*
   enum PrevPtrTag { zeroDigitTag
                   , oneDigitTag
                   , stopTag
                   , fullStopTag };
 
+  enum PrevPtrTag3 { fullStopTag3,
+		     stopTag3,
+		     skipStopTag3,
+		     skip2StopTag3,
+		     zeroZeroDigitTag3,
+		     zeroOneDigitTag3,
+		     oneZeroDigitTag3,
+		     oneOneDigitTag3 };
+  template <size_t> struct TagTraits
+  */
+
   /// Constructor
-  Use(PrevPtrTag tag) : Val(0) {
+  Use(PrevPointerIntPair<>::Tag_t tag) : Val(0) {
     Prev.setInt(tag);
   }
 
@@ -114,7 +154,7 @@ public:
   Use *getNext() const { return Next; }
 
   
-  /// initTags - initialize the waymarking tags on an array of Uses, so that
+  /// initTags - Initialize the waymarking tags on an array of Uses, so that
   /// getUser() can find the User from any of those Uses.
   inline static Use *initTags(Use *Start, Use *Stop);
 
@@ -131,7 +171,9 @@ private:
 
   Value *Val;
   Use *Next;
-  PointerIntPair<Use**, 2, PrevPtrTag> Prev;
+  //PointerIntPair<Use**, 2 + (sizeof(Use**) >= 8), PrevPtrTag3> Prev;
+  //PrevPointerIntPair<(sizeof(Use**) >= 8)>::Pair Prev;
+  PrevPointerIntPair<>::Pair Prev;
 
   void setPrev(Use **NewPrev) {
     Prev.setPointer(NewPrev);
