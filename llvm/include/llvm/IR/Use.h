@@ -157,14 +157,14 @@ template<>
 Use *Use::initTags<8>(Use * const Start, Use *Stop);
 
 inline Use * Use::initTags(Use *Start, Use *Stop) {
-  return initTags<sizeof(Use*)>(Start, Stop);
+  return initTags<sizeof(Use**)>(Start, Stop);
 }
 
 template<>
 const Use *Use::getImpliedUser<8>() const;
 
 inline const Use *Use::getImpliedUser() const {
-  return getImpliedUser<sizeof(Use*)>();
+  return getImpliedUser<sizeof(Use**)>();
 }
 
 
