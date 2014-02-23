@@ -81,18 +81,6 @@ const Use *Use::getImpliedUser<4>() const {
     }
   }
 }
-
-
-enum Tag3 {
-  fullStopTag3,
-  stopTag3,
-  skipStopTag3,
-  skip2StopTag3,
-  zeroZeroDigitTag3,
-  zeroOneDigitTag3,
-  oneZeroDigitTag3,
-  oneOneDigitTag3
-};
 */
 
 template<>

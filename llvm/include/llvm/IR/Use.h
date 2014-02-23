@@ -51,7 +51,7 @@ public:
   enum { NumLowBitsAvailable = 2 + (sizeof(Use**) >= 8) };
 };
 
-  //PointerIntPair<Use**, 2 + (sizeof(Use**) >= 8), PrevPtrTag3> Prev;
+// Smart baseclass to Use, that provides necessary discriminators.
 template <bool = (sizeof(Use**) >= 8)> struct PrevPointerIntPair;
 
 template <> struct PrevPointerIntPair<false> {
@@ -64,7 +64,6 @@ template <> struct PrevPointerIntPair<false> {
 };
 
 template <> struct PrevPointerIntPair<true> {
-
   enum PrevPtrTag3 { fullStopTag3,
 		     stopTag3,
 		     skipStopTag3,
@@ -76,8 +75,6 @@ template <> struct PrevPointerIntPair<true> {
   typedef PrevPtrTag3 Tag_t;
   typedef PointerIntPair<Use**, 3, PrevPtrTag3> Pair;
 };
-
-
 
 //===----------------------------------------------------------------------===//
 //                                  Use Class
@@ -102,23 +99,6 @@ private:
   ~Use() {
     if (Val) removeFromList();
   }
-
-  /*
-  enum PrevPtrTag { zeroDigitTag
-                  , oneDigitTag
-                  , stopTag
-                  , fullStopTag };
-
-  enum PrevPtrTag3 { fullStopTag3,
-		     stopTag3,
-		     skipStopTag3,
-		     skip2StopTag3,
-		     zeroZeroDigitTag3,
-		     zeroOneDigitTag3,
-		     oneZeroDigitTag3,
-		     oneOneDigitTag3 };
-  template <size_t> struct TagTraits
-  */
 
   /// Constructor
   Use(PrevPointerIntPair<>::Tag_t tag) : Val(0) {
@@ -171,8 +151,6 @@ private:
 
   Value *Val;
   Use *Next;
-  //PointerIntPair<Use**, 2 + (sizeof(Use**) >= 8), PrevPtrTag3> Prev;
-  //PrevPointerIntPair<(sizeof(Use**) >= 8)>::Pair Prev;
   PrevPointerIntPair<>::Pair Prev;
 
   void setPrev(Use **NewPrev) {
