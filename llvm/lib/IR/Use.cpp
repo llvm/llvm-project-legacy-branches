@@ -180,16 +180,13 @@ Use *Use::initTags<8>(Use * const Start, Use *Stop) {
   }
 
   ptrdiff_t Count = Done;
-  while (Start != Stop) {
-    --Stop;
+  while (Start != Stop--) {
     if (!Count) {
       new(Stop) Use(stopTag3);
       ++Done;
-      Count = Done;
       if (Start == Stop--) return Start;
       new(Stop) Use(skipStopTag3);
       ++Done;
-      Count = Done;
       if (Start == Stop--) return Start;
       new(Stop) Use(skip2StopTag3);
       ++Done;
