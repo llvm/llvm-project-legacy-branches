@@ -76,10 +76,8 @@ const Use *Use::getImpliedUser<false>() const {
         }
       }
 
-      case T::fullStopTag:
+      default: // can only be T::fullStopTag
         return Current;
-
-      default:; // absorb Tag3 values to suppress warnings
     }
   }
 }
@@ -87,22 +85,23 @@ const Use *Use::getImpliedUser<false>() const {
 
 template<>
 const Use *Use::getImpliedUser<true>() const {
+  typedef PrevPointerIntPair<true> T;
   const Use *Current = this;
 
   while (true) {
     switch (unsigned Tag = Current->Prev.getInt()) {
-      case fullStopTag3: return Current + 1;
-      case stopTag3:
-      case skipStopTag3:
-      case skip2StopTag3: {
+      case T::fullStopTag3: return Current + 1;
+      case T::stopTag3:
+      case T::skipStopTag3:
+      case T::skip2StopTag3: {
         Current += Tag;
         ptrdiff_t Offset = 0;
         while (true) {
           switch (unsigned Tag = Current->Prev.getInt()) {
-            case zeroZeroDigitTag3:
-            case zeroOneDigitTag3:
-            case oneZeroDigitTag3:
-            case oneOneDigitTag3:
+            case T::zeroZeroDigitTag3:
+            case T::zeroOneDigitTag3:
+            case T::oneZeroDigitTag3:
+            case T::oneOneDigitTag3:
               ++Current;
               Offset = (Offset << 2) | (Tag & 0x3);
               continue;
@@ -165,11 +164,12 @@ Use *Use::initTags<false>(Use * const Start, Use *Stop) {
 
 template<>
 Use *Use::initTags<true>(Use * const Start, Use *Stop) {
+  typedef PrevPointerIntPair<true> T;
   ptrdiff_t Done = 0;
   while (Done < 17) {
     if (Start == Stop--)
       return Start;
-#   define TAG_AT(N, TAG) (uintptr_t(TAG ## Tag3) << ((N) * 3))
+#   define TAG_AT(N, TAG) (uintptr_t(T::TAG ## Tag3) << ((N) * 3))
     static const uintptr_t tags =
       TAG_AT(0, fullStop) | TAG_AT(1, stop) | TAG_AT(2, skipStop) |
       TAG_AT(3, oneOneDigit) | TAG_AT(4, stop) | TAG_AT(5, skipStop) |
@@ -184,18 +184,18 @@ Use *Use::initTags<true>(Use * const Start, Use *Stop) {
   ptrdiff_t Count = Done;
   while (Start != Stop--) {
     if (!Count) {
-      new(Stop) Use(stopTag3);
+      new(Stop) Use(T::stopTag3);
       ++Done;
       if (Start == Stop--) return Start;
-      new(Stop) Use(skipStopTag3);
+      new(Stop) Use(T::skipStopTag3);
       ++Done;
       if (Start == Stop--) return Start;
-      new(Stop) Use(skip2StopTag3);
+      new(Stop) Use(T::skip2StopTag3);
       ++Done;
       if (Start == Stop) return Start;
       Count = Done;
     } else {
-      new(Stop) Use(Tag_t(zeroZeroDigitTag3 | (Count & 0x3)));
+      new(Stop) Use(Tag_t(T::zeroZeroDigitTag3 | (Count & 0x3)));
       Count >>= 2;
       ++Done;
     }
@@ -203,7 +203,6 @@ Use *Use::initTags<true>(Use * const Start, Use *Stop) {
 
   return Start;
 }
-
 
 //===----------------------------------------------------------------------===//
 //                         Use zap Implementation
