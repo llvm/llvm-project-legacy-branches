@@ -63,7 +63,7 @@ void *User::operator new(size_t s, unsigned Us) {
   User *Obj = reinterpret_cast<User*>(End);
   Obj->OperandList = Start;
   Obj->NumOperands = Us;
-  Use::initTags(Start, End);
+  if (Us) Use::initTags(Start, End);
   return Obj;
 }
 
