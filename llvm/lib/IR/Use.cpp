@@ -49,24 +49,24 @@ void Use::swap(Use &RHS) {
 //                         Use getImpliedUser Implementation
 //===----------------------------------------------------------------------===//
 
-/* NEED SFINAE tricks: http://stackoverflow.com/questions/14603163/how-to-use-sfinae-for-selecting-constructors
 template<>
-const Use *Use::getImpliedUser<4>() const {
+const Use *Use::getImpliedUser<false>() const {
+  typedef PrevPointerIntPair<false> T;
   const Use *Current = this;
 
   while (true) {
-    switch (unsigned Tag = (Current++)->Prev.getInt()) {
-      case zeroDigitTag:
-      case oneDigitTag:
+    switch ((Current++)->Prev.getInt()) {
+      case T::zeroDigitTag:
+      case T::oneDigitTag:
         continue;
 
-      case stopTag: {
+      case T::stopTag: {
         ++Current;
         ptrdiff_t Offset = 1;
         while (true) {
           switch (unsigned Tag = Current->Prev.getInt()) {
-            case zeroDigitTag:
-            case oneDigitTag:
+            case T::zeroDigitTag:
+            case T::oneDigitTag:
               ++Current;
               Offset = (Offset << 1) + Tag;
               continue;
@@ -76,15 +76,17 @@ const Use *Use::getImpliedUser<4>() const {
         }
       }
 
-      case fullStopTag:
+      case T::fullStopTag:
         return Current;
+
+      default:; // absorb Tag3 values to suppress warnings
     }
   }
 }
-*/
+
 
 template<>
-const Use *Use::getImpliedUser<8>() const {
+const Use *Use::getImpliedUser<true>() const {
   const Use *Current = this;
 
   while (true) {
@@ -119,14 +121,14 @@ const Use *Use::getImpliedUser<8>() const {
 //                         Use initTags Implementation
 //===----------------------------------------------------------------------===//
 
-/*
+
 template<>
-Use *Use::initTags<4>(Use * const Start, Use *Stop) {
+Use *Use::initTags<false>(Use * const Start, Use *Stop) {
   ptrdiff_t Done = 0;
   while (Done < 32) {
     if (Start == Stop--)
       return Start;
-#   define TAG_AT(N, TAG) (uintptr_t(TAG ## Tag) << ((N) * 2))
+#   define TAG_AT(N, TAG) (uintptr_t(PrevPointerIntPair<false>::TAG ## Tag) << ((N) * 2))
     static const uintptr_t tags =
       TAG_AT(0, fullStop) | TAG_AT(1, oneDigit) | TAG_AT(2, stop) |
       TAG_AT(3, oneDigit) | TAG_AT(4, oneDigit) | TAG_AT(5, stop) |
@@ -140,18 +142,18 @@ Use *Use::initTags<4>(Use * const Start, Use *Stop) {
       TAG_AT(26, zeroDigit) | TAG_AT(27, oneDigit) | TAG_AT(28, zeroDigit) |
       TAG_AT(29, oneDigit) | TAG_AT(30, oneDigit) | TAG_AT(31, stop);
 #   undef TAG_AT
-    new(Stop) Use(PrevPtrTag((tags >> Done++ * 2) & 0x3));
+    new(Stop) Use(PrevPointerIntPair<false>::Tag_t((tags >> Done++ * 2) & 0x3));
   }
 
   ptrdiff_t Count = Done;
   while (Start != Stop) {
     --Stop;
     if (!Count) {
-      new(Stop) Use(stopTag);
+      new(Stop) Use(PrevPointerIntPair<false>::stopTag);
       ++Done;
       Count = Done;
     } else {
-      new(Stop) Use(PrevPtrTag(Count & 1));
+      new(Stop) Use(PrevPointerIntPair<false>::PrevPtrTag(Count & 1));
       Count >>= 1;
       ++Done;
     }
@@ -159,10 +161,10 @@ Use *Use::initTags<4>(Use * const Start, Use *Stop) {
 
   return Start;
 }
-*/
+
 
 template<>
-Use *Use::initTags<8>(Use * const Start, Use *Stop) {
+Use *Use::initTags<true>(Use * const Start, Use *Stop) {
   ptrdiff_t Done = 0;
   while (Done < 17) {
     if (Start == Stop--)

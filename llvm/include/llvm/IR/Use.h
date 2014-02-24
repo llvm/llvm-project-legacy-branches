@@ -59,19 +59,21 @@ template <> struct PrevPointerIntPair<false> {
                   , oneDigitTag
                   , stopTag
                   , fullStopTag };
+  enum { threeBitTags = false };
   typedef PrevPtrTag Tag_t;
   typedef PointerIntPair<Use**, 2, PrevPtrTag> Pair;
 };
 
 template <> struct PrevPointerIntPair<true> {
-  enum PrevPtrTag3 { fullStopTag3,
-		     stopTag3,
-		     skipStopTag3,
-		     skip2StopTag3,
-		     zeroZeroDigitTag3,
-		     zeroOneDigitTag3,
-		     oneZeroDigitTag3,
-		     oneOneDigitTag3 };
+  enum PrevPtrTag3 { fullStopTag3
+                   , stopTag3
+                   , skipStopTag3
+                   , skip2StopTag3
+                   , zeroZeroDigitTag3
+                   , zeroOneDigitTag3
+                   , oneZeroDigitTag3
+                   , oneOneDigitTag3 };
+  enum { threeBitTags = true };
   typedef PrevPtrTag3 Tag_t;
   typedef PointerIntPair<Use**, 3, PrevPtrTag3> Pair;
 };
@@ -104,6 +106,8 @@ private:
   Use(PrevPointerIntPair<>::Tag_t tag) : Val(0) {
     Prev.setInt(tag);
   }
+
+  Use(PrevPointerIntPair<!threeBitTags>::Tag_t) {}
 
 public:
   /// Normally Use will just implicitly convert to a Value* that it holds.
@@ -144,9 +148,9 @@ public:
 
 private:
   inline const Use *getImpliedUser() const;
-  template <size_t>
+  template <bool>
   const Use *getImpliedUser() const;
-  template <size_t>
+  template <bool>
   static Use *initTags(Use * const Start, Use *Stop);
 
   Value *Val;
@@ -174,17 +178,21 @@ private:
 
 // Out-of-class specializations/definitions.
 template<>
-Use *Use::initTags<8>(Use * const Start, Use *Stop);
+Use *Use::initTags<false>(Use * const Start, Use *Stop);
+template<>
+Use *Use::initTags<true>(Use * const Start, Use *Stop);
 
 inline Use * Use::initTags(Use *Start, Use *Stop) {
-  return initTags<sizeof(Use**)>(Start, Stop);
+  return initTags<threeBitTags>(Start, Stop);
 }
 
 template<>
-const Use *Use::getImpliedUser<8>() const;
+const Use *Use::getImpliedUser<false>() const;
+template<>
+const Use *Use::getImpliedUser<true>() const;
 
 inline const Use *Use::getImpliedUser() const {
-  return getImpliedUser<sizeof(Use**)>();
+  return getImpliedUser<threeBitTags>();
 }
 
 
