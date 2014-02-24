@@ -176,7 +176,7 @@ Use *Use::initTags<8>(Use * const Start, Use *Stop) {
       TAG_AT(12, zeroZeroDigit) | TAG_AT(13, oneOneDigit) | TAG_AT(14, stop) |
       TAG_AT(15, skipStop) | TAG_AT(16, skip2Stop);
 #   undef TAG_AT
-    new(Stop) Use(Tag_t((tags >> Done++ * 2) & 0x3));
+    new(Stop) Use(Tag_t((tags >> Done++ * 3) & 0x7));
   }
 
   ptrdiff_t Count = Done;
@@ -198,7 +198,7 @@ Use *Use::initTags<8>(Use * const Start, Use *Stop) {
       Count = Done;
       if (Start == Stop) return Start;
     } else {
-      new(Stop) Use(Tag_t(zeroOneDigitTag3 | (Count & 0x3)));
+      new(Stop) Use(Tag_t(zeroZeroDigitTag3 | (Count & 0x3)));
       Count >>= 2;
       ++Done;
     }
