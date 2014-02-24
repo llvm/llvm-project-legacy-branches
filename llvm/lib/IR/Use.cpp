@@ -105,12 +105,12 @@ const Use *Use::getImpliedUser<8>() const {
               Offset = (Offset << 2) | (Tag & 0x3);
               continue;
             default:
-              return Current + Offset;
+              return Current + Offset + (Offset == 0);
           }
         }
       }
 
-      default: Current += 3; continue;
+      default: Current += 3;
     }
   }
 }
@@ -186,17 +186,15 @@ Use *Use::initTags<8>(Use * const Start, Use *Stop) {
       new(Stop) Use(stopTag3);
       ++Done;
       Count = Done;
-      if (Start == Stop) return Start;
-      --Stop;
+      if (Start == Stop--) return Start;
       new(Stop) Use(skipStopTag3);
       ++Done;
       Count = Done;
-      if (Start == Stop) return Start;
-      --Stop;
+      if (Start == Stop--) return Start;
       new(Stop) Use(skip2StopTag3);
       ++Done;
-      Count = Done;
       if (Start == Stop) return Start;
+      Count = Done;
     } else {
       new(Stop) Use(Tag_t(zeroZeroDigitTag3 | (Count & 0x3)));
       Count >>= 2;
