@@ -1,3 +1,0 @@
-module B {
-  private header "b.h"
-}
