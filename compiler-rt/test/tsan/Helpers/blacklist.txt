@@ -1,0 +1,2 @@
+fun:*Blacklisted_Thread2*
+fun:*CallTouchGlobal*
