@@ -164,8 +164,7 @@ Use *Use::initTags<false>(Use * const Start, Use *Stop) {
 
 template<>
 Use *Use::initTags<true>(Use * const Start, Use *Stop) {
-# define static_assert(COND) typedef char dummy[(COND) ? 1 : -1]
-  static_assert(sizeof(Use) == 3*sizeof(Use**));
+  static_assert(sizeof(Use) == 3 * sizeof(Use**), "Use should have three pointers");
   typedef PrevPointerIntPair<true> T;
   ptrdiff_t Done = 0;
   while (Done < 17) {
