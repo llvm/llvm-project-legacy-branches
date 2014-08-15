@@ -51,7 +51,7 @@ public:
   enum { NumLowBitsAvailable = 2 + (sizeof(Use**) >= 8) };
 };
 
-// Smart baseclass to Use, that provides necessary discriminators.
+// Smart baseclass to Use that provides necessary discriminators.
 template <bool = (sizeof(Use**) >= 8)> struct PrevPointerIntPair;
 
 template <> struct PrevPointerIntPair<false> {
