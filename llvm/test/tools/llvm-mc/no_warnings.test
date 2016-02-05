@@ -1,5 +1,0 @@
-# RUN: llvm-mc --no-warn %s 2>&1 | FileCheck %s
-# XFAIL: hexagon
-
-# CHECK-NOT: warning:
-.warning
