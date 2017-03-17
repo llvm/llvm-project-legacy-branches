@@ -1,0 +1,10 @@
+---
+MainSourceFile:     source2.cpp
+Diagnostics:
+  - DiagnosticName: test-basic
+    Replacements:
+      - FilePath:        $(path)/basic.h
+        Offset:          148
+        Length:          0
+        ReplacementText: 'override '
+...
