@@ -1,0 +1,76 @@
+add_lldb_library(lldbCore
+  Address.cpp
+  AddressRange.cpp
+  AddressResolver.cpp
+  AddressResolverFileLine.cpp
+  AddressResolverName.cpp
+  ArchSpec.cpp
+  Broadcaster.cpp
+  Communication.cpp
+  Connection.cpp
+  Debugger.cpp
+  Disassembler.cpp
+  DumpDataExtractor.cpp
+  DynamicLoader.cpp
+  EmulateInstruction.cpp
+  Event.cpp
+  FileLineResolver.cpp
+  FileSpecList.cpp
+  FormatEntity.cpp
+  IOHandler.cpp
+  Listener.cpp
+  Mangled.cpp
+  Module.cpp
+  ModuleChild.cpp
+  ModuleList.cpp
+  Opcode.cpp
+  PluginManager.cpp
+  RegisterValue.cpp
+  Scalar.cpp
+  SearchFilter.cpp
+  Section.cpp
+  SourceManager.cpp
+  State.cpp
+  StreamAsynchronousIO.cpp
+  StreamFile.cpp
+  StructuredData.cpp
+  Timer.cpp
+  UserSettingsController.cpp
+  Value.cpp
+  ValueObject.cpp
+  ValueObjectCast.cpp
+  ValueObjectChild.cpp
+  ValueObjectConstResult.cpp
+  ValueObjectConstResultCast.cpp
+  ValueObjectConstResultChild.cpp
+  ValueObjectConstResultImpl.cpp
+  ValueObjectDynamicValue.cpp
+  ValueObjectList.cpp
+  ValueObjectMemory.cpp
+  ValueObjectRegister.cpp
+  ValueObjectSyntheticFilter.cpp
+  ValueObjectVariable.cpp
+
+  LINK_LIBS
+    clangAST
+    lldbBreakpoint
+    lldbDataFormatters
+    lldbExpression
+    lldbHost
+    lldbInterpreter
+    lldbSymbol
+    lldbTarget
+    lldbUtility
+    lldbPluginProcessUtility
+    lldbPluginCPlusPlusLanguage
+    lldbPluginObjCLanguage
+    lldbPluginObjectFileJIT
+
+  LINK_COMPONENTS
+    Support
+    Demangle
+  )
+
+# Needed to properly resolve references in a debug build.
+# TODO: Remove once we have better layering
+set_target_properties(lldbCore PROPERTIES LINK_INTERFACE_MULTIPLICITY 4)
