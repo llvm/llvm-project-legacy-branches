@@ -1,4 +1,0 @@
-add_subdirectory(AddressSanitizer)
-add_subdirectory(ThreadSanitizer)
-add_subdirectory(UndefinedBehaviorSanitizer)
-add_subdirectory(MainThreadChecker)
