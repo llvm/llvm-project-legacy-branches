@@ -22,7 +22,6 @@
 #include "lldb/Core/FileSpecList.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
-#include "lldb/Host/FileSpec.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandCompletions.h"
@@ -32,6 +31,8 @@
 #include "lldb/Symbol/Variable.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/CleanUp.h"
+#include "lldb/Utility/FileSpec.h"
+#include "lldb/Utility/StreamString.h"
 #include "lldb/Utility/TildeExpressionResolver.h"
 
 #include "llvm/ADT/SmallString.h"
@@ -123,7 +124,8 @@ static int DiskFilesOrDirectories(const llvm::Twine &partial_name,
 
   if (CompletionBuffer.startswith("~")) {
     llvm::StringRef Buffer(CompletionBuffer);
-    size_t FirstSep = Buffer.find_if(path::is_separator);
+    size_t FirstSep =
+        Buffer.find_if([](char c) { return path::is_separator(c); });
 
     llvm::StringRef Username = Buffer.take_front(FirstSep);
     llvm::StringRef Remainder;
@@ -174,7 +176,10 @@ static int DiskFilesOrDirectories(const llvm::Twine &partial_name,
   if (PartialItem == ".")
     PartialItem = llvm::StringRef();
 
-  assert(!SearchDir.empty());
+  if (SearchDir.empty()) {
+    llvm::sys::fs::current_path(Storage);
+    SearchDir = Storage;
+  }
   assert(!PartialItem.contains(path::get_separator()));
 
   // SearchDir now contains the directory to search in, and Prefix contains the
@@ -194,14 +199,14 @@ static int DiskFilesOrDirectories(const llvm::Twine &partial_name,
 
     // We have a match.
 
-    fs::file_status st;
-    if ((EC = Entry.status(st)))
+    llvm::ErrorOr<fs::basic_file_status> st = Entry.status();
+    if (!st)
       continue;
 
     // If it's a symlink, then we treat it as a directory as long as the target
     // is a directory.
-    bool is_dir = fs::is_directory(st);
-    if (fs::is_symlink_file(st)) {
+    bool is_dir = fs::is_directory(*st);
+    if (fs::is_symlink_file(*st)) {
       fs::file_status target_st;
       if (!fs::status(Entry.path(), target_st))
         is_dir = fs::is_directory(target_st);
