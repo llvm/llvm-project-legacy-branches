@@ -1371,10 +1371,9 @@ class Base(unittest2.TestCase):
         self.dumpSessionInfo()."""
         arch = self.getArchitecture()
         comp = self.getCompiler()
+        option_str = ""
         if arch:
             option_str = "-A " + arch
-        else:
-            option_str = ""
         if comp:
             option_str += " -C " + comp
         return option_str
@@ -1511,6 +1510,7 @@ class Base(unittest2.TestCase):
             clean=True):
         """Platform specific way to build binaries with dsym info."""
         module = builder_module()
+        dictionary = lldbplatformutil.finalize_build_dictionary(dictionary)
         if not module.buildDsym(
                 self,
                 architecture,
@@ -1561,6 +1561,7 @@ class Base(unittest2.TestCase):
             clean=True):
         """Platform specific way to build binaries with gmodules info."""
         module = builder_module()
+        dictionary = lldbplatformutil.finalize_build_dictionary(dictionary)
         if not module.buildGModules(
                 self,
                 architecture,
