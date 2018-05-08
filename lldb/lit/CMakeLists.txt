@@ -38,9 +38,12 @@ configure_lit_site_cfg(
 
 set(LLDB_TEST_DEPS
   LLDBUnitTests
+  dsymutil
   lldb
   lldb-test
   llvm-config
+  llvm-mc
+  llvm-objcopy
   )
 
 if(NOT LLDB_BUILT_STANDALONE)

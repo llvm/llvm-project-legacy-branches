@@ -15,7 +15,6 @@
 #include "lldb/Interpreter/CommandObjectRegexCommand.h"
 
 #include "../Commands/CommandObjectApropos.h"
-#include "../Commands/CommandObjectArgs.h"
 #include "../Commands/CommandObjectBreakpoint.h"
 #include "../Commands/CommandObjectBugreport.h"
 #include "../Commands/CommandObjectCommands.h"
@@ -34,7 +33,7 @@
 #include "../Commands/CommandObjectRegister.h"
 #include "../Commands/CommandObjectSettings.h"
 #include "../Commands/CommandObjectSource.h"
-#include "../Commands/CommandObjectSyntax.h"
+#include "../Commands/CommandObjectStats.h"
 #include "../Commands/CommandObjectTarget.h"
 #include "../Commands/CommandObjectThread.h"
 #include "../Commands/CommandObjectType.h"
@@ -55,13 +54,13 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
 
-#include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandCompletions.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionValueProperties.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Interpreter/Property.h"
+#include "lldb/Utility/Args.h"
 
 #include "lldb/Target/Process.h"
 #include "lldb/Target/TargetList.h"
@@ -426,6 +425,7 @@ void CommandInterpreter::LoadCommandDictionary() {
       CommandObjectSP(new CommandObjectMultiwordSettings(*this));
   m_command_dict["source"] =
       CommandObjectSP(new CommandObjectMultiwordSource(*this));
+  m_command_dict["statistics"] = CommandObjectSP(new CommandObjectStats(*this));
   m_command_dict["target"] =
       CommandObjectSP(new CommandObjectMultiwordTarget(*this));
   m_command_dict["thread"] =

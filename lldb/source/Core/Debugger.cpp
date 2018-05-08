@@ -48,7 +48,7 @@
 #include "lldb/Utility/StreamCallback.h"
 #include "lldb/Utility/StreamString.h"
 
-#if defined(LLVM_ON_WIN32)
+#if defined(_WIN32)
 #include "lldb/Host/windows/PosixApi.h" // for PATH_MAX
 #endif
 
@@ -776,8 +776,8 @@ Debugger::Debugger(lldb::LogOutputCallback log_callback, void *baton)
       ConstString("platform"), ConstString("Platform settings."), true,
       Platform::GetGlobalPlatformProperties()->GetValueProperties());
   m_collection_sp->AppendProperty(
-      ConstString("clang"), ConstString("Settings specific to Clang."), true,
-      ModuleList::GetGlobalModuleListProperties().GetValueProperties());
+      ConstString("symbols"), ConstString("Symbol lookup and cache settings."),
+      true, ModuleList::GetGlobalModuleListProperties().GetValueProperties());
   if (m_command_interpreter_ap) {
     m_collection_sp->AppendProperty(
         ConstString("interpreter"),

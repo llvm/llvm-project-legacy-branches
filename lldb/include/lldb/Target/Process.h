@@ -38,6 +38,7 @@
 #include "lldb/Host/HostThread.h"
 #include "lldb/Host/ProcessRunLock.h"
 #include "lldb/Interpreter/Options.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/ExecutionContextScope.h"
 #include "lldb/Target/InstrumentationRuntime.h"
 #include "lldb/Target/Memory.h"
@@ -805,6 +806,54 @@ public:
         GetPluginName().GetCString());
     return error;
   }
+
+  //------------------------------------------------------------------
+  // FUTURE WORK: {Set,Get}LoadImageUtilityFunction are the first use we've
+  // had of having other plugins cache data in the Process.  This is handy for
+  // long-living plugins - like the Platform - which manage interactions whose 
+  // lifetime is governed by the Process lifetime.  If we find we need to do 
+  // this more often, we should construct a general solution to the problem.
+  // The consensus suggestion was that we have a token based registry in the
+  // Process.
+  // Some undecided questions are 
+  // (1) who manages the tokens.  It's probably best that you add the element 
+  // and get back a token that represents it.  That will avoid collisions.  But
+  // there may be some utility in the registerer controlling the token?
+  // (2) whether the thing added should be simply owned by Process, and
+  // just go away when it does
+  // (3) whether the registree should be notified of the Process' demise.
+  //
+  // We are postponing designing this till we have at least a second use case.
+  //------------------------------------------------------------------
+  //------------------------------------------------------------------
+  /// Set the cached UtilityFunction that assists in loading binary
+  /// images into the process.
+  ///
+  /// This UtilityFunction is maintained in the Process since the Platforms
+  /// don't track the lifespan of the Targets/Processes that use them.  
+  /// But it is not intended to be comprehended by the Process, it's up to the
+  /// Platform that set it to do it right.
+  ///
+  /// @param[in] utility_func_up
+  ///     The incoming utility_function.  The process will manage the function's
+  ///     lifetime.
+  ///
+  //------------------------------------------------------------------
+  void SetLoadImageUtilityFunction(std::unique_ptr<UtilityFunction> 
+                                   utility_func_up);
+  
+  //------------------------------------------------------------------
+  /// Get the cached UtilityFunction that assists in loading binary
+  /// images into the process.
+  ///
+  /// @param[in] platform
+  ///     The platform fetching the UtilityFunction.
+  /// 
+  /// @return
+  ///     The cached utility function or null if the platform is not the
+  ///     same as the target's platform.
+  //------------------------------------------------------------------
+  UtilityFunction *GetLoadImageUtilityFunction(Platform *platform);
 
   //------------------------------------------------------------------
   /// Get the dynamic loader plug-in for this process.
@@ -1949,6 +1998,8 @@ public:
         GetPluginName().GetCString());
     return LLDB_INVALID_ADDRESS;
   }
+
+  virtual Status WriteObjectFile(std::vector<ObjectFile::LoadableData> entries);
 
   //------------------------------------------------------------------
   /// The public interface to allocating memory in the process.
@@ -3129,6 +3180,8 @@ protected:
   StructuredDataPluginMap m_structured_data_plugin_map;
 
   enum { eCanJITDontKnow = 0, eCanJITYes, eCanJITNo } m_can_jit;
+  
+  std::unique_ptr<UtilityFunction> m_dlopen_utility_func_up;
 
   size_t RemoveBreakpointOpcodesFromBuffer(lldb::addr_t addr, size_t size,
                                            uint8_t *buf) const;

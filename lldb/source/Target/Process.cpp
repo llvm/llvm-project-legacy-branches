@@ -30,6 +30,7 @@
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRDynamicChecks.h"
 #include "lldb/Expression/UserExpression.h"
+#include "lldb/Expression/UtilityFunction.h"
 #include "lldb/Host/ConnectionFileDescriptor.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
@@ -39,6 +40,7 @@
 #include "lldb/Host/Terminal.h"
 #include "lldb/Host/ThreadLauncher.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Interpreter/OptionArgParser.h"
 #include "lldb/Interpreter/OptionValueProperties.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/Symbol.h"
@@ -489,7 +491,7 @@ Status ProcessLaunchCommandOptions::SetOptionValue(
   {
     bool success;
     const bool disable_aslr_arg =
-        Args::StringToBoolean(option_arg, true, &success);
+        OptionArgParser::ToBoolean(option_arg, true, &success);
     if (success)
       disable_aslr = disable_aslr_arg ? eLazyBoolYes : eLazyBoolNo;
     else
@@ -502,7 +504,8 @@ Status ProcessLaunchCommandOptions::SetOptionValue(
   case 'X': // shell expand args.
   {
     bool success;
-    const bool expand_args = Args::StringToBoolean(option_arg, true, &success);
+    const bool expand_args =
+        OptionArgParser::ToBoolean(option_arg, true, &success);
     if (success)
       launch_info.SetShellExpandArguments(expand_args);
     else
@@ -2533,6 +2536,17 @@ size_t Process::ReadScalarIntegerFromMemory(addr_t addr, uint32_t byte_size,
   return 0;
 }
 
+Status Process::WriteObjectFile(std::vector<ObjectFile::LoadableData> entries) {
+  Status error;
+  for (const auto &Entry : entries) {
+    WriteMemory(Entry.Dest, Entry.Contents.data(), Entry.Contents.size(),
+                error);
+    if (!error.Success())
+      break;
+  }
+  return error;
+}
+
 #define USE_ALLOCATE_MEMORY_CACHE 1
 addr_t Process::AllocateMemory(size_t size, uint32_t permissions,
                                Status &error) {
@@ -2857,10 +2871,10 @@ Status Process::LoadCore() {
     // state.
     SetPrivateState(eStateStopped);
 
-    // Wait indefinitely for a stopped event since we just posted one above...
+    // Wait for a stopped event since we just posted one above...
     lldb::EventSP event_sp;
-    listener_sp->GetEvent(event_sp, llvm::None);
-    StateType state = ProcessEventData::GetStateFromEvent(event_sp.get());
+    StateType state =
+        WaitForProcessToStop(seconds(10), &event_sp, true, listener_sp);
 
     if (!StateIsStoppedState(state, false)) {
       Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_PROCESS));
@@ -6232,3 +6246,15 @@ Status Process::UpdateAutomaticSignalFiltering() {
   // No automatic signal filtering to speak of.
   return Status();
 }
+
+UtilityFunction *Process::GetLoadImageUtilityFunction(Platform *platform) {
+  if (platform != GetTarget().GetPlatform().get())
+    return nullptr;
+  return m_dlopen_utility_func_up.get();
+}
+
+void Process::SetLoadImageUtilityFunction(std::unique_ptr<UtilityFunction> 
+                                          utility_func_up) {
+  m_dlopen_utility_func_up.swap(utility_func_up);
+}
+

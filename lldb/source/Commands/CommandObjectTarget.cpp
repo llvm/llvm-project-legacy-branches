@@ -21,9 +21,9 @@
 #include "lldb/Host/OptionParser.h"
 #include "lldb/Host/StringConvert.h"
 #include "lldb/Host/Symbols.h"
-#include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
+#include "lldb/Interpreter/OptionArgParser.h"
 #include "lldb/Interpreter/OptionGroupArchitecture.h"
 #include "lldb/Interpreter/OptionGroupBoolean.h"
 #include "lldb/Interpreter/OptionGroupFile.h"
@@ -45,10 +45,12 @@
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ABI.h"
 #include "lldb/Target/Process.h"
+#include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/SectionLoadList.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/ThreadSpec.h"
+#include "lldb/Utility/Args.h"
 #include "lldb/Utility/Timer.h"
 
 #include "llvm/Support/FileSystem.h"
@@ -1386,7 +1388,8 @@ static size_t DumpModuleObjfileHeaders(Stream &strm, ModuleList &module_list) {
           strm.EOL();
         }
         ObjectFile *objfile = module->GetObjectFile();
-        objfile->Dump(&strm);
+        if (objfile)
+          objfile->Dump(&strm);
       }
     }
     strm.IndentLess();
@@ -1982,7 +1985,7 @@ public:
 
       switch (short_option) {
       case 's':
-        m_sort_order = (SortOrder)Args::StringToOptionEnum(
+        m_sort_order = (SortOrder)OptionArgParser::ToOptionEnum(
             option_arg, GetDefinitions()[option_idx].enum_values,
             eSortOrderNone, error);
         break;
@@ -2746,10 +2749,33 @@ protected:
                     process->Flush();
                 }
                 if (load) {
-                  Status error = module->LoadInMemory(*target, set_pc);
+                  ProcessSP process = target->CalculateProcess();
+                  Address file_entry = objfile->GetEntryPointAddress();
+                  if (!process) {
+                    result.AppendError("No process");
+                    return false;
+                  }
+                  if (set_pc && !file_entry.IsValid()) {
+                    result.AppendError("No entry address in object file");
+                    return false;
+                  }
+                  std::vector<ObjectFile::LoadableData> loadables(
+                      objfile->GetLoadableData(*target));
+                  if (loadables.size() == 0) {
+                    result.AppendError("No loadable sections");
+                    return false;
+                  }
+                  Status error = process->WriteObjectFile(std::move(loadables));
                   if (error.Fail()) {
                     result.AppendError(error.AsCString());
                     return false;
+                  }
+                  if (set_pc) {
+                    ThreadList &thread_list = process->GetThreadList();
+                    ThreadSP curr_thread(thread_list.GetSelectedThread());
+                    RegisterContextSP reg_context(
+                        curr_thread->GetRegisterContext());
+                    reg_context->SetPC(file_entry.GetLoadAddress(target));
                   }
                 }
               } else {
@@ -2861,8 +2887,8 @@ public:
       if (short_option == 'g') {
         m_use_global_module_list = true;
       } else if (short_option == 'a') {
-        m_module_addr = Args::StringToAddress(execution_context, option_arg,
-                                              LLDB_INVALID_ADDRESS, &error);
+        m_module_addr = OptionArgParser::ToAddress(
+            execution_context, option_arg, LLDB_INVALID_ADDRESS, &error);
       } else {
         unsigned long width = 0;
         option_arg.getAsInteger(0, width);
@@ -3227,8 +3253,8 @@ public:
       case 'a': {
         m_str = option_arg;
         m_type = eLookupTypeAddress;
-        m_addr = Args::StringToAddress(execution_context, option_arg,
-                                       LLDB_INVALID_ADDRESS, &error);
+        m_addr = OptionArgParser::ToAddress(execution_context, option_arg,
+                                            LLDB_INVALID_ADDRESS, &error);
         if (m_addr == LLDB_INVALID_ADDRESS)
           error.SetErrorStringWithFormat("invalid address string '%s'",
                                          option_arg.str().c_str());
@@ -3543,8 +3569,8 @@ public:
       switch (short_option) {
       case 'a': {
         m_type = eLookupTypeAddress;
-        m_addr = Args::StringToAddress(execution_context, option_arg,
-                                       LLDB_INVALID_ADDRESS, &error);
+        m_addr = OptionArgParser::ToAddress(execution_context, option_arg,
+                                            LLDB_INVALID_ADDRESS, &error);
       } break;
 
       case 'o':
