@@ -184,9 +184,10 @@ def CMD_MSG(str):
     return "Command '%s' returns successfully" % str
 
 
-def COMPLETION_MSG(str_before, str_after):
+def COMPLETION_MSG(str_before, str_after, completions):
     '''A generic message generator for the completion mechanism.'''
-    return "'%s' successfully completes to '%s'" % (str_before, str_after)
+    return ("'%s' successfully completes to '%s', but completions were:\n%s"
+           % (str_before, str_after, "\n".join(completions)))
 
 
 def EXP_MSG(str, actual, exe):
@@ -490,6 +491,8 @@ def getsource_if_available(obj):
 def builder_module():
     if sys.platform.startswith("freebsd"):
         return __import__("builder_freebsd")
+    if sys.platform.startswith("openbsd"):
+        return __import__("builder_openbsd")
     if sys.platform.startswith("netbsd"):
         return __import__("builder_netbsd")
     if sys.platform.startswith("linux"):
@@ -700,8 +703,8 @@ class Base(unittest2.TestCase):
         """Return the full path to the current test."""
         return os.path.join(os.environ["LLDB_BUILD"], self.mydir,
                             self.getBuildDirBasename())
-    
-     
+
+
     def makeBuildDir(self):
         """Create the test-specific working directory, deleting any previous
         contents."""
@@ -710,11 +713,11 @@ class Base(unittest2.TestCase):
         if os.path.isdir(bdir):
             shutil.rmtree(bdir)
         lldbutil.mkdir_p(bdir)
- 
+
     def getBuildArtifact(self, name="a.out"):
         """Return absolute path to an artifact in the test's build directory."""
         return os.path.join(self.getBuildDir(), name)
- 
+
     def getSourcePath(self, name):
         """Return absolute path to a file in the test's source directory."""
         return os.path.join(self.getSourceDir(), name)
@@ -736,6 +739,11 @@ class Base(unittest2.TestCase):
             self.lldbMiExec = os.environ["LLDBMI_EXEC"]
         else:
             self.lldbMiExec = None
+
+        if "LLDBVSCODE_EXEC" in os.environ:
+            self.lldbVSCodeExec = os.environ["LLDBVSCODE_EXEC"]
+        else:
+            self.lldbVSCodeExec = None
 
         # If we spawn an lldb process for test (via pexpect), do not load the
         # init file unless told otherwise.
@@ -1395,7 +1403,7 @@ class Base(unittest2.TestCase):
 
     def getstdlibFlag(self):
         """ Returns the proper -stdlib flag, or empty if not required."""
-        if self.platformIsDarwin() or self.getPlatform() == "freebsd":
+        if self.platformIsDarwin() or self.getPlatform() == "freebsd" or self.getPlatform() == "openbsd":
             stdlibflag = "-stdlib=libc++"
         else:  # this includes NetBSD
             stdlibflag = ""
@@ -1424,16 +1432,6 @@ class Base(unittest2.TestCase):
                  'FRAMEWORK_INCLUDES': "-F%s" % self.framework_dir,
                  'LD_EXTRAS': "%s -Wl,-rpath,%s" % (self.dsym, self.framework_dir),
                  }
-        elif sys.platform.rstrip('0123456789') in ('freebsd', 'linux', 'netbsd', 'darwin') or os.environ.get('LLDB_BUILD_TYPE') == 'Makefile':
-            d = {
-                'CXX_SOURCES': sources,
-                'EXE': exe_name,
-                'CFLAGS_EXTRAS': "%s %s -I%s" % (stdflag,
-                                                 stdlibflag,
-                                                 os.path.join(
-                                                     os.environ["LLDB_SRC"],
-                                                     "include")),
-                'LD_EXTRAS': "-L%s/../lib -llldb -Wl,-rpath,%s/../lib" % (lib_dir, lib_dir)}
         elif sys.platform.startswith('win'):
             d = {
                 'CXX_SOURCES': sources,
@@ -1444,6 +1442,16 @@ class Base(unittest2.TestCase):
                                                      os.environ["LLDB_SRC"],
                                                      "include")),
                 'LD_EXTRAS': "-L%s -lliblldb" % os.environ["LLDB_IMPLIB_DIR"]}
+        else:
+            d = {
+                'CXX_SOURCES': sources,
+                'EXE': exe_name,
+                'CFLAGS_EXTRAS': "%s %s -I%s" % (stdflag,
+                                                 stdlibflag,
+                                                 os.path.join(
+                                                     os.environ["LLDB_SRC"],
+                                                     "include")),
+                'LD_EXTRAS': "-L%s/../lib -llldb -Wl,-rpath,%s/../lib" % (lib_dir, lib_dir)}
         if self.TraceOn():
             print(
                 "Building LLDB Driver (%s) from sources %s" %
@@ -1464,15 +1472,6 @@ class Base(unittest2.TestCase):
                  'FRAMEWORK_INCLUDES': "-F%s" % self.framework_dir,
                  'LD_EXTRAS': "%s -Wl,-rpath,%s -dynamiclib" % (self.dsym, self.framework_dir),
                  }
-        elif sys.platform.rstrip('0123456789') in ('freebsd', 'linux', 'netbsd', 'darwin') or os.environ.get('LLDB_BUILD_TYPE') == 'Makefile':
-            d = {
-                'DYLIB_CXX_SOURCES': sources,
-                'DYLIB_NAME': lib_name,
-                'CFLAGS_EXTRAS': "%s -I%s -fPIC" % (stdflag,
-                                                    os.path.join(
-                                                        os.environ["LLDB_SRC"],
-                                                        "include")),
-                'LD_EXTRAS': "-shared -L%s/../lib -llldb -Wl,-rpath,%s/../lib" % (lib_dir, lib_dir)}
         elif self.getPlatform() == 'windows':
             d = {
                 'DYLIB_CXX_SOURCES': sources,
@@ -1482,6 +1481,15 @@ class Base(unittest2.TestCase):
                                                    os.environ["LLDB_SRC"],
                                                    "include")),
                 'LD_EXTRAS': "-shared -l%s\liblldb.lib" % self.os.environ["LLDB_IMPLIB_DIR"]}
+        else:
+            d = {
+                'DYLIB_CXX_SOURCES': sources,
+                'DYLIB_NAME': lib_name,
+                'CFLAGS_EXTRAS': "%s -I%s -fPIC" % (stdflag,
+                                                    os.path.join(
+                                                        os.environ["LLDB_SRC"],
+                                                        "include")),
+                'LD_EXTRAS': "-shared -L%s/../lib -llldb -Wl,-rpath,%s/../lib" % (lib_dir, lib_dir)}
         if self.TraceOn():
             print(
                 "Building LLDB Library (%s) from sources %s" %
@@ -1672,6 +1680,8 @@ class Base(unittest2.TestCase):
                 cflags += "c++11"
         if self.platformIsDarwin() or self.getPlatform() == "freebsd":
             cflags += " -stdlib=libc++"
+        elif self.getPlatform() == "openbsd":
+            cflags += " -stdlib=libc++"
         elif self.getPlatform() == "netbsd":
             cflags += " -stdlib=libstdc++"
         elif "clang" in self.getCompiler():
@@ -1706,7 +1716,7 @@ class Base(unittest2.TestCase):
             return lib_dir
 
     def getLibcPlusPlusLibs(self):
-        if self.getPlatform() in ('freebsd', 'linux', 'netbsd'):
+        if self.getPlatform() in ('freebsd', 'linux', 'netbsd', 'openbsd'):
             return ['libc++.so.1']
         else:
             return ['libc++.1.dylib', 'libc++abi.dylib']
@@ -1829,7 +1839,7 @@ class TestBase(Base):
 
     # Maximum allowed attempts when launching the inferior process.
     # Can be overridden by the LLDB_MAX_LAUNCH_COUNT environment variable.
-    maxLaunchCount = 3
+    maxLaunchCount = 1
 
     # Time to wait before the next launching attempt in second(s).
     # Can be overridden by the LLDB_TIME_WAIT_NEXT_LAUNCH environment variable.
@@ -1840,7 +1850,7 @@ class TestBase(Base):
         temp = os.path.join(self.getSourceDir(), template)
         with open(temp, 'r') as f:
             content = f.read()
-            
+
         public_api_dir = os.path.join(
             os.environ["LLDB_SRC"], "include", "lldb", "API")
 
@@ -2069,8 +2079,17 @@ class TestBase(Base):
                     print("Command '" + cmd + "' failed!", file=sbuf)
 
         if check:
+            output = ""
+            if self.res.GetOutput():
+              output += "\nCommand output:\n" + self.res.GetOutput()
+            if self.res.GetError():
+              output += "\nError output:\n" + self.res.GetError()
+            if msg:
+              msg += output
+            if cmd:
+              cmd += output
             self.assertTrue(self.res.Succeeded(),
-                            msg if msg else CMD_MSG(cmd))
+                            msg if (msg) else CMD_MSG(cmd))
 
     def match(
             self,

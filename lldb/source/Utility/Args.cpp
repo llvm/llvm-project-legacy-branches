@@ -19,12 +19,9 @@ using namespace lldb_private;
 
 // A helper function for argument parsing.
 // Parses the initial part of the first argument using normal double quote
-// rules:
-// backslash escapes the double quote and itself. The parsed string is appended
-// to the second
-// argument. The function returns the unparsed portion of the string, starting
-// at the closing
-// quote.
+// rules: backslash escapes the double quote and itself. The parsed string is
+// appended to the second argument. The function returns the unparsed portion
+// of the string, starting at the closing quote.
 static llvm::StringRef ParseDoubleQuotes(llvm::StringRef quoted,
                                          std::string &result) {
   // Inside double quotes, '\' and '"' are special.
@@ -49,8 +46,7 @@ static llvm::StringRef ParseDoubleQuotes(llvm::StringRef quoted,
     }
 
     // If the character after the backslash is not a whitelisted escapable
-    // character, we
-    // leave the character sequence untouched.
+    // character, we leave the character sequence untouched.
     if (strchr(k_escapable_characters, quoted.front()) == nullptr)
       result += '\\';
 
@@ -70,6 +66,13 @@ static size_t ArgvToArgc(const char **argv) {
   return count;
 }
 
+// Trims all whitespace that can separate command line arguments from the left
+// side of the string.
+static llvm::StringRef ltrimForArgs(llvm::StringRef str) {
+  static const char *k_space_separators = " \t";
+  return str.ltrim(k_space_separators);
+}
+
 // A helper function for SetCommandString. Parses a single argument from the
 // command string, processing quotes and backslashes in a shell-like manner.
 // The function returns a tuple consisting of the parsed argument, the quote
@@ -84,10 +87,10 @@ ParseSingleArgument(llvm::StringRef command) {
   // strings.
   std::string arg;
 
-  // Since we can have multiple quotes that form a single command
-  // in a command like: "Hello "world'!' (which will make a single
-  // argument "Hello world!") we remember the first quote character
-  // we encounter and use that for the quote character.
+  // Since we can have multiple quotes that form a single command in a command
+  // like: "Hello "world'!' (which will make a single argument "Hello world!")
+  // we remember the first quote character we encounter and use that for the
+  // quote character.
   char first_quote_char = '\0';
 
   bool arg_complete = false;
@@ -110,8 +113,7 @@ ParseSingleArgument(llvm::StringRef command) {
       }
 
       // If the character after the backslash is not a whitelisted escapable
-      // character, we
-      // leave the character sequence untouched.
+      // character, we leave the character sequence untouched.
       if (strchr(" \t\\'\"`", command.front()) == nullptr)
         arg += '\\';
 
@@ -122,8 +124,8 @@ ParseSingleArgument(llvm::StringRef command) {
 
     case ' ':
     case '\t':
-      // We are not inside any quotes, we just found a space after an
-      // argument. We are done.
+      // We are not inside any quotes, we just found a space after an argument.
+      // We are done.
       arg_complete = true;
       break;
 
@@ -138,8 +140,7 @@ ParseSingleArgument(llvm::StringRef command) {
         command = ParseDoubleQuotes(command, arg);
       else {
         // For single quotes, we simply skip ahead to the matching quote
-        // character
-        // (or the end of the string).
+        // character (or the end of the string).
         size_t quoted = command.find(special);
         arg += command.substr(0, quoted);
         command = command.substr(quoted);
@@ -243,15 +244,14 @@ void Args::SetCommandString(llvm::StringRef command) {
   Clear();
   m_argv.clear();
 
-  static const char *k_space_separators = " \t";
-  command = command.ltrim(k_space_separators);
+  command = ltrimForArgs(command);
   std::string arg;
   char quote;
   while (!command.empty()) {
     std::tie(arg, quote, command) = ParseSingleArgument(command);
     m_entries.emplace_back(arg, quote);
     m_argv.push_back(m_entries.back().data());
-    command = command.ltrim(k_space_separators);
+    command = ltrimForArgs(command);
   }
   m_argv.push_back(nullptr);
 }
@@ -274,9 +274,9 @@ char **Args::GetArgumentVector() {
   assert(!m_argv.empty());
   // TODO: functions like execve and posix_spawnp exhibit undefined behavior
   // when argv or envp is null.  So the code below is actually wrong.  However,
-  // other code in LLDB depends on it being null.  The code has been acting this
-  // way for some time, so it makes sense to leave it this way until someone
-  // has the time to come along and fix it.
+  // other code in LLDB depends on it being null.  The code has been acting
+  // this way for some time, so it makes sense to leave it this way until
+  // someone has the time to come along and fix it.
   return (m_argv.size() > 1) ? m_argv.data() : nullptr;
 }
 
@@ -415,29 +415,6 @@ const char *Args::StripSpaces(std::string &s, bool leading, bool trailing,
   return s.c_str();
 }
 
-bool Args::StringToVersion(llvm::StringRef string, uint32_t &major,
-                           uint32_t &minor, uint32_t &update) {
-  major = UINT32_MAX;
-  minor = UINT32_MAX;
-  update = UINT32_MAX;
-
-  if (string.empty())
-    return false;
-
-  llvm::StringRef major_str, minor_str, update_str;
-
-  std::tie(major_str, minor_str) = string.split('.');
-  std::tie(minor_str, update_str) = minor_str.split('.');
-  if (major_str.getAsInteger(10, major))
-    return false;
-  if (!minor_str.empty() && minor_str.getAsInteger(10, minor))
-    return false;
-  if (!update_str.empty() && update_str.getAsInteger(10, update))
-    return false;
-
-  return true;
-}
-
 const char *Args::GetShellSafeArgument(const FileSpec &shell,
                                        const char *unsafe_arg,
                                        std::string &safe_arg) {
@@ -555,17 +532,17 @@ void Args::EncodeEscapeSequences(const char *src, std::string &dst) {
         case '0':
           // 1 to 3 octal chars
           {
-            // Make a string that can hold onto the initial zero char,
-            // up to 3 octal digits, and a terminating NULL.
+            // Make a string that can hold onto the initial zero char, up to 3
+            // octal digits, and a terminating NULL.
             char oct_str[5] = {'\0', '\0', '\0', '\0', '\0'};
 
             int i;
             for (i = 0; (p[i] >= '0' && p[i] <= '7') && i < 4; ++i)
               oct_str[i] = p[i];
 
-            // We don't want to consume the last octal character since
-            // the main for loop will do this for us, so we advance p by
-            // one less than i (even if i is zero)
+            // We don't want to consume the last octal character since the main
+            // for loop will do this for us, so we advance p by one less than i
+            // (even if i is zero)
             p += i - 1;
             unsigned long octal_value = ::strtoul(oct_str, nullptr, 8);
             if (octal_value <= UINT8_MAX) {
@@ -596,8 +573,8 @@ void Args::EncodeEscapeSequences(const char *src, std::string &dst) {
           break;
 
         default:
-          // Just desensitize any other character by just printing what
-          // came after the '\'
+          // Just desensitize any other character by just printing what came
+          // after the '\'
           dst.append(1, *p);
           break;
         }
@@ -682,4 +659,68 @@ std::string Args::EscapeLLDBCommandArgument(const std::string &arg,
     res.push_back(c);
   }
   return res;
+}
+
+OptionsWithRaw::OptionsWithRaw(llvm::StringRef arg_string) {
+  SetFromString(arg_string);
+}
+
+void OptionsWithRaw::SetFromString(llvm::StringRef arg_string) {
+  const llvm::StringRef original_args = arg_string;
+
+  arg_string = ltrimForArgs(arg_string);
+  std::string arg;
+  char quote;
+
+  // If the string doesn't start with a dash, we just have no options and just
+  // a raw part.
+  if (!arg_string.startswith("-")) {
+    m_suffix = original_args;
+    return;
+  }
+
+  bool found_suffix = false;
+
+  while (!arg_string.empty()) {
+    // The length of the prefix before parsing.
+    std::size_t prev_prefix_length = original_args.size() - arg_string.size();
+
+    // Parse the next argument from the remaining string.
+    std::tie(arg, quote, arg_string) = ParseSingleArgument(arg_string);
+
+    // If we get an unquoted '--' argument, then we reached the suffix part
+    // of the command.
+    Args::ArgEntry entry(arg, quote);
+    if (!entry.IsQuoted() && arg == "--") {
+      // The remaining line is the raw suffix, and the line we parsed so far
+      // needs to be interpreted as arguments.
+      m_has_args = true;
+      m_suffix = arg_string;
+      found_suffix = true;
+
+      // The length of the prefix after parsing.
+      std::size_t prefix_length = original_args.size() - arg_string.size();
+
+      // Take the string we know contains all the arguments and actually parse
+      // it as proper arguments.
+      llvm::StringRef prefix = original_args.take_front(prev_prefix_length);
+      m_args = Args(prefix);
+      m_arg_string = prefix;
+
+      // We also record the part of the string that contains the arguments plus
+      // the delimiter.
+      m_arg_string_with_delimiter = original_args.take_front(prefix_length);
+
+      // As the rest of the string became the raw suffix, we are done here.
+      break;
+    }
+
+    arg_string = ltrimForArgs(arg_string);
+  }
+
+  // If we didn't find a suffix delimiter, the whole string is the raw suffix.
+  if (!found_suffix) {
+    found_suffix = true;
+    m_suffix = original_args;
+  }
 }

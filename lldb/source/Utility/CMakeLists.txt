@@ -45,14 +45,13 @@ add_lldb_library(lldbUtility
   Baton.cpp
   Connection.cpp
   ConstString.cpp
+  CompletionRequest.cpp
   DataBufferHeap.cpp
   DataBufferLLVM.cpp
   DataEncoder.cpp
   DataExtractor.cpp
   Environment.cpp
-  FastDemangle.cpp
   FileSpec.cpp
-  History.cpp
   IOObject.cpp
   JSON.cpp
   LLDBAssert.cpp
@@ -60,9 +59,12 @@ add_lldb_library(lldbUtility
   Logging.cpp
   NameMatches.cpp
   Range.cpp
+  RegisterValue.cpp
   RegularExpression.cpp
+  Scalar.cpp
   SelectHelper.cpp
   SharingPtr.cpp
+  State.cpp
   Status.cpp
   Stream.cpp
   StreamCallback.cpp
