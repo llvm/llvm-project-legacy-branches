@@ -67,12 +67,11 @@ const char *Platform::GetHostPlatformName() { return "host"; }
 
 namespace {
 
-PropertyDefinition g_properties[] = {
+static constexpr PropertyDefinition g_properties[] = {
     {"use-module-cache", OptionValue::eTypeBoolean, true, true, nullptr,
-     nullptr, "Use module cache."},
+     {}, "Use module cache."},
     {"module-cache-directory", OptionValue::eTypeFileSpec, true, 0, nullptr,
-     nullptr, "Root directory for cached modules."},
-    {nullptr, OptionValue::eTypeInvalid, false, 0, nullptr, nullptr, nullptr}};
+     {}, "Root directory for cached modules."}};
 
 enum { ePropertyUseModuleCache, ePropertyModuleCacheDirectory };
 
@@ -228,16 +227,35 @@ Status Platform::GetSharedModule(const ModuleSpec &module_spec,
         module_spec, module_sp, module_search_paths_ptr, old_module_sp_ptr,
         did_create_ptr, false);
 
-  return GetRemoteSharedModule(module_spec, process, module_sp,
-                               [&](const ModuleSpec &spec) {
-                                 Status error = ModuleList::GetSharedModule(
-                                     spec, module_sp, module_search_paths_ptr,
-                                     old_module_sp_ptr, did_create_ptr, false);
-                                 if (error.Success() && module_sp)
-                                   module_sp->SetPlatformFileSpec(
-                                       spec.GetFileSpec());
-                                 return error;
-                               },
+  // Module resolver lambda.
+  auto resolver = [&](const ModuleSpec &spec) {
+    Status error(eErrorTypeGeneric);
+    ModuleSpec resolved_spec;
+    // Check if we have sysroot set.
+    if (m_sdk_sysroot) {
+      // Prepend sysroot to module spec.
+      resolved_spec = spec;
+      resolved_spec.GetFileSpec().PrependPathComponent(
+          m_sdk_sysroot.GetStringRef());
+      // Try to get shared module with resolved spec.
+      error = ModuleList::GetSharedModule(
+          resolved_spec, module_sp, module_search_paths_ptr, old_module_sp_ptr,
+          did_create_ptr, false);
+    }
+    // If we don't have sysroot or it didn't work then
+    // try original module spec.
+    if (!error.Success()) {
+      resolved_spec = spec;
+      error = ModuleList::GetSharedModule(
+          resolved_spec, module_sp, module_search_paths_ptr, old_module_sp_ptr,
+          did_create_ptr, false);
+    }
+    if (error.Success() && module_sp)
+      module_sp->SetPlatformFileSpec(resolved_spec.GetFileSpec());
+    return error;
+  };
+
+  return GetRemoteSharedModule(module_spec, process, module_sp, resolver,
                                did_create_ptr);
 }
 
@@ -1378,32 +1396,32 @@ const char *Platform::GetLocalCacheDirectory() {
   return m_local_cache_directory.c_str();
 }
 
-static OptionDefinition g_rsync_option_table[] = {
+static constexpr OptionDefinition g_rsync_option_table[] = {
     {LLDB_OPT_SET_ALL, false, "rsync", 'r', OptionParser::eNoArgument, nullptr,
-     nullptr, 0, eArgTypeNone, "Enable rsync."},
+     {}, 0, eArgTypeNone, "Enable rsync."},
     {LLDB_OPT_SET_ALL, false, "rsync-opts", 'R',
-     OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeCommandName,
+     OptionParser::eRequiredArgument, nullptr, {}, 0, eArgTypeCommandName,
      "Platform-specific options required for rsync to work."},
     {LLDB_OPT_SET_ALL, false, "rsync-prefix", 'P',
-     OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeCommandName,
+     OptionParser::eRequiredArgument, nullptr, {}, 0, eArgTypeCommandName,
      "Platform-specific rsync prefix put before the remote path."},
     {LLDB_OPT_SET_ALL, false, "ignore-remote-hostname", 'i',
-     OptionParser::eNoArgument, nullptr, nullptr, 0, eArgTypeNone,
+     OptionParser::eNoArgument, nullptr, {}, 0, eArgTypeNone,
      "Do not automatically fill in the remote hostname when composing the "
      "rsync command."},
 };
 
-static OptionDefinition g_ssh_option_table[] = {
+static constexpr OptionDefinition g_ssh_option_table[] = {
     {LLDB_OPT_SET_ALL, false, "ssh", 's', OptionParser::eNoArgument, nullptr,
-     nullptr, 0, eArgTypeNone, "Enable SSH."},
+     {}, 0, eArgTypeNone, "Enable SSH."},
     {LLDB_OPT_SET_ALL, false, "ssh-opts", 'S', OptionParser::eRequiredArgument,
-     nullptr, nullptr, 0, eArgTypeCommandName,
+     nullptr, {}, 0, eArgTypeCommandName,
      "Platform-specific options required for SSH to work."},
 };
 
-static OptionDefinition g_caching_option_table[] = {
+static constexpr OptionDefinition g_caching_option_table[] = {
     {LLDB_OPT_SET_ALL, false, "local-cache-dir", 'c',
-     OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypePath,
+     OptionParser::eRequiredArgument, nullptr, {}, 0, eArgTypePath,
      "Path in which to store local copies of files."},
 };
 
@@ -1803,8 +1821,8 @@ lldb::ProcessSP Platform::ConnectProcess(llvm::StringRef connect_url,
 
   if (!target) {
     TargetSP new_target_sp;
-    error = debugger.GetTargetList().CreateTarget(debugger, "", "", false,
-                                                  nullptr, new_target_sp);
+    error = debugger.GetTargetList().CreateTarget(
+        debugger, "", "", eLoadDependentsNo, nullptr, new_target_sp);
     target = new_target_sp.get();
   }
 

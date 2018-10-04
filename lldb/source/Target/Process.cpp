@@ -116,39 +116,38 @@ public:
   }
 };
 
-static PropertyDefinition g_properties[] = {
+static constexpr PropertyDefinition g_properties[] = {
     {"disable-memory-cache", OptionValue::eTypeBoolean, false,
-     DISABLE_MEM_CACHE_DEFAULT, nullptr, nullptr,
+     DISABLE_MEM_CACHE_DEFAULT, nullptr, {},
      "Disable reading and caching of memory in fixed-size units."},
     {"extra-startup-command", OptionValue::eTypeArray, false,
-     OptionValue::eTypeString, nullptr, nullptr,
+     OptionValue::eTypeString, nullptr, {},
      "A list containing extra commands understood by the particular process "
      "plugin used.  "
      "For instance, to turn on debugserver logging set this to "
      "\"QSetLogging:bitmask=LOG_DEFAULT;\""},
     {"ignore-breakpoints-in-expressions", OptionValue::eTypeBoolean, true, true,
-     nullptr, nullptr,
+     nullptr, {},
      "If true, breakpoints will be ignored during expression evaluation."},
     {"unwind-on-error-in-expressions", OptionValue::eTypeBoolean, true, true,
-     nullptr, nullptr, "If true, errors in expression evaluation will unwind "
-                       "the stack back to the state before the call."},
+     nullptr, {}, "If true, errors in expression evaluation will unwind "
+                  "the stack back to the state before the call."},
     {"python-os-plugin-path", OptionValue::eTypeFileSpec, false, true, nullptr,
-     nullptr, "A path to a python OS plug-in module file that contains a "
-              "OperatingSystemPlugIn class."},
+     {}, "A path to a python OS plug-in module file that contains a "
+         "OperatingSystemPlugIn class."},
     {"stop-on-sharedlibrary-events", OptionValue::eTypeBoolean, true, false,
-     nullptr, nullptr,
+     nullptr, {},
      "If true, stop when a shared library is loaded or unloaded."},
     {"detach-keeps-stopped", OptionValue::eTypeBoolean, true, false, nullptr,
-     nullptr, "If true, detach will attempt to keep the process stopped."},
+     {}, "If true, detach will attempt to keep the process stopped."},
     {"memory-cache-line-size", OptionValue::eTypeUInt64, false, 512, nullptr,
-     nullptr, "The memory cache line size"},
+     {}, "The memory cache line size"},
     {"optimization-warnings", OptionValue::eTypeBoolean, false, true, nullptr,
-     nullptr, "If true, warn when stopped in code that is optimized where "
-              "stepping and variable availability may not behave as expected."},
+     {}, "If true, warn when stopped in code that is optimized where "
+         "stepping and variable availability may not behave as expected."},
     {"stop-on-exec", OptionValue::eTypeBoolean, true, true,
-     nullptr, nullptr,
-     "If true, stop when a shared library is loaded or unloaded."},
-    {nullptr, OptionValue::eTypeInvalid, false, 0, nullptr, nullptr, nullptr}};
+     nullptr, {},
+     "If true, stop when a shared library is loaded or unloaded."}};
 
 enum {
   ePropertyDisableMemCache,
@@ -533,52 +532,52 @@ Status ProcessLaunchCommandOptions::SetOptionValue(
   return error;
 }
 
-static OptionDefinition g_process_launch_options[] = {
+static constexpr OptionDefinition g_process_launch_options[] = {
     {LLDB_OPT_SET_ALL, false, "stop-at-entry", 's', OptionParser::eNoArgument,
-     nullptr, nullptr, 0, eArgTypeNone,
+     nullptr, {}, 0, eArgTypeNone,
      "Stop at the entry point of the program when launching a process."},
     {LLDB_OPT_SET_ALL, false, "disable-aslr", 'A',
-     OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeBoolean,
+     OptionParser::eRequiredArgument, nullptr, {}, 0, eArgTypeBoolean,
      "Set whether to disable address space layout randomization when launching "
      "a process."},
     {LLDB_OPT_SET_ALL, false, "plugin", 'p', OptionParser::eRequiredArgument,
-     nullptr, nullptr, 0, eArgTypePlugin,
+     nullptr, {}, 0, eArgTypePlugin,
      "Name of the process plugin you want to use."},
     {LLDB_OPT_SET_ALL, false, "working-dir", 'w',
-     OptionParser::eRequiredArgument, nullptr, nullptr, 0,
+     OptionParser::eRequiredArgument, nullptr, {}, 0,
      eArgTypeDirectoryName,
      "Set the current working directory to <path> when running the inferior."},
     {LLDB_OPT_SET_ALL, false, "arch", 'a', OptionParser::eRequiredArgument,
-     nullptr, nullptr, 0, eArgTypeArchitecture,
+     nullptr, {}, 0, eArgTypeArchitecture,
      "Set the architecture for the process to launch when ambiguous."},
     {LLDB_OPT_SET_ALL, false, "environment", 'v',
-     OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeNone,
+     OptionParser::eRequiredArgument, nullptr, {}, 0, eArgTypeNone,
      "Specify an environment variable name/value string (--environment "
      "NAME=VALUE). Can be specified multiple times for subsequent environment "
      "entries."},
     {LLDB_OPT_SET_1 | LLDB_OPT_SET_2 | LLDB_OPT_SET_3, false, "shell", 'c',
-     OptionParser::eOptionalArgument, nullptr, nullptr, 0, eArgTypeFilename,
+     OptionParser::eOptionalArgument, nullptr, {}, 0, eArgTypeFilename,
      "Run the process in a shell (not supported on all platforms)."},
 
     {LLDB_OPT_SET_1, false, "stdin", 'i', OptionParser::eRequiredArgument,
-     nullptr, nullptr, 0, eArgTypeFilename,
+     nullptr, {}, 0, eArgTypeFilename,
      "Redirect stdin for the process to <filename>."},
     {LLDB_OPT_SET_1, false, "stdout", 'o', OptionParser::eRequiredArgument,
-     nullptr, nullptr, 0, eArgTypeFilename,
+     nullptr, {}, 0, eArgTypeFilename,
      "Redirect stdout for the process to <filename>."},
     {LLDB_OPT_SET_1, false, "stderr", 'e', OptionParser::eRequiredArgument,
-     nullptr, nullptr, 0, eArgTypeFilename,
+     nullptr, {}, 0, eArgTypeFilename,
      "Redirect stderr for the process to <filename>."},
 
     {LLDB_OPT_SET_2, false, "tty", 't', OptionParser::eNoArgument, nullptr,
-     nullptr, 0, eArgTypeNone,
+     {}, 0, eArgTypeNone,
      "Start the process in a terminal (not supported on all platforms)."},
 
     {LLDB_OPT_SET_3, false, "no-stdio", 'n', OptionParser::eNoArgument, nullptr,
-     nullptr, 0, eArgTypeNone,
+     {}, 0, eArgTypeNone,
      "Do not set up for terminal I/O to go to running process."},
     {LLDB_OPT_SET_4, false, "shell-expand-args", 'X',
-     OptionParser::eRequiredArgument, nullptr, nullptr, 0, eArgTypeBoolean,
+     OptionParser::eRequiredArgument, nullptr, {}, 0, eArgTypeBoolean,
      "Set whether to shell expand arguments to the process when launching."},
 };
 
@@ -1727,6 +1726,10 @@ void Process::SetPrivateState(StateType new_state) {
 
 void Process::SetRunningUserExpression(bool on) {
   m_mod_id.SetRunningUserExpression(on);
+}
+
+void Process::SetRunningUtilityFunction(bool on) {
+  m_mod_id.SetRunningUtilityFunction(on);
 }
 
 addr_t Process::GetImageInfoAddress() { return LLDB_INVALID_ADDRESS; }
@@ -3211,7 +3214,8 @@ void Process::CompleteAttach() {
     }
   }
   if (new_executable_module_sp) {
-    GetTarget().SetExecutableModule(new_executable_module_sp, false);
+    GetTarget().SetExecutableModule(new_executable_module_sp,
+                                    eLoadDependentsNo);
     if (log) {
       ModuleSP exe_module_sp = GetTarget().GetExecutableModule();
       log->Printf(
@@ -4685,7 +4689,12 @@ bool Process::PushProcessIOHandler() {
       log->Printf("Process::%s pushing IO handler", __FUNCTION__);
 
     io_handler_sp->SetIsDone(false);
-    GetTarget().GetDebugger().PushIOHandler(io_handler_sp);
+    // If we evaluate an utility function, then we don't cancel the current
+    // IOHandler. Our IOHandler is non-interactive and shouldn't disturb the
+    // existing IOHandler that potentially provides the user interface (e.g.
+    // the IOHandler for Editline).
+    bool cancel_top_handler = !m_mod_id.IsRunningUtilityFunction();
+    GetTarget().GetDebugger().PushIOHandler(io_handler_sp, cancel_top_handler);
     return true;
   }
   return false;
@@ -4874,6 +4883,11 @@ Process::RunThreadPlan(ExecutionContext &exe_ctx,
 
   thread_plan_sp->SetIsMasterPlan(true);
   thread_plan_sp->SetOkayToDiscard(false);
+
+  // If we are running some utility expression for LLDB, we now have to mark
+  // this in the ProcesModID of this process. This RAII takes care of marking
+  // and reverting the mark it once we are done running the expression.
+  UtilityFunctionScope util_scope(options.IsForUtilityExpr() ? this : nullptr);
 
   if (m_private_state.GetValue() != eStateStopped) {
     diagnostic_manager.PutString(
