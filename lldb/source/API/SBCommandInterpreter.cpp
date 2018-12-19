@@ -7,17 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-// C Includes
-// C++ Includes
-// Other libraries and framework includes
-// Project includes
 #include "lldb/lldb-types.h"
 
-#include "lldb/Core/Listener.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandObjectMultiword.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Target/Target.h"
+#include "lldb/Utility/Listener.h"
 
 #include "lldb/API/SBBroadcaster.h"
 #include "lldb/API/SBCommandInterpreter.h"
@@ -69,6 +65,14 @@ bool SBCommandInterpreterRunOptions::GetEchoCommands() const {
 
 void SBCommandInterpreterRunOptions::SetEchoCommands(bool echo_commands) {
   m_opaque_up->SetEchoCommands(echo_commands);
+}
+
+bool SBCommandInterpreterRunOptions::GetEchoCommentCommands() const {
+  return m_opaque_up->GetEchoCommentCommands();
+}
+
+void SBCommandInterpreterRunOptions::SetEchoCommentCommands(bool echo) {
+  m_opaque_up->SetEchoCommentCommands(echo);
 }
 
 bool SBCommandInterpreterRunOptions::GetPrintResults() const {
