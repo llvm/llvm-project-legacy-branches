@@ -30,6 +30,7 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/CleanUp.h"
 #include "lldb/Utility/DataExtractor.h"
+#include "lldb/Utility/State.h"
 #include "lldb/Utility/StreamString.h"
 
 #include "llvm/ADT/IntervalMap.h"
@@ -99,10 +100,14 @@ cl::list<std::string> InputFilenames(cl::Positional, cl::desc("<input files>"),
 } // namespace object
 
 namespace symbols {
-static cl::list<std::string> InputFilenames(cl::Positional,
-                                            cl::desc("<input files>"),
-                                            cl::OneOrMore,
-                                            cl::sub(SymbolsSubcommand));
+static cl::opt<std::string> InputFile(cl::Positional, cl::desc("<input file>"),
+                                      cl::Required, cl::sub(SymbolsSubcommand));
+
+static cl::opt<std::string>
+    SymbolPath("symbol-file",
+               cl::desc("The file from which to fetch symbol information."),
+               cl::value_desc("file"), cl::sub(SymbolsSubcommand));
+
 enum class FindType {
   None,
   Function,
@@ -208,7 +213,6 @@ struct IRMemoryMapTestState {
       : Target(Target), Map(Target), Allocations(IntervalMapAllocator) {}
 };
 
-bool areAllocationsOverlapping(const AllocationT &L, const AllocationT &R);
 bool evalMalloc(StringRef Line, IRMemoryMapTestState &State);
 bool evalFree(StringRef Line, IRMemoryMapTestState &State);
 int evaluateMemoryMapCommands(Debugger &Dbg);
@@ -437,9 +441,8 @@ Error opts::symbols::findNamespaces(lldb_private::Module &Module) {
   CompilerDeclContext *ContextPtr =
       ContextOr->IsValid() ? &*ContextOr : nullptr;
 
-  SymbolContext SC;
   CompilerDeclContext Result =
-      Vendor.FindNamespace(SC, ConstString(Name), ContextPtr);
+      Vendor.FindNamespace(ConstString(Name), ContextPtr);
   if (Result)
     outs() << "Found namespace: "
            << Result.GetScopeQualifiedName().GetStringRef() << "\n";
@@ -456,10 +459,9 @@ Error opts::symbols::findTypes(lldb_private::Module &Module) {
   CompilerDeclContext *ContextPtr =
       ContextOr->IsValid() ? &*ContextOr : nullptr;
 
-  SymbolContext SC;
   DenseSet<SymbolFile *> SearchedFiles;
   TypeMap Map;
-  Vendor.FindTypes(SC, ConstString(Name), ContextPtr, true, UINT32_MAX,
+  Vendor.FindTypes(ConstString(Name), ContextPtr, true, UINT32_MAX,
                    SearchedFiles, Map);
 
   outs() << formatv("Found {0} types:\n", Map.GetSize());
@@ -518,6 +520,7 @@ Error opts::symbols::dumpModule(lldb_private::Module &Module) {
 
 Error opts::symbols::dumpAST(lldb_private::Module &Module) {
   SymbolVendor &plugin = *Module.GetSymbolVendor();
+   Module.ParseAllDebugSymbols();
 
   auto symfile = plugin.GetSymbolFile();
   if (!symfile)
@@ -535,9 +538,6 @@ Error opts::symbols::dumpAST(lldb_private::Module &Module) {
   auto tu = ast_ctx->getTranslationUnitDecl();
   if (!tu)
     return make_string_error("Can't retrieve translation unit declaration.");
-
-  symfile->ParseDeclsForContext(CompilerDeclContext(
-      clang_ast_ctx, static_cast<clang::DeclContext *>(tu)));
 
   tu->print(outs());
 
@@ -694,28 +694,24 @@ int opts::symbols::dumpSymbols(Debugger &Dbg) {
   }
   auto Action = *ActionOr;
 
-  int HadErrors = 0;
-  for (const auto &File : InputFilenames) {
-    outs() << "Module: " << File << "\n";
-    ModuleSpec Spec{FileSpec(File)};
-    Spec.GetSymbolFileSpec().SetFile(File, FileSpec::Style::native);
+  outs() << "Module: " << InputFile << "\n";
+  ModuleSpec Spec{FileSpec(InputFile)};
+  StringRef Symbols = SymbolPath.empty() ? InputFile : SymbolPath;
+  Spec.GetSymbolFileSpec().SetFile(Symbols, FileSpec::Style::native);
 
-    auto ModulePtr = std::make_shared<lldb_private::Module>(Spec);
-    SymbolVendor *Vendor = ModulePtr->GetSymbolVendor();
-    if (!Vendor) {
-      WithColor::error() << "Module has no symbol vendor.\n";
-      HadErrors = 1;
-      continue;
-    }
-
-    if (Error E = Action(*ModulePtr)) {
-      WithColor::error() << toString(std::move(E)) << "\n";
-      HadErrors = 1;
-    }
-
-    outs().flush();
+  auto ModulePtr = std::make_shared<lldb_private::Module>(Spec);
+  SymbolVendor *Vendor = ModulePtr->GetSymbolVendor();
+  if (!Vendor) {
+    WithColor::error() << "Module has no symbol vendor.\n";
+    return 1;
   }
-  return HadErrors;
+
+  if (Error E = Action(*ModulePtr)) {
+    WithColor::error() << toString(std::move(E)) << "\n";
+    return 1;
+  }
+
+  return 0;
 }
 
 static void dumpSectionList(LinePrinter &Printer, const SectionList &List, bool is_subsection) {
@@ -731,9 +727,12 @@ static void dumpSectionList(LinePrinter &Printer, const SectionList &List, bool 
     assert(S);
     AutoIndent Indent(Printer, 2);
     Printer.formatLine("Index: {0}", I);
+    Printer.formatLine("ID: {0:x}", S->GetID());
     Printer.formatLine("Name: {0}", S->GetName().GetStringRef());
     Printer.formatLine("Type: {0}", S->GetTypeAsCString());
+    Printer.formatLine("Permissions: {0}", GetPermissionsAsCString(S->GetPermissions()));
     Printer.formatLine("Thread specific: {0:y}", S->IsThreadSpecific());
+    Printer.formatLine("VM address: {0:x}", S->GetFileAddress());
     Printer.formatLine("VM size: {0}", S->GetByteSize());
     Printer.formatLine("File size: {0}", S->GetFileSize());
 
@@ -784,6 +783,8 @@ static int dumpObjectFiles(Debugger &Dbg) {
     Printer.formatLine("Stripped: {0}", ObjectPtr->IsStripped());
     Printer.formatLine("Type: {0}", ObjectPtr->GetType());
     Printer.formatLine("Strata: {0}", ObjectPtr->GetStrata());
+    Printer.formatLine("Base VM address: {0:x}",
+                       ObjectPtr->GetBaseAddress().GetFileAddress());
 
     dumpSectionList(Printer, *Sections, /*is_subsection*/ false);
 
@@ -802,13 +803,6 @@ static int dumpObjectFiles(Debugger &Dbg) {
     }
   }
   return HadErrors;
-}
-
-/// Check if two half-open intervals intersect:
-///   http://world.std.com/~swmcd/steven/tech/interval.html
-bool opts::irmemorymap::areAllocationsOverlapping(const AllocationT &L,
-                                                  const AllocationT &R) {
-  return R.first < L.second && L.first < R.second;
 }
 
 bool opts::irmemorymap::evalMalloc(StringRef Line,
@@ -857,28 +851,21 @@ bool opts::irmemorymap::evalMalloc(StringRef Line,
     exit(1);
   }
 
-  // Check that the allocation does not overlap another allocation. Do so by
-  // testing each allocation which may cover the interval [Addr, EndOfRegion).
-  addr_t EndOfRegion = Addr + Size;
-  auto Probe = State.Allocations.begin();
-  Probe.advanceTo(Addr); //< First interval s.t stop >= Addr.
-  AllocationT NewAllocation = {Addr, EndOfRegion};
-  while (Probe != State.Allocations.end() && Probe.start() < EndOfRegion) {
-    AllocationT ProbeAllocation = {Probe.start(), Probe.stop()};
-    if (areAllocationsOverlapping(ProbeAllocation, NewAllocation)) {
-      outs() << "Malloc error: overlapping allocation detected"
-             << formatv(", previous allocation at [{0:x}, {1:x})\n",
-                        Probe.start(), Probe.stop());
-      exit(1);
-    }
-    ++Probe;
+  // In case of Size == 0, we still expect the returned address to be unique and
+  // non-overlapping.
+  addr_t EndOfRegion = Addr + std::max<size_t>(Size, 1);
+  if (State.Allocations.overlaps(Addr, EndOfRegion)) {
+    auto I = State.Allocations.find(Addr);
+    outs() << "Malloc error: overlapping allocation detected"
+           << formatv(", previous allocation at [{0:x}, {1:x})\n", I.start(),
+                      I.stop());
+    exit(1);
   }
 
   // Insert the new allocation into the interval map. Use unique allocation
   // IDs to inhibit interval coalescing.
   static unsigned AllocationID = 0;
-  if (Size)
-    State.Allocations.insert(Addr, EndOfRegion, AllocationID++);
+  State.Allocations.insert(Addr, EndOfRegion, AllocationID++);
 
   // Store the label -> address mapping.
   State.Label2AddrMap[Label] = Addr;

@@ -110,7 +110,7 @@ public:
 
   void Dump(lldb_private::Stream *s) override;
 
-  bool GetArchitecture(lldb_private::ArchSpec &arch) override;
+  lldb_private::ArchSpec GetArchitecture() override;
 
   bool GetUUID(lldb_private::UUID *uuid) override;
 
@@ -270,7 +270,7 @@ protected:
   void DumpSectionHeader(lldb_private::Stream *s, const section_header_t &sh);
   void DumpDependentModules(lldb_private::Stream *s);
 
-  bool GetSectionName(std::string &sect_name, const section_header_t &sect);
+  llvm::StringRef GetSectionName(const section_header_t &sect);
 
   typedef std::vector<section_header_t> SectionHeaderColl;
   typedef SectionHeaderColl::iterator SectionHeaderCollIter;

@@ -121,7 +121,7 @@ public:
 
   void Dump(lldb_private::Stream *s) override;
 
-  bool GetArchitecture(lldb_private::ArchSpec &arch) override;
+  lldb_private::ArchSpec GetArchitecture() override;
 
   bool GetUUID(lldb_private::UUID *uuid) override;
 
@@ -133,6 +133,8 @@ public:
   GetImageInfoAddress(lldb_private::Target *target) override;
 
   lldb_private::Address GetEntryPointAddress() override;
+
+  lldb_private::Address GetBaseAddress() override;
 
   ObjectFile::Type CalculateType() override;
 
@@ -220,10 +222,10 @@ private:
   /// The address class for each symbol in the elf file
   FileAddressToAddressClassMap m_address_class_map;
 
-  /// Returns a 1 based index of the given section header.
+  /// Returns the index of the given section header.
   size_t SectionIndex(const SectionHeaderCollIter &I);
 
-  /// Returns a 1 based index of the given section header.
+  /// Returns the index of the given section header.
   size_t SectionIndex(const SectionHeaderCollConstIter &I) const;
 
   // Parses the ELF program headers.
@@ -245,6 +247,8 @@ private:
   /// m_section_headers.  This method will compute the header list only once.
   /// Returns the number of headers parsed.
   size_t ParseSectionHeaders();
+
+  lldb::SectionType GetSectionType(const ELFSectionHeaderInfo &H) const;
 
   static void ParseARMAttributes(lldb_private::DataExtractor &data,
                                  uint64_t length,

@@ -11,7 +11,6 @@
 #include "NtStructures.h"
 #include "RegisterContextMinidump_x86_32.h"
 
-#include "lldb/Target/MemoryRegionInfo.h"
 #include "lldb/Utility/LLDBAssert.h"
 #include "Plugins/Process/Utility/LinuxProcMaps.h"
 
@@ -108,11 +107,15 @@ llvm::ArrayRef<MinidumpThread> MinidumpParser::GetThreads() {
 }
 
 llvm::ArrayRef<uint8_t>
-MinidumpParser::GetThreadContext(const MinidumpThread &td) {
-  if (td.thread_context.rva + td.thread_context.data_size > GetData().size())
+MinidumpParser::GetThreadContext(const MinidumpLocationDescriptor &location) {
+  if (location.rva + location.data_size > GetData().size())
     return {};
+  return GetData().slice(location.rva, location.data_size);
+}
 
-  return GetData().slice(td.thread_context.rva, td.thread_context.data_size);
+llvm::ArrayRef<uint8_t>
+MinidumpParser::GetThreadContext(const MinidumpThread &td) {
+  return GetThreadContext(td.thread_context);
 }
 
 llvm::ArrayRef<uint8_t>
@@ -537,6 +540,12 @@ MinidumpParser::FindMemoryRegion(lldb::addr_t load_addr) const {
 
 MemoryRegionInfo
 MinidumpParser::GetMemoryRegionInfo(lldb::addr_t load_addr) {
+  if (!m_parsed_regions)
+    GetMemoryRegions();
+  return FindMemoryRegion(load_addr);
+}
+
+const MemoryRegionInfos &MinidumpParser::GetMemoryRegions() {
   if (!m_parsed_regions) {
     m_parsed_regions = true;
     // We haven't cached our memory regions yet we will create the region cache
@@ -550,9 +559,9 @@ MinidumpParser::GetMemoryRegionInfo(lldb::addr_t load_addr) {
       if (!CreateRegionsCacheFromMemoryInfoList(*this, m_regions))
         if (!CreateRegionsCacheFromMemoryList(*this, m_regions))
           CreateRegionsCacheFromMemory64List(*this, m_regions);
-    std::sort(m_regions.begin(), m_regions.end());
+    llvm::sort(m_regions.begin(), m_regions.end());
   }
-  return FindMemoryRegion(load_addr);
+  return m_regions;
 }
 
 Status MinidumpParser::Initialize() {
@@ -637,10 +646,10 @@ Status MinidumpParser::Initialize() {
   }
 
   // Sort the file map ranges by start offset
-  std::sort(minidump_map.begin(), minidump_map.end(),
-            [](const FileRange &a, const FileRange &b) {
-              return a.offset < b.offset;
-            });
+  llvm::sort(minidump_map.begin(), minidump_map.end(),
+             [](const FileRange &a, const FileRange &b) {
+               return a.offset < b.offset;
+             });
 
   // Check for overlapping streams/data structures
   for (size_t i = 1; i < minidump_map.size(); ++i) {
@@ -659,4 +668,49 @@ Status MinidumpParser::Initialize() {
   }
 
   return error;
+}
+
+#define ENUM_TO_CSTR(ST) case (uint32_t)MinidumpStreamType::ST: return #ST
+
+llvm::StringRef
+MinidumpParser::GetStreamTypeAsString(uint32_t stream_type) {
+  switch (stream_type) {
+    ENUM_TO_CSTR(Unused);
+    ENUM_TO_CSTR(Reserved0);
+    ENUM_TO_CSTR(Reserved1);
+    ENUM_TO_CSTR(ThreadList);
+    ENUM_TO_CSTR(ModuleList);
+    ENUM_TO_CSTR(MemoryList);
+    ENUM_TO_CSTR(Exception);
+    ENUM_TO_CSTR(SystemInfo);
+    ENUM_TO_CSTR(ThreadExList);
+    ENUM_TO_CSTR(Memory64List);
+    ENUM_TO_CSTR(CommentA);
+    ENUM_TO_CSTR(CommentW);
+    ENUM_TO_CSTR(HandleData);
+    ENUM_TO_CSTR(FunctionTable);
+    ENUM_TO_CSTR(UnloadedModuleList);
+    ENUM_TO_CSTR(MiscInfo);
+    ENUM_TO_CSTR(MemoryInfoList);
+    ENUM_TO_CSTR(ThreadInfoList);
+    ENUM_TO_CSTR(HandleOperationList);
+    ENUM_TO_CSTR(Token);
+    ENUM_TO_CSTR(JavascriptData);
+    ENUM_TO_CSTR(SystemMemoryInfo);
+    ENUM_TO_CSTR(ProcessVMCounters);
+    ENUM_TO_CSTR(BreakpadInfo);
+    ENUM_TO_CSTR(AssertionInfo);
+    ENUM_TO_CSTR(LinuxCPUInfo);
+    ENUM_TO_CSTR(LinuxProcStatus);
+    ENUM_TO_CSTR(LinuxLSBRelease);
+    ENUM_TO_CSTR(LinuxCMDLine);
+    ENUM_TO_CSTR(LinuxEnviron);
+    ENUM_TO_CSTR(LinuxAuxv);
+    ENUM_TO_CSTR(LinuxMaps);
+    ENUM_TO_CSTR(LinuxDSODebug);
+    ENUM_TO_CSTR(LinuxProcStat);
+    ENUM_TO_CSTR(LinuxProcUptime);
+    ENUM_TO_CSTR(LinuxProcFD);
+  }
+  return "unknown stream type";
 }

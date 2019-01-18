@@ -117,7 +117,7 @@ void DynamicLoaderPOSIXDYLD::DidAttach() {
   EvalSpecialModulesStatus();
 
   // if we dont have a load address we cant re-base
-  bool rebase_exec = (load_offset == LLDB_INVALID_ADDRESS) ? false : true;
+  bool rebase_exec = load_offset != LLDB_INVALID_ADDRESS;
 
   // if we have a valid executable
   if (executable_sp.get()) {
@@ -496,7 +496,7 @@ DynamicLoaderPOSIXDYLD::GetStepThroughTrampolinePlan(Thread &thread,
     AddressVector::iterator start = addrs.begin();
     AddressVector::iterator end = addrs.end();
 
-    std::sort(start, end);
+    llvm::sort(start, end);
     addrs.erase(std::unique(start, end), end);
     thread_plan_sp.reset(new ThreadPlanRunToAddress(thread, addrs, stop));
   }

@@ -188,6 +188,10 @@ public:
 
   void SetDisplayRuntimeSupportValues(bool b);
 
+  bool GetDisplayRecognizedArguments() const;
+
+  void SetDisplayRecognizedArguments(bool b);
+
   const ProcessLaunchInfo &GetProcessLaunchInfo();
 
   void SetProcessLaunchInfo(const ProcessLaunchInfo &launch_info);
@@ -529,7 +533,9 @@ public:
   //------------------------------------------------------------------
   void Dump(Stream *s, lldb::DescriptionLevel description_level);
 
-  const lldb::ProcessSP &CreateProcess(lldb::ListenerSP listener,
+  // If listener_sp is null, the listener of the owning Debugger object will be
+  // used.
+  const lldb::ProcessSP &CreateProcess(lldb::ListenerSP listener_sp,
                                        llvm::StringRef plugin_name,
                                        const FileSpec *crash_file);
 
@@ -1347,6 +1353,8 @@ private:
   void PrimeFromDummyTarget(Target *dummy_target);
 
   void AddBreakpoint(lldb::BreakpointSP breakpoint_sp, bool internal);
+
+  void FinalizeFileActions(ProcessLaunchInfo &info);
 
   DISALLOW_COPY_AND_ASSIGN(Target);
 };

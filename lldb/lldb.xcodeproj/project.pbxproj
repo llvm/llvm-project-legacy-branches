@@ -579,6 +579,7 @@
 		4CA0C6CC20F929C700CFE6BB /* PDBLocationToDWARFExpression.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4CA0C6CA20F929C600CFE6BB /* PDBLocationToDWARFExpression.cpp */; };
 		268900EE13353E6F00698AC0 /* PathMappingList.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 495BBACB119A0DBE00418BEA /* PathMappingList.cpp */; };
 		2668A2EE20AF417D00D94111 /* PathMappingListTest.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2668A2ED20AF417D00D94111 /* PathMappingListTest.cpp */; };
+		AF815DF921C855B400023A34 /* PdbAstBuilder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AF815DF721C855B400023A34 /* PdbAstBuilder.cpp */; };
 		AFD966BA217140B6006714AC /* PdbIndex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AFD966B6217140B6006714AC /* PdbIndex.cpp */; };
 		AF0F459E219FA1C800C1E612 /* PdbSymUid.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AF0F459D219FA1C800C1E612 /* PdbSymUid.cpp */; };
 		AFD966B9217140B6006714AC /* PdbUtil.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AFD966B5217140B6006714AC /* PdbUtil.cpp */; };
@@ -640,7 +641,6 @@
 		AF0C112818580CD800C4C45B /* QueueItem.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AF0C112718580CD800C4C45B /* QueueItem.cpp */; };
 		AF26703B1852D01E00B6CC36 /* QueueList.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AF2670391852D01E00B6CC36 /* QueueList.cpp */; };
 		4939EA8D1BD56B6D00084382 /* REPL.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4939EA8C1BD56B6D00084382 /* REPL.cpp */; };
-		94BA8B6D176F8C9B005A91B5 /* Range.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 94BA8B6C176F8C9B005A91B5 /* Range.cpp */; };
 		268900F113353E6F00698AC0 /* RegisterContext.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26BC7F3710F1B90C00F91463 /* RegisterContext.cpp */; };
 		26957D9813D381C900670048 /* RegisterContextDarwin_arm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26957D9213D381C900670048 /* RegisterContextDarwin_arm.cpp */; };
 		AF9107EE168570D200DBCD3C /* RegisterContextDarwin_arm64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AF9107EC168570D200DBCD3C /* RegisterContextDarwin_arm64.cpp */; };
@@ -905,6 +905,7 @@
 		268900DD13353E6F00698AC0 /* Symbol.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26BC7F1B10F1B8EC00F91463 /* Symbol.cpp */; };
 		268900DE13353E6F00698AC0 /* SymbolContext.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26BC7F1C10F1B8EC00F91463 /* SymbolContext.cpp */; };
 		268900DF13353E6F00698AC0 /* SymbolFile.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26BC7F1D10F1B8EC00F91463 /* SymbolFile.cpp */; };
+		AF97744721E9947E006876A7 /* SymbolFileBreakpad.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AF97744621E9947B006876A7 /* SymbolFileBreakpad.cpp */; };
 		268900CA13353E5F00698AC0 /* SymbolFileDWARF.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260C89D910F57C5600BB2B04 /* SymbolFileDWARF.cpp */; };
 		268900CC13353E5F00698AC0 /* SymbolFileDWARFDebugMap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260C89DB10F57C5600BB2B04 /* SymbolFileDWARFDebugMap.cpp */; };
 		6D95DC021B9DC057000E318A /* SymbolFileDWARFDwo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6D95DBFF1B9DC057000E318A /* SymbolFileDWARFDwo.cpp */; };
@@ -2403,6 +2404,8 @@
 		495BBACB119A0DBE00418BEA /* PathMappingList.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = PathMappingList.cpp; path = source/Target/PathMappingList.cpp; sourceTree = "<group>"; };
 		495BBACF119A0DE700418BEA /* PathMappingList.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = PathMappingList.h; path = include/lldb/Target/PathMappingList.h; sourceTree = "<group>"; };
 		2668A2ED20AF417D00D94111 /* PathMappingListTest.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = PathMappingListTest.cpp; path = Target/PathMappingListTest.cpp; sourceTree = "<group>"; };
+		AF815DF721C855B400023A34 /* PdbAstBuilder.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = PdbAstBuilder.cpp; path = source/Plugins/SymbolFile/NativePDB/PdbAstBuilder.cpp; sourceTree = SOURCE_ROOT; };
+		AF815DF821C855B400023A34 /* PdbAstBuilder.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = PdbAstBuilder.h; path = source/Plugins/SymbolFile/NativePDB/PdbAstBuilder.h; sourceTree = SOURCE_ROOT; };
 		AFD966B6217140B6006714AC /* PdbIndex.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = PdbIndex.cpp; path = source/Plugins/SymbolFile/NativePDB/PdbIndex.cpp; sourceTree = SOURCE_ROOT; };
 		AFD966BF217140C8006714AC /* PdbIndex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PdbIndex.h; path = source/Plugins/SymbolFile/NativePDB/PdbIndex.h; sourceTree = SOURCE_ROOT; };
 		AF0F459D219FA1C800C1E612 /* PdbSymUid.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = PdbSymUid.cpp; path = source/Plugins/SymbolFile/NativePDB/PdbSymUid.cpp; sourceTree = SOURCE_ROOT; };
@@ -2520,8 +2523,6 @@
 		4939EA8C1BD56B6D00084382 /* REPL.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = REPL.cpp; path = source/Expression/REPL.cpp; sourceTree = "<group>"; };
 		4939EA8B1BD56B3700084382 /* REPL.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = REPL.h; path = include/lldb/Expression/REPL.h; sourceTree = "<group>"; };
 		9A2057451F3B905C00F6C293 /* RNBSocketTest.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RNBSocketTest.cpp; path = debugserver/RNBSocketTest.cpp; sourceTree = "<group>"; };
-		94BA8B6C176F8C9B005A91B5 /* Range.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Range.cpp; path = source/Utility/Range.cpp; sourceTree = "<group>"; };
-		94BA8B6E176F8CA0005A91B5 /* Range.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Range.h; path = include/lldb/Utility/Range.h; sourceTree = "<group>"; };
 		2626B6AD143E1BEA00EF935C /* RangeMap.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RangeMap.h; path = include/lldb/Core/RangeMap.h; sourceTree = "<group>"; };
 		26AB54111832DC3400EADFF3 /* RegisterCheckpoint.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RegisterCheckpoint.h; path = include/lldb/Target/RegisterCheckpoint.h; sourceTree = "<group>"; };
 		26BC7F3710F1B90C00F91463 /* RegisterContext.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RegisterContext.cpp; path = source/Target/RegisterContext.cpp; sourceTree = "<group>"; };
@@ -2975,6 +2976,8 @@
 		26BC7C6110F1B6E900F91463 /* SymbolContextScope.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SymbolContextScope.h; path = include/lldb/Symbol/SymbolContextScope.h; sourceTree = "<group>"; };
 		26BC7F1D10F1B8EC00F91463 /* SymbolFile.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SymbolFile.cpp; path = source/Symbol/SymbolFile.cpp; sourceTree = "<group>"; };
 		26BC7C6210F1B6E900F91463 /* SymbolFile.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SymbolFile.h; path = include/lldb/Symbol/SymbolFile.h; sourceTree = "<group>"; };
+		AF97744621E9947B006876A7 /* SymbolFileBreakpad.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SymbolFileBreakpad.cpp; path = source/Plugins/SymbolFile/Breakpad/SymbolFileBreakpad.cpp; sourceTree = SOURCE_ROOT; };
+		AF97744521E9947B006876A7 /* SymbolFileBreakpad.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SymbolFileBreakpad.h; path = source/Plugins/SymbolFile/Breakpad/SymbolFileBreakpad.h; sourceTree = SOURCE_ROOT; };
 		260C89D910F57C5600BB2B04 /* SymbolFileDWARF.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SymbolFileDWARF.cpp; sourceTree = "<group>"; };
 		260C89DA10F57C5600BB2B04 /* SymbolFileDWARF.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SymbolFileDWARF.h; sourceTree = "<group>"; };
 		260C89DB10F57C5600BB2B04 /* SymbolFileDWARFDebugMap.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SymbolFileDWARFDebugMap.cpp; sourceTree = "<group>"; };
@@ -3580,12 +3583,14 @@
 		2321F9421BDD343A00BA9A93 /* Utility */ = {
 			isa = PBXGroup;
 			children = (
+				23CB14E61D66CC0E00EDDDE1 /* BroadcasterTest.cpp */,
 				7F94D7172040A13A006EE3EA /* CleanUpTest.cpp */,
 				23E2E5161D903689006F38BB /* ArchSpecTest.cpp */,
 				9A3D43C81F3150D200EB767C /* ConstStringTest.cpp */,
 				AFA1B62B219E0ED900A8AB7E /* DataExtractorTest.cpp */,
 				23CB14FD1D66CD2400EDDDE1 /* FileSpecTest.cpp */,
 				8C3BD99F1EF5D1B50016C343 /* JSONTest.cpp */,
+				9A3D43E31F3237D500EB767C /* ListenerTest.cpp */,
 				9A3D43C71F3150D200EB767C /* LogTest.cpp */,
 				9A3D43CB1F3150D200EB767C /* NameMatchesTest.cpp */,
 				23CB14E91D66CC0E00EDDDE1 /* ScalarTest.cpp */,
@@ -3745,10 +3750,8 @@
 		23CB14E51D66CBEB00EDDDE1 /* Core */ = {
 			isa = PBXGroup;
 			children = (
-				23CB14E61D66CC0E00EDDDE1 /* BroadcasterTest.cpp */,
 				23CB14E71D66CC0E00EDDDE1 /* CMakeLists.txt */,
 				58A080B12112AB2200D5580F /* HighlighterTest.cpp */,
-				9A3D43E31F3237D500EB767C /* ListenerTest.cpp */,
 				4F29D3CD21010F84003B549A /* MangledTest.cpp */,
 				4FBC04F3211A0F0F0015A814 /* RichManglingContextTest.cpp */,
 				9A3D43E11F3237D500EB767C /* StreamCallbackTest.cpp */,
@@ -4024,6 +4027,7 @@
 		260C89B110F57C5600BB2B04 /* SymbolFile */ = {
 			isa = PBXGroup;
 			children = (
+				AF97744421E99467006876A7 /* Breakpad */,
 				AFD966B321714099006714AC /* NativePDB */,
 				AF6335DF1C87B20A00F7D554 /* PDB */,
 				260C89B210F57C5600BB2B04 /* DWARF */,
@@ -4658,8 +4662,6 @@
 				9A35765F116E76B900E8ED2F /* StringList.cpp */,
 				26F2F8FD1B156678007857DE /* StructuredData.h */,
 				AFEC3361194A8ABA00FF05C6 /* StructuredData.cpp */,
-				94BA8B6E176F8CA0005A91B5 /* Range.h */,
-				94BA8B6C176F8C9B005A91B5 /* Range.cpp */,
 				AFF8FF0B1E779D4B003830EF /* TildeExpressionResolver.cpp */,
 				AFF8FF0D1E779D51003830EF /* TildeExpressionResolver.h */,
 				26BC7D7E10F1B77400F91463 /* Timer.h */,
@@ -6806,6 +6808,16 @@
 			path = ../Disassembler;
 			sourceTree = "<group>";
 		};
+		AF97744421E99467006876A7 /* Breakpad */ = {
+			isa = PBXGroup;
+			children = (
+				AF97744621E9947B006876A7 /* SymbolFileBreakpad.cpp */,
+				AF97744521E9947B006876A7 /* SymbolFileBreakpad.h */,
+			);
+			name = Breakpad;
+			path = "New Group";
+			sourceTree = "<group>";
+		};
 		AFAFD8081E57E19E0017A14F /* Target */ = {
 			isa = PBXGroup;
 			children = (
@@ -6823,6 +6835,8 @@
 				AFD966BD217140C8006714AC /* CompileUnitIndex.h */,
 				4C38996221B9AECC002BAEF4 /* DWARFLocationExpression.cpp */,
 				4C38996321B9AECC002BAEF4 /* DWARFLocationExpression.h */,
+				AF815DF721C855B400023A34 /* PdbAstBuilder.cpp */,
+				AF815DF821C855B400023A34 /* PdbAstBuilder.h */,
 				AFD966B6217140B6006714AC /* PdbIndex.cpp */,
 				AFD966BF217140C8006714AC /* PdbIndex.h */,
 				AF0F459D219FA1C800C1E612 /* PdbSymUid.cpp */,
@@ -7842,6 +7856,7 @@
 				964463EC1A330C0500154ED8 /* CompactUnwindInfo.cpp in Sources */,
 				94B638531B8F8E6C004FE1E4 /* Language.cpp in Sources */,
 				AF395C03219254F300894EC3 /* MSVCUndecoratedNameParser.cpp in Sources */,
+				AF815DF921C855B400023A34 /* PdbAstBuilder.cpp in Sources */,
 				2689001D13353DDE00698AC0 /* CommandObjectLog.cpp in Sources */,
 				262173A318395D4600C52091 /* SectionLoadHistory.cpp in Sources */,
 				2689001E13353DDE00698AC0 /* CommandObjectMemory.cpp in Sources */,
@@ -8327,6 +8342,7 @@
 				3FBA69E11B6067120008F44A /* ScriptInterpreterNone.cpp in Sources */,
 				AF9113FD1FBE78EA004320CD /* RegisterContextPOSIXCore_ppc64le.cpp in Sources */,
 				266DFE9713FD656E00D0C574 /* OperatingSystem.cpp in Sources */,
+				AF97744721E9947E006876A7 /* SymbolFileBreakpad.cpp in Sources */,
 				AF8AD6391BEC28C400150209 /* PlatformRemoteAppleWatch.cpp in Sources */,
 				26954EBE1401EE8B00294D09 /* DynamicRegisterInfo.cpp in Sources */,
 				6D9AB3DD1BB2B74E003F2289 /* TypeMap.cpp in Sources */,
@@ -8393,7 +8409,6 @@
 				6D55B2911A8A806200A70529 /* GDBRemoteCommunicationServerLLGS.cpp in Sources */,
 				260CC65315D0440D002BF2E0 /* OptionValueUInt64.cpp in Sources */,
 				260CC65415D0440D002BF2E0 /* OptionValueUUID.cpp in Sources */,
-				94BA8B6D176F8C9B005A91B5 /* Range.cpp in Sources */,
 				267F684A1CC02DED0086832B /* ABISysV_s390x.cpp in Sources */,
 				AFDBC36E204663AF00B9C8F2 /* EmulateInstructionPPC64.cpp in Sources */,
 				26DAED6315D327C200E15819 /* OptionValuePathMappings.cpp in Sources */,
@@ -8706,8 +8721,7 @@
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_VALUE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LLDB_COMPRESSION_CFLAGS = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "-weak-lcompression";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				LLDB_COVERAGE_CFLAGS = "$(LLDB_COVERAGE_CFLAGS_$(LLDB_ENABLE_COVERAGE))";
 				LLDB_COVERAGE_CFLAGS_1 = "-fprofile-instr-generate -fcoverage-mapping";
 				LLDB_COVERAGE_LDFLAGS = "$(LLDB_COVERAGE_LDFLAGS_$(LLDB_ENABLE_COVERAGE))";
@@ -8717,8 +8731,6 @@
 				LLDB_ENABLE_COVERAGE = 0;
 				LLDB_FRAMEWORK_INSTALL_DIR = /Applications/Xcode.app/Contents/SharedFrameworks;
 				LLDB_TOOLS_INSTALL_DIR = /usr/bin;
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
 				LLVM_BUILD_DIR = "$(SRCROOT)/llvm-build/$(LLVM_CONFIGURATION)";
 				LLVM_BUILD_DIRTREE = "$(SRCROOT)/llvm-build";
 				LLVM_BUILD_DIR_ARCH = x86_64/;
@@ -8727,14 +8739,11 @@
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_COVERAGE_CFLAGS)",
 					"-Wimplicit-fallthrough",
 				);
 				OTHER_LDFLAGS = (
-					"$(LLDB_COMPRESSION_LDFLAGS)",
-					"$(LLDB_ZLIB_LDFLAGS)",
+					"-lcompression",
 					"$(LLDB_COVERAGE_LDFLAGS)",
 				);
 				PYTHON_FRAMEWORK_PATH = /System/Library/Frameworks/Python.framework/;
@@ -8796,8 +8805,7 @@
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_VALUE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LLDB_COMPRESSION_CFLAGS = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "-weak-lcompression";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				LLDB_COVERAGE_CFLAGS = "$(LLDB_COVERAGE_CFLAGS_$(LLDB_ENABLE_COVERAGE))";
 				LLDB_COVERAGE_CFLAGS_1 = "-fprofile-instr-generate -fcoverage-mapping";
 				LLDB_COVERAGE_LDFLAGS = "$(LLDB_COVERAGE_LDFLAGS_$(LLDB_ENABLE_COVERAGE))";
@@ -8807,8 +8815,6 @@
 				LLDB_ENABLE_COVERAGE = 0;
 				LLDB_FRAMEWORK_INSTALL_DIR = /Applications/Xcode.app/Contents/SharedFrameworks;
 				LLDB_TOOLS_INSTALL_DIR = /usr/bin;
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
 				LLVM_BUILD_DIR = "$(SRCROOT)/llvm-build/$(LLVM_CONFIGURATION)";
 				LLVM_BUILD_DIRTREE = "$(SRCROOT)/llvm-build";
 				LLVM_BUILD_DIR_ARCH = x86_64/;
@@ -8817,14 +8823,11 @@
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_COVERAGE_CFLAGS)",
 					"-Wimplicit-fallthrough",
 				);
 				OTHER_LDFLAGS = (
-					"$(LLDB_COMPRESSION_LDFLAGS)",
-					"$(LLDB_ZLIB_LDFLAGS)",
+					"-lcompression",
 					"$(LLDB_COVERAGE_LDFLAGS)",
 				);
 				PYTHON_FRAMEWORK_PATH = /System/Library/Frameworks/Python.framework/;
@@ -8958,8 +8961,6 @@
 				OTHER_CFLAGS = (
 					"-fno-rtti",
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_GTESTS_CFLAGS)",
 					"-DGTEST_HAS_RTTI=0",
 				);
@@ -9000,8 +9001,6 @@
 				OTHER_CFLAGS = (
 					"-fno-rtti",
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_GTESTS_CFLAGS)",
 					"-DGTEST_HAS_RTTI=0",
 				);
@@ -9042,8 +9041,6 @@
 				OTHER_CFLAGS = (
 					"-fno-rtti",
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_GTESTS_CFLAGS)",
 					"-DGTEST_HAS_RTTI=0",
 				);
@@ -9084,8 +9081,6 @@
 				OTHER_CFLAGS = (
 					"-fno-rtti",
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_GTESTS_CFLAGS)",
 					"-DGTEST_HAS_RTTI=0",
 				);
@@ -9126,8 +9121,6 @@
 				OTHER_CFLAGS = (
 					"-fno-rtti",
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_GTESTS_CFLAGS)",
 					"-DGTEST_HAS_RTTI=0",
 				);
@@ -9146,7 +9139,6 @@
 					"-framework",
 					ApplicationServices,
 					"$(LLDB_GTESTS_LDFLAGS)",
-					"$(LLDB_ZLIB_LDFLAGS)",
 					"$(LLDB_COMPRESSION_LDFLAGS)",
 				);
 				PRODUCT_NAME = "lldb-gtest";
@@ -9170,8 +9162,6 @@
 				OTHER_CFLAGS = (
 					"-fno-rtti",
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_GTESTS_CFLAGS)",
 					"-DGTEST_HAS_RTTI=0",
 				);
@@ -9190,7 +9180,6 @@
 					"-framework",
 					ApplicationServices,
 					"$(LLDB_GTESTS_LDFLAGS)",
-					"$(LLDB_ZLIB_LDFLAGS)",
 					"$(LLDB_COMPRESSION_LDFLAGS)",
 				);
 				PRODUCT_NAME = "lldb-gtest";
@@ -9214,8 +9203,6 @@
 				OTHER_CFLAGS = (
 					"-fno-rtti",
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_GTESTS_CFLAGS)",
 					"-DGTEST_HAS_RTTI=0",
 				);
@@ -9234,7 +9221,6 @@
 					"-framework",
 					ApplicationServices,
 					"$(LLDB_GTESTS_LDFLAGS)",
-					"$(LLDB_ZLIB_LDFLAGS)",
 					"$(LLDB_COMPRESSION_LDFLAGS)",
 				);
 				PRODUCT_NAME = "lldb-gtest";
@@ -9258,8 +9244,6 @@
 				OTHER_CFLAGS = (
 					"-fno-rtti",
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_GTESTS_CFLAGS)",
 					"-DGTEST_HAS_RTTI=0",
 				);
@@ -9278,7 +9262,6 @@
 					"-framework",
 					ApplicationServices,
 					"$(LLDB_GTESTS_LDFLAGS)",
-					"$(LLDB_ZLIB_LDFLAGS)",
 					"$(LLDB_COMPRESSION_LDFLAGS)",
 				);
 				PRODUCT_NAME = "lldb-gtest";
@@ -9351,12 +9334,7 @@
 					"$(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)",
 					"$(inherited)",
 				);
-				LLDB_COMPRESSION_CFLAGS = "";
-				"LLDB_COMPRESSION_CFLAGS[sdk=macosx10.11]" = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "";
-				"LLDB_COMPRESSION_LDFLAGS[sdk=macosx10.11]" = "-weak-lcompression";
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				OTHER_CPLUSPLUSFLAGS = (
 					"-I/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7",
 					"-fno-rtti",
@@ -9424,12 +9402,7 @@
 					"$(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)",
 					"$(inherited)",
 				);
-				LLDB_COMPRESSION_CFLAGS = "";
-				"LLDB_COMPRESSION_CFLAGS[sdk=macosx10.11]" = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "";
-				"LLDB_COMPRESSION_LDFLAGS[sdk=macosx10.11]" = "-weak-lcompression";
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				OTHER_CPLUSPLUSFLAGS = (
 					"-I/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7",
 					"-fno-rtti",
@@ -9759,12 +9732,7 @@
 					"LLDB_VERSION_STRING=lldb-${CURRENT_PROJECT_VERSION}",
 				);
 				HEADER_SEARCH_PATHS = /usr/include/libxml2;
-				LLDB_COMPRESSION_CFLAGS = "";
-				"LLDB_COMPRESSION_CFLAGS[sdk=macosx10.11]" = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "";
-				"LLDB_COMPRESSION_LDFLAGS[sdk=macosx10.11]" = "-weak-lcompression";
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				MACH_O_TYPE = staticlib;
 				OTHER_CPLUSPLUSFLAGS = (
 					"-I/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7",
@@ -9816,12 +9784,7 @@
 					"LLDB_VERSION_STRING=lldb-${CURRENT_PROJECT_VERSION}",
 				);
 				HEADER_SEARCH_PATHS = /usr/include/libxml2;
-				LLDB_COMPRESSION_CFLAGS = "";
-				"LLDB_COMPRESSION_CFLAGS[sdk=macosx10.11]" = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "";
-				"LLDB_COMPRESSION_LDFLAGS[sdk=macosx10.11]" = "-weak-lcompression";
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				MACH_O_TYPE = staticlib;
 				OTHER_CPLUSPLUSFLAGS = (
 					"-I/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7",
@@ -9873,12 +9836,7 @@
 					"LLDB_VERSION_STRING=lldb-${CURRENT_PROJECT_VERSION}",
 				);
 				HEADER_SEARCH_PATHS = /usr/include/libxml2;
-				LLDB_COMPRESSION_CFLAGS = "";
-				"LLDB_COMPRESSION_CFLAGS[sdk=macosx10.11]" = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "";
-				"LLDB_COMPRESSION_LDFLAGS[sdk=macosx10.11]" = "-weak-lcompression";
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				MACH_O_TYPE = staticlib;
 				OTHER_CPLUSPLUSFLAGS = (
 					"-I/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7",
@@ -9952,8 +9910,7 @@
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_VALUE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LLDB_COMPRESSION_CFLAGS = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "-weak-lcompression";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				LLDB_COVERAGE_CFLAGS = "$(LLDB_COVERAGE_CFLAGS_$(LLDB_ENABLE_COVERAGE))";
 				LLDB_COVERAGE_CFLAGS_1 = "-fprofile-instr-generate -fcoverage-mapping";
 				LLDB_COVERAGE_LDFLAGS = "$(LLDB_COVERAGE_LDFLAGS_$(LLDB_ENABLE_COVERAGE))";
@@ -9965,8 +9922,6 @@
 				"LLDB_FRAMEWORK_INSTALL_DIR[sdk=iphoneos*]" = /System/Library/PrivateFrameworks;
 				LLDB_TOOLS_INSTALL_DIR = /Applications/Xcode.app/Contents/Developer/usr/bin;
 				"LLDB_TOOLS_INSTALL_DIR[sdk=iphoneos*]" = /usr/local/bin;
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
 				LLVM_BUILD_DIR = "$(OBJROOT)/llvm";
 				LLVM_BUILD_DIRTREE = "$(OBJROOT)/llvm-build";
 				LLVM_BUILD_DIR_ARCH = x86_64/;
@@ -9974,15 +9929,12 @@
 				LLVM_SOURCE_DIR = "$(SRCROOT)/llvm";
 				OTHER_CFLAGS = (
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_COVERAGE_CFLAGS)",
 					"-Wimplicit-fallthrough",
 					"-DNDEBUG",
 				);
 				OTHER_LDFLAGS = (
-					"$(LLDB_COMPRESSION_LDFLAGS)",
-					"$(LLDB_ZLIB_LDFLAGS)",
+					"-lcompression",
 					"$(LLDB_COVERAGE_LDFLAGS)",
 				);
 				"OTHER_LDFLAGS[sdk=macosx*]" = "";
@@ -10013,8 +9965,6 @@
 				LIBRARY_SEARCH_PATHS = "$(inherited)";
 				OTHER_CFLAGS = (
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_COVERAGE_CFLAGS)",
 					"-Wimplicit-fallthrough",
 					"-fno-rtti",
@@ -10083,12 +10033,7 @@
 					"$(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)",
 					"$(inherited)",
 				);
-				LLDB_COMPRESSION_CFLAGS = "";
-				"LLDB_COMPRESSION_CFLAGS[sdk=macosx10.11]" = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "";
-				"LLDB_COMPRESSION_LDFLAGS[sdk=macosx10.11]" = "-weak-lcompression";
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				OTHER_CPLUSPLUSFLAGS = (
 					"-I/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7",
 					"-fno-rtti",
@@ -10591,8 +10536,6 @@
 				LIBRARY_SEARCH_PATHS = "$(inherited)";
 				OTHER_CFLAGS = (
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_COVERAGE_CFLAGS)",
 					"-Wimplicit-fallthrough",
 					"-fno-rtti",
@@ -10632,8 +10575,6 @@
 				LIBRARY_SEARCH_PATHS = "$(inherited)";
 				OTHER_CFLAGS = (
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_COVERAGE_CFLAGS)",
 					"-Wimplicit-fallthrough",
 					"-fno-rtti",
@@ -10707,8 +10648,7 @@
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_VALUE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LLDB_COMPRESSION_CFLAGS = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "-weak-lcompression";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				LLDB_COVERAGE_CFLAGS = "$(LLDB_COVERAGE_CFLAGS_$(LLDB_ENABLE_COVERAGE))";
 				LLDB_COVERAGE_CFLAGS_1 = "-fprofile-instr-generate -fcoverage-mapping";
 				LLDB_COVERAGE_LDFLAGS = "$(LLDB_COVERAGE_LDFLAGS_$(LLDB_ENABLE_COVERAGE))";
@@ -10718,8 +10658,6 @@
 				LLDB_ENABLE_COVERAGE = 0;
 				LLDB_FRAMEWORK_INSTALL_DIR = /Applications/Xcode.app/Contents/SharedFrameworks;
 				LLDB_TOOLS_INSTALL_DIR = /usr/bin;
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
 				LLVM_BUILD_DIR = "$(SRCROOT)/llvm-build/$(LLVM_CONFIGURATION)";
 				LLVM_BUILD_DIRTREE = "$(SRCROOT)/llvm-build";
 				LLVM_BUILD_DIR_ARCH = x86_64/;
@@ -10728,14 +10666,11 @@
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_COVERAGE_CFLAGS)",
 					"-Wimplicit-fallthrough",
 				);
 				OTHER_LDFLAGS = (
-					"$(LLDB_COMPRESSION_LDFLAGS)",
-					"$(LLDB_ZLIB_LDFLAGS)",
+					"-lcompression",
 					"$(LLDB_COVERAGE_LDFLAGS)",
 				);
 				PYTHON_FRAMEWORK_PATH = /System/Library/Frameworks/Python.framework/;
@@ -10790,8 +10725,6 @@
 				LIBRARY_SEARCH_PATHS = "$(inherited)";
 				OTHER_CFLAGS = (
 					"-Wparentheses",
-					"$(LLDB_ZLIB_CFLAGS)",
-					"$(LLDB_COMPRESSION_CFLAGS)",
 					"$(LLDB_COVERAGE_CFLAGS)",
 					"-Wimplicit-fallthrough",
 					"-fno-rtti",
@@ -10842,12 +10775,7 @@
 					"$(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)",
 					"$(inherited)",
 				);
-				LLDB_COMPRESSION_CFLAGS = "";
-				"LLDB_COMPRESSION_CFLAGS[sdk=macosx10.11]" = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "";
-				"LLDB_COMPRESSION_LDFLAGS[sdk=macosx10.11]" = "-weak-lcompression";
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				OTHER_CPLUSPLUSFLAGS = (
 					"-I/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7",
 					"-fno-rtti",
@@ -10928,12 +10856,7 @@
 					"LLDB_VERSION_STRING=lldb-${CURRENT_PROJECT_VERSION}",
 				);
 				HEADER_SEARCH_PATHS = /usr/include/libxml2;
-				LLDB_COMPRESSION_CFLAGS = "";
-				"LLDB_COMPRESSION_CFLAGS[sdk=macosx10.11]" = "-DHAVE_LIBCOMPRESSION=1";
-				LLDB_COMPRESSION_LDFLAGS = "";
-				"LLDB_COMPRESSION_LDFLAGS[sdk=macosx10.11]" = "-weak-lcompression";
-				LLDB_ZLIB_CFLAGS = "-DHAVE_LIBZ=1";
-				LLDB_ZLIB_LDFLAGS = "-lz";
+				LLDB_COMPRESSION_LDFLAGS = "-lcompression";
 				MACH_O_TYPE = staticlib;
 				OTHER_CPLUSPLUSFLAGS = (
 					"-I/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7",

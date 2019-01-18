@@ -76,7 +76,7 @@ PlatformSP PlatformAppleTVSimulator::CreateInstance(bool force,
   }
 
   bool create = force;
-  if (create == false && arch && arch->IsValid()) {
+  if (!create && arch && arch->IsValid()) {
     switch (arch->GetMachine()) {
     case llvm::Triple::x86_64: {
       const llvm::Triple &triple = arch->GetTriple();
@@ -89,7 +89,7 @@ PlatformSP PlatformAppleTVSimulator::CreateInstance(bool force,
       // Only accept "unknown" for the vendor if the host is Apple and it
       // "unknown" wasn't specified (it was just returned because it was NOT
       // specified)
-      case llvm::Triple::UnknownArch:
+      case llvm::Triple::UnknownVendor:
         create = !arch->TripleVendorWasSpecified();
         break;
 #endif

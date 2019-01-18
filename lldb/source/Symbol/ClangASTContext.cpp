@@ -992,9 +992,7 @@ TargetInfo *ClangASTContext::getTargetInfo() {
 static inline bool QualTypeMatchesBitSize(const uint64_t bit_size,
                                           ASTContext *ast, QualType qual_type) {
   uint64_t qual_type_bit_size = ast->getTypeSize(qual_type);
-  if (qual_type_bit_size == bit_size)
-    return true;
-  return false;
+  return qual_type_bit_size == bit_size;
 }
 
 CompilerType
@@ -1143,9 +1141,10 @@ CompilerType ClangASTContext::GetBasicType(ASTContext *ast,
 
 uint32_t ClangASTContext::GetPointerByteSize() {
   if (m_pointer_byte_size == 0)
-    m_pointer_byte_size = GetBasicType(lldb::eBasicTypeVoid)
-                              .GetPointerType()
-                              .GetByteSize(nullptr);
+    if (auto size = GetBasicType(lldb::eBasicTypeVoid)
+                        .GetPointerType()
+                        .GetByteSize(nullptr))
+      m_pointer_byte_size = *size;
   return m_pointer_byte_size;
 }
 
@@ -1866,8 +1865,7 @@ CompilerType ClangASTContext::CreateObjCClass(const char *name,
 }
 
 static inline bool BaseSpecifierIsEmpty(const CXXBaseSpecifier *b) {
-  return ClangASTContext::RecordHasFields(b->getType()->getAsCXXRecordDecl()) ==
-         false;
+  return !ClangASTContext::RecordHasFields(b->getType()->getAsCXXRecordDecl());
 }
 
 uint32_t
@@ -3936,9 +3934,7 @@ bool ClangASTContext::IsCXXClassType(const CompilerType &type) {
     return false;
 
   clang::QualType qual_type(ClangUtil::GetCanonicalQualType(type));
-  if (!qual_type.isNull() && qual_type->getAsCXXRecordDecl() != nullptr)
-    return true;
-  return false;
+  return !qual_type.isNull() && qual_type->getAsCXXRecordDecl() != nullptr;
 }
 
 bool ClangASTContext::IsBeingDefined(lldb::opaque_compiler_type_t type) {
@@ -4510,7 +4506,8 @@ ClangASTContext::GetArrayElementType(lldb::opaque_compiler_type_t type,
 
     // TODO: the real stride will be >= this value.. find the real one!
     if (stride)
-      *stride = element_type.GetByteSize(nullptr);
+      if (Optional<uint64_t> size = element_type.GetByteSize(nullptr))
+        *stride = *size;
 
     return element_type;
   }
@@ -5532,15 +5529,14 @@ static bool ObjCDeclHasIVars(clang::ObjCInterfaceDecl *class_interface_decl,
   return false;
 }
 
-static llvm::Optional<SymbolFile::ArrayInfo>
+static Optional<SymbolFile::ArrayInfo>
 GetDynamicArrayInfo(ClangASTContext &ast, SymbolFile *sym_file,
                     clang::QualType qual_type,
                     const ExecutionContext *exe_ctx) {
   if (qual_type->isIncompleteArrayType())
     if (auto *metadata = ast.GetMetadata(qual_type.getAsOpaquePtr()))
-      if (auto *dwarf_parser = ast.GetDWARFParser())
-        return sym_file->GetDynamicArrayInfoForUID(metadata->GetUserID(),
-                                                   exe_ctx);
+      return sym_file->GetDynamicArrayInfoForUID(metadata->GetUserID(),
+                                                 exe_ctx);
   return llvm::None;
 }
 
@@ -5593,7 +5589,7 @@ uint32_t ClangASTContext::GetNumChildren(lldb::opaque_compiler_type_t type,
                         ->getDecl());
 
             // Skip empty base classes
-            if (ClangASTContext::RecordHasFields(base_class_decl) == false)
+            if (!ClangASTContext::RecordHasFields(base_class_decl))
               continue;
 
             num_children++;
@@ -6600,6 +6596,10 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
   if (!type)
     return CompilerType();
 
+  auto get_exe_scope = [&exe_ctx]() {
+    return exe_ctx ? exe_ctx->GetBestExecutionContextScope() : nullptr;
+  };
+
   clang::QualType parent_qual_type(GetCanonicalQualType(type));
   const clang::Type::TypeClass parent_type_class =
       parent_qual_type->getTypeClass();
@@ -6655,7 +6655,7 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
           if (omit_empty_base_classes) {
             base_class_decl = llvm::cast<clang::CXXRecordDecl>(
                 base_class->getType()->getAs<clang::RecordType>()->getDecl());
-            if (ClangASTContext::RecordHasFields(base_class_decl) == false)
+            if (!ClangASTContext::RecordHasFields(base_class_decl))
               continue;
           }
 
@@ -6688,9 +6688,11 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
             CompilerType base_class_clang_type(getASTContext(),
                                                base_class->getType());
             child_name = base_class_clang_type.GetTypeName().AsCString("");
-            uint64_t base_class_clang_type_bit_size =
-                base_class_clang_type.GetBitSize(
-                    exe_ctx ? exe_ctx->GetBestExecutionContextScope() : NULL);
+            Optional<uint64_t> size =
+                base_class_clang_type.GetBitSize(get_exe_scope());
+            if (!size)
+              return {};
+            uint64_t base_class_clang_type_bit_size = *size;
 
             // Base classes bit sizes should be a multiple of 8 bits in size
             assert(base_class_clang_type_bit_size % 8 == 0);
@@ -6718,8 +6720,11 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
           // alignment (field_type_info.second) from the AST context.
           CompilerType field_clang_type(getASTContext(), field->getType());
           assert(field_idx < record_layout.getFieldCount());
-          child_byte_size = field_clang_type.GetByteSize(
-              exe_ctx ? exe_ctx->GetBestExecutionContextScope() : NULL);
+          Optional<uint64_t> size =
+              field_clang_type.GetByteSize(get_exe_scope());
+          if (!size)
+            return {};
+          child_byte_size = *size;
           const uint32_t child_bit_size = child_byte_size * 8;
 
           // Figure out the field offset within the current struct/union/class
@@ -6890,10 +6895,12 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
 
         // We have a pointer to an simple type
         if (idx == 0 && pointee_clang_type.GetCompleteType()) {
-          child_byte_size = pointee_clang_type.GetByteSize(
-              exe_ctx ? exe_ctx->GetBestExecutionContextScope() : NULL);
-          child_byte_offset = 0;
-          return pointee_clang_type;
+          if (Optional<uint64_t> size =
+                  pointee_clang_type.GetByteSize(get_exe_scope())) {
+            child_byte_size = *size;
+            child_byte_offset = 0;
+            return pointee_clang_type;
+          }
         }
       }
     }
@@ -6911,10 +6918,12 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
           ::snprintf(element_name, sizeof(element_name), "[%" PRIu64 "]",
                      static_cast<uint64_t>(idx));
           child_name.assign(element_name);
-          child_byte_size = element_type.GetByteSize(
-              exe_ctx ? exe_ctx->GetBestExecutionContextScope() : NULL);
-          child_byte_offset = (int32_t)idx * (int32_t)child_byte_size;
-          return element_type;
+          if (Optional<uint64_t> size =
+                  element_type.GetByteSize(get_exe_scope())) {
+            child_byte_size = *size;
+            child_byte_offset = (int32_t)idx * (int32_t)child_byte_size;
+            return element_type;
+          }
         }
       }
     }
@@ -6928,10 +6937,12 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
         CompilerType element_type(getASTContext(), array->getElementType());
         if (element_type.GetCompleteType()) {
           child_name = llvm::formatv("[{0}]", idx);
-          child_byte_size = element_type.GetByteSize(
-              exe_ctx ? exe_ctx->GetBestExecutionContextScope() : NULL);
-          child_byte_offset = (int32_t)idx * (int32_t)child_byte_size;
-          return element_type;
+          if (Optional<uint64_t> size =
+                  element_type.GetByteSize(get_exe_scope())) {
+            child_byte_size = *size;
+            child_byte_offset = (int32_t)idx * (int32_t)child_byte_size;
+            return element_type;
+          }
         }
       }
     }
@@ -6965,10 +6976,12 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
 
       // We have a pointer to an simple type
       if (idx == 0) {
-        child_byte_size = pointee_clang_type.GetByteSize(
-            exe_ctx ? exe_ctx->GetBestExecutionContextScope() : NULL);
-        child_byte_offset = 0;
-        return pointee_clang_type;
+        if (Optional<uint64_t> size =
+                pointee_clang_type.GetByteSize(get_exe_scope())) {
+          child_byte_size = *size;
+          child_byte_offset = 0;
+          return pointee_clang_type;
+        }
       }
     }
     break;
@@ -7000,10 +7013,12 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
 
         // We have a pointer to an simple type
         if (idx == 0) {
-          child_byte_size = pointee_clang_type.GetByteSize(
-              exe_ctx ? exe_ctx->GetBestExecutionContextScope() : NULL);
-          child_byte_offset = 0;
-          return pointee_clang_type;
+          if (Optional<uint64_t> size =
+                  pointee_clang_type.GetByteSize(get_exe_scope())) {
+            child_byte_size = *size;
+            child_byte_offset = 0;
+            return pointee_clang_type;
+          }
         }
       }
     }
@@ -7450,14 +7465,14 @@ ClangASTContext::GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
                         ->getAs<clang::RecordType>()
                         ->getDecl());
             if (omit_empty_base_classes &&
-                ClangASTContext::RecordHasFields(base_class_decl) == false)
+                !ClangASTContext::RecordHasFields(base_class_decl))
               continue;
 
             CompilerType base_class_clang_type(getASTContext(),
                                                base_class->getType());
             std::string base_class_type_name(
                 base_class_clang_type.GetTypeName().AsCString(""));
-            if (base_class_type_name.compare(name) == 0)
+            if (base_class_type_name == name)
               return child_idx;
             ++child_idx;
           }
@@ -7792,7 +7807,7 @@ ClangASTContext::GetTypeTemplateArgument(lldb::opaque_compiler_type_t type,
   return CompilerType(getASTContext(), template_arg.getAsType());
 }
 
-llvm::Optional<CompilerType::IntegralTemplateArgument>
+Optional<CompilerType::IntegralTemplateArgument>
 ClangASTContext::GetIntegralTemplateArgument(lldb::opaque_compiler_type_t type,
                                              size_t idx) {
   const clang::ClassTemplateSpecializationDecl *template_decl =
@@ -7832,11 +7847,7 @@ clang::RecordDecl *ClangASTContext::GetAsRecordDecl(const CompilerType &type) {
 }
 
 clang::TagDecl *ClangASTContext::GetAsTagDecl(const CompilerType &type) {
-  clang::QualType qual_type = ClangUtil::GetCanonicalQualType(type);
-  if (qual_type.isNull())
-    return nullptr;
-  else
-    return qual_type->getAsTagDecl();
+  return ClangUtil::GetAsTagDecl(type);
 }
 
 clang::TypedefNameDecl *
@@ -8942,7 +8953,7 @@ bool ClangASTContext::CompleteTagDeclarationDefinition(
 
 clang::EnumConstantDecl *ClangASTContext::AddEnumerationValueToEnumerationType(
     const CompilerType &enum_type, const Declaration &decl, const char *name,
-    int64_t enum_value, uint32_t enum_value_bit_size) {
+    const llvm::APSInt &value) {
 
   if (!enum_type || ConstString(name).IsEmpty())
     return nullptr;
@@ -8955,14 +8966,9 @@ clang::EnumConstantDecl *ClangASTContext::AddEnumerationValueToEnumerationType(
   if (!enum_opaque_compiler_type)
     return nullptr;
 
-  CompilerType underlying_type =
-      GetEnumerationIntegerType(enum_type.GetOpaqueQualType());
-
   clang::QualType enum_qual_type(
       GetCanonicalQualType(enum_opaque_compiler_type));
 
-  bool is_signed = false;
-  underlying_type.IsIntegerType(is_signed);
   const clang::Type *clang_type = enum_qual_type.getTypePtr();
 
   if (!clang_type)
@@ -8973,12 +8979,10 @@ clang::EnumConstantDecl *ClangASTContext::AddEnumerationValueToEnumerationType(
   if (!enutype)
     return nullptr;
 
-  llvm::APSInt enum_llvm_apsint(enum_value_bit_size, is_signed);
-  enum_llvm_apsint = enum_value;
   clang::EnumConstantDecl *enumerator_decl = clang::EnumConstantDecl::Create(
       *getASTContext(), enutype->getDecl(), clang::SourceLocation(),
       name ? &getASTContext()->Idents.get(name) : nullptr, // Identifier
-      clang::QualType(enutype, 0), nullptr, enum_llvm_apsint);
+      clang::QualType(enutype, 0), nullptr, value);
 
   if (!enumerator_decl)
     return nullptr;
@@ -8990,6 +8994,20 @@ clang::EnumConstantDecl *ClangASTContext::AddEnumerationValueToEnumerationType(
 #endif
 
   return enumerator_decl;
+}
+
+clang::EnumConstantDecl *ClangASTContext::AddEnumerationValueToEnumerationType(
+    const CompilerType &enum_type, const Declaration &decl, const char *name,
+    int64_t enum_value, uint32_t enum_value_bit_size) {
+  CompilerType underlying_type =
+      GetEnumerationIntegerType(enum_type.GetOpaqueQualType());
+  bool is_signed = false;
+  underlying_type.IsIntegerType(is_signed);
+
+  llvm::APSInt value(enum_value_bit_size, is_signed);
+  value = enum_value;
+
+  return AddEnumerationValueToEnumerationType(enum_type, decl, name, value);
 }
 
 CompilerType
@@ -9105,8 +9123,7 @@ void ClangASTContext::DumpValue(
                   base_class->getType()->getAs<clang::RecordType>()->getDecl());
 
           // Skip empty base classes
-          if (verbose == false &&
-              ClangASTContext::RecordHasFields(base_class_decl) == false)
+          if (!verbose && !ClangASTContext::RecordHasFields(base_class_decl))
             continue;
 
           if (base_class->isVirtual())

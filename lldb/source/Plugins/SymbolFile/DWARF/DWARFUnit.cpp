@@ -191,13 +191,6 @@ void DWARFUnit::ExtractDIEsRWLocked() {
                                                       IsDWARF64());
   while (offset < next_cu_offset &&
          die.FastExtract(data, this, fixed_form_sizes, &offset)) {
-    //        if (log)
-    //            log->Printf("0x%8.8x: %*.*s%s%s",
-    //                        die.GetOffset(),
-    //                        depth * 2, depth * 2, "",
-    //                        DW_TAG_value_to_name (die.Tag()),
-    //                        die.HasChildren() ? " *" : "");
-
     const bool null_die = die.IsNULL();
     if (depth == 0) {
       assert(m_die_array.empty() && "Compile unit DIE already added");
@@ -648,9 +641,7 @@ void DWARFUnit::SetUserData(void *d) {
 }
 
 bool DWARFUnit::Supports_DW_AT_APPLE_objc_complete_type() {
-  if (GetProducer() == eProducerLLVMGCC)
-    return false;
-  return true;
+  return GetProducer() != eProducerLLVMGCC;
 }
 
 bool DWARFUnit::DW_AT_decl_file_attributes_are_invalid() {
@@ -662,11 +653,8 @@ bool DWARFUnit::DW_AT_decl_file_attributes_are_invalid() {
 bool DWARFUnit::Supports_unnamed_objc_bitfields() {
   if (GetProducer() == eProducerClang) {
     const uint32_t major_version = GetProducerVersionMajor();
-    if (major_version > 425 ||
-        (major_version == 425 && GetProducerVersionUpdate() >= 13))
-      return true;
-    else
-      return false;
+    return major_version > 425 ||
+           (major_version == 425 && GetProducerVersionUpdate() >= 13);
   }
   return true; // Assume all other compilers didn't have incorrect ObjC bitfield
                // info

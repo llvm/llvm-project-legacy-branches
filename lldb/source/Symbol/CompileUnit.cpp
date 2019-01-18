@@ -72,10 +72,10 @@ void CompileUnit::ForeachFunction(
   sorted_functions.reserve(m_functions_by_uid.size());
   for (auto &p : m_functions_by_uid)
     sorted_functions.push_back(p.second);
-  std::sort(sorted_functions.begin(), sorted_functions.end(),
-            [](const lldb::FunctionSP &a, const lldb::FunctionSP &b) {
-              return a->GetID() < b->GetID();
-            });
+  llvm::sort(sorted_functions.begin(), sorted_functions.end(),
+             [](const lldb::FunctionSP &a, const lldb::FunctionSP &b) {
+               return a->GetID() < b->GetID();
+             });
 
   for (auto &f : sorted_functions)
     if (lambda(f))
@@ -182,9 +182,7 @@ lldb::LanguageType CompileUnit::GetLanguage() {
       m_flags.Set(flagsParsedLanguage);
       SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor();
       if (symbol_vendor) {
-        SymbolContext sc;
-        CalculateSymbolContext(&sc);
-        m_language = symbol_vendor->ParseCompileUnitLanguage(sc);
+        m_language = symbol_vendor->ParseLanguage(*this);
       }
     }
   }
@@ -196,11 +194,8 @@ LineTable *CompileUnit::GetLineTable() {
     if (m_flags.IsClear(flagsParsedLineTable)) {
       m_flags.Set(flagsParsedLineTable);
       SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor();
-      if (symbol_vendor) {
-        SymbolContext sc;
-        CalculateSymbolContext(&sc);
-        symbol_vendor->ParseCompileUnitLineTable(sc);
-      }
+      if (symbol_vendor)
+        symbol_vendor->ParseLineTable(*this);
     }
   }
   return m_line_table_ap.get();
@@ -220,9 +215,7 @@ DebugMacros *CompileUnit::GetDebugMacros() {
       m_flags.Set(flagsParsedDebugMacros);
       SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor();
       if (symbol_vendor) {
-        SymbolContext sc;
-        CalculateSymbolContext(&sc);
-        symbol_vendor->ParseCompileUnitDebugMacros(sc);
+        symbol_vendor->ParseDebugMacros(*this);
       }
     }
   }
@@ -291,7 +284,7 @@ uint32_t CompileUnit::ResolveSymbolContext(const FileSpec &file_spec,
 
   // If we are not looking for inlined functions and our file spec doesn't
   // match then we are done...
-  if (file_spec_matches_cu_file_spec == false && check_inlines == false)
+  if (!file_spec_matches_cu_file_spec && !check_inlines)
     return 0;
 
   uint32_t file_idx =
@@ -387,9 +380,7 @@ bool CompileUnit::GetIsOptimized() {
   if (m_is_optimized == eLazyBoolCalculate) {
     m_is_optimized = eLazyBoolNo;
     if (SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor()) {
-      SymbolContext sc;
-      CalculateSymbolContext(&sc);
-      if (symbol_vendor->ParseCompileUnitIsOptimized(sc))
+      if (symbol_vendor->ParseIsOptimized(*this))
         m_is_optimized = eLazyBoolYes;
     }
   }
@@ -419,9 +410,7 @@ FileSpecList &CompileUnit::GetSupportFiles() {
       m_flags.Set(flagsParsedSupportFiles);
       SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor();
       if (symbol_vendor) {
-        SymbolContext sc;
-        CalculateSymbolContext(&sc);
-        symbol_vendor->ParseCompileUnitSupportFiles(sc, m_support_files);
+        symbol_vendor->ParseSupportFiles(*this, m_support_files);
       }
     }
   }

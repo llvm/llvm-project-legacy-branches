@@ -20,6 +20,8 @@
 #include "llvm/DebugInfo/PDB/PDB.h"
 #include "llvm/DebugInfo/PDB/PDBSymbolExe.h"
 
+class PDBASTParser;
+
 class SymbolFilePDB : public lldb_private::SymbolFile {
 public:
   //------------------------------------------------------------------
@@ -58,28 +60,24 @@ public:
   lldb::CompUnitSP ParseCompileUnitAtIndex(uint32_t index) override;
 
   lldb::LanguageType
-  ParseCompileUnitLanguage(const lldb_private::SymbolContext &sc) override;
+  ParseLanguage(lldb_private::CompileUnit &comp_unit) override;
 
-  size_t
-  ParseCompileUnitFunctions(const lldb_private::SymbolContext &sc) override;
+  size_t ParseFunctions(lldb_private::CompileUnit &comp_unit) override;
 
-  bool
-  ParseCompileUnitLineTable(const lldb_private::SymbolContext &sc) override;
+  bool ParseLineTable(lldb_private::CompileUnit &comp_unit) override;
 
-  bool
-  ParseCompileUnitDebugMacros(const lldb_private::SymbolContext &sc) override;
+  bool ParseDebugMacros(lldb_private::CompileUnit &comp_unit) override;
 
-  bool ParseCompileUnitSupportFiles(
-      const lldb_private::SymbolContext &sc,
-      lldb_private::FileSpecList &support_files) override;
+  bool ParseSupportFiles(lldb_private::CompileUnit &comp_unit,
+                         lldb_private::FileSpecList &support_files) override;
+
+  size_t ParseTypes(lldb_private::CompileUnit &comp_unit) override;
 
   bool ParseImportedModules(
       const lldb_private::SymbolContext &sc,
       std::vector<lldb_private::ConstString> &imported_modules) override;
 
-  size_t ParseFunctionBlocks(const lldb_private::SymbolContext &sc) override;
-
-  size_t ParseTypes(const lldb_private::SymbolContext &sc) override;
+  size_t ParseBlocksRecursive(lldb_private::Function &func) override;
 
   size_t
   ParseVariablesForContext(const lldb_private::SymbolContext &sc) override;
@@ -139,8 +137,7 @@ public:
   void AddSymbols(lldb_private::Symtab &symtab) override;
 
   uint32_t
-  FindTypes(const lldb_private::SymbolContext &sc,
-            const lldb_private::ConstString &name,
+  FindTypes(const lldb_private::ConstString &name,
             const lldb_private::CompilerDeclContext *parent_decl_ctx,
             bool append, uint32_t max_matches,
             llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
@@ -162,7 +159,6 @@ public:
   GetTypeSystemForLanguage(lldb::LanguageType language) override;
 
   lldb_private::CompilerDeclContext FindNamespace(
-      const lldb_private::SymbolContext &sc,
       const lldb_private::ConstString &name,
       const lldb_private::CompilerDeclContext *parent_decl_ctx) override;
 
@@ -187,7 +183,7 @@ private:
   lldb::CompUnitSP ParseCompileUnitForUID(uint32_t id,
                                           uint32_t index = UINT32_MAX);
 
-  bool ParseCompileUnitLineTable(const lldb_private::SymbolContext &sc,
+  bool ParseCompileUnitLineTable(lldb_private::CompileUnit &comp_unit,
                                  uint32_t match_line);
 
   void BuildSupportFileIdToSupportFileIndexMap(
@@ -219,10 +215,12 @@ private:
 
   lldb_private::Function *
   ParseCompileUnitFunctionForPDBFunc(const llvm::pdb::PDBSymbolFunc &pdb_func,
-                                     const lldb_private::SymbolContext &sc);
+                                     lldb_private::CompileUnit &comp_unit);
 
   void GetCompileUnitIndex(const llvm::pdb::PDBSymbolCompiland &pdb_compiland,
                            uint32_t &index);
+
+  PDBASTParser *GetPDBAstParser();
 
   std::unique_ptr<llvm::pdb::PDBSymbolCompiland>
   GetPDBCompilandByUID(uint32_t uid);

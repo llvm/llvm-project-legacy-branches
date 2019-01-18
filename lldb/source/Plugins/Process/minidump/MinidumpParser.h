@@ -12,6 +12,7 @@
 
 #include "MinidumpTypes.h"
 
+#include "lldb/Target/MemoryRegionInfo.h"
 #include "lldb/Utility/ArchSpec.h"
 #include "lldb/Utility/DataBuffer.h"
 #include "lldb/Utility/Status.h"
@@ -57,6 +58,9 @@ public:
 
   llvm::ArrayRef<MinidumpThread> GetThreads();
 
+  llvm::ArrayRef<uint8_t>
+  GetThreadContext(const MinidumpLocationDescriptor &location);
+
   llvm::ArrayRef<uint8_t> GetThreadContext(const MinidumpThread &td);
 
   llvm::ArrayRef<uint8_t> GetThreadContextWow64(const MinidumpThread &td);
@@ -87,8 +91,17 @@ public:
 
   MemoryRegionInfo GetMemoryRegionInfo(lldb::addr_t load_addr);
 
+  const MemoryRegionInfos &GetMemoryRegions();
+
   // Perform consistency checks and initialize internal data structures
   Status Initialize();
+
+  static llvm::StringRef GetStreamTypeAsString(uint32_t stream_type);
+
+  const llvm::DenseMap<uint32_t, MinidumpLocationDescriptor> &
+  GetDirectoryMap() const {
+    return m_directory_map;
+  }
 
 private:
   MinidumpParser(const lldb::DataBufferSP &data_buf_sp);
@@ -99,7 +112,7 @@ private:
   lldb::DataBufferSP m_data_sp;
   llvm::DenseMap<uint32_t, MinidumpLocationDescriptor> m_directory_map;
   ArchSpec m_arch;
-  std::vector<MemoryRegionInfo> m_regions;
+  MemoryRegionInfos m_regions;
   bool m_parsed_regions = false;
 };
 
