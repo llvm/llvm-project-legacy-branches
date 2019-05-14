@@ -20,15 +20,14 @@ string(REPLACE ${CMAKE_CFG_INTDIR} ${LLVM_BUILD_MODE} LLDB_DOTEST_ARGS "${LLDB_D
 list(APPEND LLDB_TEST_DEPS
   LLDBUnitTests
   dsymutil
+  lit-cpuid
   llc
   lldb
   lldb-test
   llvm-config
   llvm-mc
   llvm-objcopy
-  FileCheck
-  count
-  not
+  llvm-readobj
   )
 
 if(TARGET lld)
@@ -54,6 +53,14 @@ configure_lit_site_cfg(
 configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/Suite/lit.site.cfg.in
   ${CMAKE_CURRENT_BINARY_DIR}/Suite/lit.site.cfg)
+
+if(NOT LLDB_BUILT_STANDALONE)
+  list(APPEND LLDB_TEST_DEPS
+    FileCheck
+    count
+    not
+  )
+endif()
 
 add_lit_testsuite(check-lldb-lit "Running lldb lit test suite"
   ${CMAKE_CURRENT_BINARY_DIR}

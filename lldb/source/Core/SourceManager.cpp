@@ -1,9 +1,8 @@
 //===-- SourceManager.cpp ---------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -50,9 +49,7 @@ using namespace lldb_private;
 
 static inline bool is_newline_char(char ch) { return ch == '\n' || ch == '\r'; }
 
-//----------------------------------------------------------------------
 // SourceManager constructor
-//----------------------------------------------------------------------
 SourceManager::SourceManager(const TargetSP &target_sp)
     : m_last_file_sp(), m_last_line(0), m_last_count(0), m_default_set(false),
       m_target_wp(target_sp),
@@ -62,9 +59,7 @@ SourceManager::SourceManager(const DebuggerSP &debugger_sp)
     : m_last_file_sp(), m_last_line(0), m_last_count(0), m_default_set(false),
       m_target_wp(), m_debugger_wp(debugger_sp) {}
 
-//----------------------------------------------------------------------
 // Destructor
-//----------------------------------------------------------------------
 SourceManager::~SourceManager() {}
 
 SourceManager::FileSP SourceManager::GetFile(const FileSpec &file_spec) {

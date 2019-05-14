@@ -1,9 +1,8 @@
 //===-- Value.cpp -----------------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -513,6 +512,10 @@ Status Value::GetValueAsData(ExecutionContext *exe_ctx, DataExtractor &data,
 
   // Bail if we encountered any errors getting the byte size
   if (error.Fail())
+    return error;
+
+  // No memory to read for zero-sized types.
+  if (byte_size == 0)
     return error;
 
   // Make sure we have enough room within "data", and if we don't make

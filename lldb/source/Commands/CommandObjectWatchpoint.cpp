@@ -1,9 +1,8 @@
 //===-- CommandObjectWatchpoint.cpp -----------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -143,13 +142,9 @@ bool CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(
   return !in_range;
 }
 
-//-------------------------------------------------------------------------
 // CommandObjectWatchpointList
-//-------------------------------------------------------------------------
 
-//-------------------------------------------------------------------------
 // CommandObjectWatchpointList::Options
-//-------------------------------------------------------------------------
 #pragma mark List::CommandOptions
 
 static constexpr OptionDefinition g_watchpoint_list_options[] = {
@@ -230,7 +225,7 @@ public:
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+    Target *target = GetDebugger().GetSelectedTarget().get();
     if (target == nullptr) {
       result.AppendError("Invalid target. No current target or watchpoints.");
       result.SetStatus(eReturnStatusSuccessFinishNoResult);
@@ -296,9 +291,7 @@ private:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectWatchpointEnable
-//-------------------------------------------------------------------------
 #pragma mark Enable
 
 class CommandObjectWatchpointEnable : public CommandObjectParsed {
@@ -320,7 +313,7 @@ public:
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+    Target *target = GetDebugger().GetSelectedTarget().get();
     if (!CheckTargetForWatchpointOperations(target, result))
       return false;
 
@@ -367,9 +360,7 @@ protected:
   }
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectWatchpointDisable
-//-------------------------------------------------------------------------
 #pragma mark Disable
 
 class CommandObjectWatchpointDisable : public CommandObjectParsed {
@@ -392,7 +383,7 @@ public:
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+    Target *target = GetDebugger().GetSelectedTarget().get();
     if (!CheckTargetForWatchpointOperations(target, result))
       return false;
 
@@ -442,9 +433,7 @@ protected:
   }
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectWatchpointDelete
-//-------------------------------------------------------------------------
 #pragma mark Delete
 
 class CommandObjectWatchpointDelete : public CommandObjectParsed {
@@ -466,7 +455,7 @@ public:
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+    Target *target = GetDebugger().GetSelectedTarget().get();
     if (!CheckTargetForWatchpointOperations(target, result))
       return false;
 
@@ -518,9 +507,7 @@ protected:
   }
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectWatchpointIgnore
-//-------------------------------------------------------------------------
 
 #pragma mark Ignore::CommandOptions
 static constexpr OptionDefinition g_watchpoint_ignore_options[] = {
@@ -590,7 +577,7 @@ public:
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+    Target *target = GetDebugger().GetSelectedTarget().get();
     if (!CheckTargetForWatchpointOperations(target, result))
       return false;
 
@@ -639,9 +626,7 @@ private:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectWatchpointModify
-//-------------------------------------------------------------------------
 
 #pragma mark Modify::CommandOptions
 
@@ -719,7 +704,7 @@ public:
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+    Target *target = GetDebugger().GetSelectedTarget().get();
     if (!CheckTargetForWatchpointOperations(target, result))
       return false;
 
@@ -770,9 +755,7 @@ private:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectWatchpointSetVariable
-//-------------------------------------------------------------------------
 #pragma mark SetVariable
 
 class CommandObjectWatchpointSetVariable : public CommandObjectParsed {
@@ -839,7 +822,7 @@ protected:
   }
 
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+    Target *target = GetDebugger().GetSelectedTarget().get();
     StackFrame *frame = m_exe_ctx.GetFramePtr();
 
     // If no argument is present, issue an error message.  There's no way to
@@ -960,9 +943,7 @@ private:
   OptionGroupWatchpoint m_option_watchpoint;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectWatchpointSetExpression
-//-------------------------------------------------------------------------
 #pragma mark Set
 
 class CommandObjectWatchpointSetExpression : public CommandObjectRaw {
@@ -1026,7 +1007,7 @@ protected:
     m_option_group.NotifyOptionParsingStarting(
         &exe_ctx); // This is a raw command, so notify the option group
 
-    Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+    Target *target = GetDebugger().GetSelectedTarget().get();
     StackFrame *frame = m_exe_ctx.GetFramePtr();
 
     OptionsWithRaw args(raw_command);
@@ -1128,9 +1109,7 @@ private:
   OptionGroupWatchpoint m_option_watchpoint;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectWatchpointSet
-//-------------------------------------------------------------------------
 #pragma mark Set
 
 class CommandObjectWatchpointSet : public CommandObjectMultiword {
@@ -1151,9 +1130,7 @@ public:
   ~CommandObjectWatchpointSet() override = default;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectMultiwordWatchpoint
-//-------------------------------------------------------------------------
 #pragma mark MultiwordWatchpoint
 
 CommandObjectMultiwordWatchpoint::CommandObjectMultiwordWatchpoint(

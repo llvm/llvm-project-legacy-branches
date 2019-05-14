@@ -1,9 +1,8 @@
 //===-- SymbolFileNativePDB.cpp ---------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -74,6 +73,8 @@ static lldb::LanguageType TranslateLanguage(PDB_Lang lang) {
     return lldb::LanguageType::eLanguageTypeC_plus_plus;
   case PDB_Lang::C:
     return lldb::LanguageType::eLanguageTypeC;
+  case PDB_Lang::Swift:
+    return lldb::LanguageType::eLanguageTypeSwift;
   default:
     return lldb::LanguageType::eLanguageTypeUnknown;
   }
@@ -316,7 +317,7 @@ uint32_t SymbolFileNativePDB::CalculateAbilities() {
 }
 
 void SymbolFileNativePDB::InitializeObject() {
-  m_obj_load_address = m_obj_file->GetFileOffset();
+  m_obj_load_address = m_obj_file->GetBaseAddress().GetFileAddress();
   m_index->SetLoadAddress(m_obj_load_address);
   m_index->ParseSectionContribs();
 
@@ -1137,7 +1138,7 @@ bool SymbolFileNativePDB::ParseSupportFiles(CompileUnit &comp_unit,
 }
 
 bool SymbolFileNativePDB::ParseImportedModules(
-    const SymbolContext &sc, std::vector<ConstString> &imported_modules) {
+    const SymbolContext &sc, std::vector<SourceModule> &imported_modules) {
   // PDB does not yet support module debug info
   return false;
 }
@@ -1151,7 +1152,7 @@ size_t SymbolFileNativePDB::ParseBlocksRecursive(Function &func) {
 void SymbolFileNativePDB::DumpClangAST(Stream &s) { m_ast->Dump(s); }
 
 uint32_t SymbolFileNativePDB::FindGlobalVariables(
-    const ConstString &name, const CompilerDeclContext *parent_decl_ctx,
+    ConstString name, const CompilerDeclContext *parent_decl_ctx,
     uint32_t max_matches, VariableList &variables) {
   using SymbolAndOffset = std::pair<uint32_t, llvm::codeview::CVSymbol>;
 
@@ -1178,7 +1179,7 @@ uint32_t SymbolFileNativePDB::FindGlobalVariables(
 }
 
 uint32_t SymbolFileNativePDB::FindFunctions(
-    const ConstString &name, const CompilerDeclContext *parent_decl_ctx,
+    ConstString name, const CompilerDeclContext *parent_decl_ctx,
     FunctionNameType name_type_mask, bool include_inlines, bool append,
     SymbolContextList &sc_list) {
   // For now we only support lookup by method name.
@@ -1219,7 +1220,7 @@ uint32_t SymbolFileNativePDB::FindFunctions(const RegularExpression &regex,
 }
 
 uint32_t SymbolFileNativePDB::FindTypes(
-    const ConstString &name, const CompilerDeclContext *parent_decl_ctx,
+    ConstString name, const CompilerDeclContext *parent_decl_ctx,
     bool append, uint32_t max_matches,
     llvm::DenseSet<SymbolFile *> &searched_symbol_files, TypeMap &types) {
   if (!append)
@@ -1316,7 +1317,9 @@ VariableSP SymbolFileNativePDB::CreateLocalVariable(PdbCompilandSymId scope_id,
                                                     PdbCompilandSymId var_id,
                                                     bool is_param) {
   ModuleSP module = GetObjectFile()->GetModule();
-  VariableInfo var_info = GetVariableLocationInfo(*m_index, var_id, module);
+  Block &block = GetOrCreateBlock(scope_id);
+  VariableInfo var_info =
+      GetVariableLocationInfo(*m_index, var_id, block, module);
   if (!var_info.location || !var_info.ranges)
     return nullptr;
 
@@ -1549,7 +1552,7 @@ size_t SymbolFileNativePDB::GetTypes(lldb_private::SymbolContextScope *sc_scope,
 }
 
 CompilerDeclContext
-SymbolFileNativePDB::FindNamespace(const ConstString &name,
+SymbolFileNativePDB::FindNamespace(ConstString name,
                                    const CompilerDeclContext *parent_decl_ctx) {
   return {};
 }

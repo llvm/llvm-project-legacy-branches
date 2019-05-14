@@ -1,15 +1,16 @@
 //===-- RegisterContextDarwin_x86_64.cpp ------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stddef.h>
+
+#include <memory>
 
 #include "lldb/Utility/DataBufferHeap.h"
 #include "lldb/Utility/DataExtractor.h"
@@ -520,11 +521,9 @@ const size_t k_num_gpr_registers = llvm::array_lengthof(g_gpr_regnums);
 const size_t k_num_fpu_registers = llvm::array_lengthof(g_fpu_regnums);
 const size_t k_num_exc_registers = llvm::array_lengthof(g_exc_regnums);
 
-//----------------------------------------------------------------------
 // Register set definitions. The first definitions at register set index of
 // zero is for all registers, followed by other registers sets. The register
 // information for the all register set need not be filled in.
-//----------------------------------------------------------------------
 static const RegisterSet g_reg_sets[] = {
     {
         "General Purpose Registers", "gpr", k_num_gpr_registers, g_gpr_regnums,
@@ -910,7 +909,7 @@ bool RegisterContextDarwin_x86_64::WriteRegister(const RegisterInfo *reg_info,
 
 bool RegisterContextDarwin_x86_64::ReadAllRegisterValues(
     lldb::DataBufferSP &data_sp) {
-  data_sp.reset(new DataBufferHeap(REG_CONTEXT_SIZE, 0));
+  data_sp = std::make_shared<DataBufferHeap>(REG_CONTEXT_SIZE, 0);
   if (data_sp && ReadGPR(false) == 0 && ReadFPU(false) == 0 &&
       ReadEXC(false) == 0) {
     uint8_t *dst = data_sp->GetBytes();

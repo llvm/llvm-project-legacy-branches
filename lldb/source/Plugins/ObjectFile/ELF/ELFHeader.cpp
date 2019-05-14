@@ -1,9 +1,8 @@
 //===-- ELFHeader.cpp ----------------------------------------- -*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -19,7 +18,6 @@ using namespace elf;
 using namespace lldb;
 using namespace llvm::ELF;
 
-//------------------------------------------------------------------------------
 // Static utility functions.
 //
 // GetMaxU64 and GetMaxS64 wrap the similarly named methods from DataExtractor
@@ -68,7 +66,6 @@ static bool GetMaxS64(const lldb_private::DataExtractor &data,
   return true;
 }
 
-//------------------------------------------------------------------------------
 // ELFHeader
 
 ELFHeader::ELFHeader() { memset(this, 0, sizeof(ELFHeader)); }
@@ -216,7 +213,6 @@ unsigned ELFHeader::GetRelocationJumpSlotType() const {
   return slot;
 }
 
-//------------------------------------------------------------------------------
 // ELFSectionHeader
 
 ELFSectionHeader::ELFSectionHeader() {
@@ -250,7 +246,6 @@ bool ELFSectionHeader::Parse(const lldb_private::DataExtractor &data,
   return true;
 }
 
-//------------------------------------------------------------------------------
 // ELFSymbol
 
 ELFSymbol::ELFSymbol() { memset(this, 0, sizeof(ELFSymbol)); }
@@ -358,7 +353,6 @@ bool ELFSymbol::Parse(const lldb_private::DataExtractor &data,
   return true;
 }
 
-//------------------------------------------------------------------------------
 // ELFProgramHeader
 
 ELFProgramHeader::ELFProgramHeader() {
@@ -399,7 +393,6 @@ bool ELFProgramHeader::Parse(const lldb_private::DataExtractor &data,
   return true;
 }
 
-//------------------------------------------------------------------------------
 // ELFDynamic
 
 ELFDynamic::ELFDynamic() { memset(this, 0, sizeof(ELFDynamic)); }
@@ -410,7 +403,6 @@ bool ELFDynamic::Parse(const lldb_private::DataExtractor &data,
   return GetMaxS64(data, offset, &d_tag, byte_size, 2);
 }
 
-//------------------------------------------------------------------------------
 // ELFRel
 
 ELFRel::ELFRel() { memset(this, 0, sizeof(ELFRel)); }
@@ -423,7 +415,6 @@ bool ELFRel::Parse(const lldb_private::DataExtractor &data,
   return GetMaxU64(data, offset, &r_offset, byte_size, 2) != false;
 }
 
-//------------------------------------------------------------------------------
 // ELFRela
 
 ELFRela::ELFRela() { memset(this, 0, sizeof(ELFRela)); }

@@ -1,9 +1,8 @@
 //===-- GDBRemoteCommunicationServerLLGS.h ----------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -32,43 +31,35 @@ class GDBRemoteCommunicationServerLLGS
     : public GDBRemoteCommunicationServerCommon,
       public NativeProcessProtocol::NativeDelegate {
 public:
-  //------------------------------------------------------------------
   // Constructors and Destructors
-  //------------------------------------------------------------------
   GDBRemoteCommunicationServerLLGS(
       MainLoop &mainloop,
       const NativeProcessProtocol::Factory &process_factory);
 
   void SetLaunchInfo(const ProcessLaunchInfo &info);
 
-  //------------------------------------------------------------------
   /// Launch a process with the current launch settings.
   ///
   /// This method supports running an lldb-gdbserver or similar
   /// server in a situation where the startup code has been provided
   /// with all the information for a child process to be launched.
   ///
-  /// @return
+  /// \return
   ///     An Status object indicating the success or failure of the
   ///     launch.
-  //------------------------------------------------------------------
   Status LaunchProcess() override;
 
-  //------------------------------------------------------------------
   /// Attach to a process.
   ///
   /// This method supports attaching llgs to a process accessible via the
   /// configured Platform.
   ///
-  /// @return
+  /// \return
   ///     An Status object indicating the success or failure of the
   ///     attach operation.
-  //------------------------------------------------------------------
   Status AttachToProcess(lldb::pid_t pid);
 
-  //------------------------------------------------------------------
   // NativeProcessProtocol::NativeDelegate overrides
-  //------------------------------------------------------------------
   void InitializeDelegate(NativeProcessProtocol *process) override;
 
   void ProcessStateChanged(NativeProcessProtocol *process,
@@ -223,9 +214,7 @@ private:
 
   void StopSTDIOForwarding();
 
-  //------------------------------------------------------------------
   // For GDBRemoteCommunicationServerLLGS only
-  //------------------------------------------------------------------
   DISALLOW_COPY_AND_ASSIGN(GDBRemoteCommunicationServerLLGS);
 };
 

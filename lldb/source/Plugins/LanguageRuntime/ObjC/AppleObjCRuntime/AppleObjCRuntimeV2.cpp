@@ -1,14 +1,14 @@
 //===-- AppleObjCRuntimeV2.cpp ----------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include <stdint.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -69,9 +69,6 @@
 
 using namespace lldb;
 using namespace lldb_private;
-
-// 2 second timeout when running utility functions
-static constexpr std::chrono::seconds g_utility_function_timeout(2);
 
 static const char *g_get_dynamic_class_info_name =
     "__lldb_apple_objc_v2_get_dynamic_class_info";
@@ -292,7 +289,18 @@ __lldb_apple_objc_v2_get_shared_cache_class_info (void *objc_opt_ro_ptr,
                     const char *s = name;
                     uint32_t h = 5381;
                     for (unsigned char c = *s; c; c = *++s)
+                    {
+                        // class_getName demangles swift names and the hash must
+                        // be calculated on the mangled name.  hash==0 means lldb
+                        // will fetch the mangled name and compute the hash in
+                        // ParseClassInfoArray.
+                        if (c == '.')
+                        {
+                            h = 0;
+                            break;
+                        }
                         h = ((h << 5) + h) + c;
+                    }
                     class_infos[idx].hash = h;
                 }
                 else
@@ -324,7 +332,18 @@ __lldb_apple_objc_v2_get_shared_cache_class_info (void *objc_opt_ro_ptr,
                     const char *s = name;
                     uint32_t h = 5381;
                     for (unsigned char c = *s; c; c = *++s)
+                    {
+                        // class_getName demangles swift names and the hash must
+                        // be calculated on the mangled name.  hash==0 means lldb
+                        // will fetch the mangled name and compute the hash in
+                        // ParseClassInfoArray.
+                        if (c == '.')
+                        {
+                            h = 0;
+                            break;
+                        } 
                         h = ((h << 5) + h) + c;
+                    }
                     class_infos[idx].hash = h;
                 }
                 ++idx;
@@ -384,14 +403,13 @@ AppleObjCRuntimeV2::AppleObjCRuntimeV2(Process *process,
       m_get_class_info_args(LLDB_INVALID_ADDRESS),
       m_get_class_info_args_mutex(), m_get_shared_cache_class_info_code(),
       m_get_shared_cache_class_info_args(LLDB_INVALID_ADDRESS),
-      m_get_shared_cache_class_info_args_mutex(), m_decl_vendor_ap(),
+      m_get_shared_cache_class_info_args_mutex(), m_decl_vendor_up(),
       m_tagged_pointer_obfuscator(LLDB_INVALID_ADDRESS),
-      m_isa_hash_table_ptr(LLDB_INVALID_ADDRESS),
-      m_hash_signature(),
+      m_isa_hash_table_ptr(LLDB_INVALID_ADDRESS), m_hash_signature(),
       m_has_object_getClass(false), m_loaded_objc_opt(false),
-      m_non_pointer_isa_cache_ap(
+      m_non_pointer_isa_cache_up(
           NonPointerISACache::CreateInstance(*this, objc_module_sp)),
-      m_tagged_pointer_vendor_ap(
+      m_tagged_pointer_vendor_up(
           TaggedPointerVendorV2::CreateInstance(*this, objc_module_sp)),
       m_encoding_to_type_sp(), m_noclasses_warning_emitted(false),
       m_CFBoolean_values() {
@@ -457,9 +475,7 @@ bool AppleObjCRuntimeV2::GetDynamicTypeAndAddress(
   return !class_type_or_name.IsEmpty();
 }
 
-//------------------------------------------------------------------
 // Static Functions
-//------------------------------------------------------------------
 LanguageRuntime *AppleObjCRuntimeV2::CreateInstance(Process *process,
                                                     LanguageType language) {
   // FIXME: This should be a MacOS or iOS process, and we need to look for the
@@ -789,9 +805,7 @@ lldb_private::ConstString AppleObjCRuntimeV2::GetPluginNameStatic() {
   return g_name;
 }
 
-//------------------------------------------------------------------
 // PluginInterface protocol
-//------------------------------------------------------------------
 lldb_private::ConstString AppleObjCRuntimeV2::GetPluginName() {
   return GetPluginNameStatic();
 }
@@ -804,10 +818,10 @@ AppleObjCRuntimeV2::CreateExceptionResolver(Breakpoint *bkpt, bool catch_bp,
   BreakpointResolverSP resolver_sp;
 
   if (throw_bp)
-    resolver_sp.reset(new BreakpointResolverName(
+    resolver_sp = std::make_shared<BreakpointResolverName>(
         bkpt, std::get<1>(GetExceptionThrowLocation()).AsCString(),
         eFunctionNameTypeBase, eLanguageTypeUnknown, Breakpoint::Exact, 0,
-        eLazyBoolNo));
+        eLazyBoolNo);
   // FIXME: We don't do catch breakpoints for ObjC yet.
   // Should there be some way for the runtime to specify what it can do in this
   // regard?
@@ -872,20 +886,16 @@ size_t AppleObjCRuntimeV2::GetByteOffsetForIvar(CompilerType &parent_ast_type,
 
   const char *class_name = parent_ast_type.GetConstTypeName().AsCString();
   if (class_name && class_name[0] && ivar_name && ivar_name[0]) {
-    //----------------------------------------------------------------------
     // Make the objective C V2 mangled name for the ivar offset from the class
     // name and ivar name
-    //----------------------------------------------------------------------
     std::string buffer("OBJC_IVAR_$_");
     buffer.append(class_name);
     buffer.push_back('.');
     buffer.append(ivar_name);
     ConstString ivar_const_str(buffer.c_str());
 
-    //----------------------------------------------------------------------
     // Try to get the ivar offset address from the symbol table first using the
     // name we created above
-    //----------------------------------------------------------------------
     SymbolContextList sc_list;
     Target &target = m_process->GetTarget();
     target.GetImages().FindSymbolsWithNameAndType(ivar_const_str,
@@ -902,10 +912,8 @@ size_t AppleObjCRuntimeV2::GetByteOffsetForIvar(CompilerType &parent_ast_type,
             ivar_offset_symbol.symbol->GetLoadAddress(&target);
     }
 
-    //----------------------------------------------------------------------
     // If we didn't get the ivar offset address from the symbol table, fall
     // back to getting it from the runtime
-    //----------------------------------------------------------------------
     if (ivar_offset_address == LLDB_INVALID_ADDRESS)
       ivar_offset_address = LookupRuntimeSymbol(ivar_const_str);
 
@@ -921,9 +929,9 @@ size_t AppleObjCRuntimeV2::GetByteOffsetForIvar(CompilerType &parent_ast_type,
 // computational effort as possible whether something could possibly be a
 // tagged pointer - false positives are possible but false negatives shouldn't
 bool AppleObjCRuntimeV2::IsTaggedPointer(addr_t ptr) {
-  if (!m_tagged_pointer_vendor_ap)
+  if (!m_tagged_pointer_vendor_up)
     return false;
-  return m_tagged_pointer_vendor_ap->IsPossibleTaggedPointer(ptr);
+  return m_tagged_pointer_vendor_up->IsPossibleTaggedPointer(ptr);
 }
 
 class RemoteNXMapTable {
@@ -1148,8 +1156,8 @@ bool AppleObjCRuntimeV2::HashTableSignature::NeedsUpdate(
 ObjCLanguageRuntime::ClassDescriptorSP
 AppleObjCRuntimeV2::GetClassDescriptorFromISA(ObjCISA isa) {
   ObjCLanguageRuntime::ClassDescriptorSP class_descriptor_sp;
-  if (m_non_pointer_isa_cache_ap.get())
-    class_descriptor_sp = m_non_pointer_isa_cache_ap->GetClassDescriptor(isa);
+  if (m_non_pointer_isa_cache_up)
+    class_descriptor_sp = m_non_pointer_isa_cache_up->GetClassDescriptor(isa);
   if (!class_descriptor_sp)
     class_descriptor_sp = ObjCLanguageRuntime::GetClassDescriptorFromISA(isa);
   return class_descriptor_sp;
@@ -1176,7 +1184,7 @@ AppleObjCRuntimeV2::GetClassDescriptor(ValueObject &valobj) {
 
     // tagged pointer
     if (IsTaggedPointer(isa_pointer)) {
-      return m_tagged_pointer_vendor_ap->GetClassDescriptor(isa_pointer);
+      return m_tagged_pointer_vendor_up->GetClassDescriptor(isa_pointer);
     } else {
       ExecutionContext exe_ctx(valobj.GetExecutionContextRef());
 
@@ -1310,7 +1318,7 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapDynamic(
   ValueList arguments;
   FunctionCaller *get_class_info_function = nullptr;
 
-  if (!m_get_class_info_code.get()) {
+  if (!m_get_class_info_code) {
     Status error;
     m_get_class_info_code.reset(GetTargetRef().GetUtilityFunctionForLanguage(
         g_get_dynamic_class_info_body, eLanguageTypeObjC,
@@ -1332,7 +1340,7 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapDynamic(
         m_get_class_info_code.reset();
       }
     }
-    if (!m_get_class_info_code.get())
+    if (!m_get_class_info_code)
       return DescriptorMapUpdateResult::Fail();
 
     // Next make the runner function for our implementation utility function.
@@ -1411,7 +1419,7 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapDynamic(
     options.SetTryAllThreads(false);
     options.SetStopOthers(true);
     options.SetIgnoreBreakpoints(true);
-    options.SetTimeout(g_utility_function_timeout);
+    options.SetTimeout(process->GetUtilityExpressionTimeout());
     options.SetIsForUtilityExpr(true);
 
     Value return_value;
@@ -1502,7 +1510,16 @@ uint32_t AppleObjCRuntimeV2::ParseClassInfoArray(const DataExtractor &data,
       // Read the 32 bit hash for the class name
       const uint32_t name_hash = data.GetU32(&offset);
       ClassDescriptorSP descriptor_sp(new ClassDescriptorV2(*this, isa, NULL));
-      AddClass(isa, descriptor_sp, name_hash);
+
+      // The code in g_get_shared_cache_class_info_body sets the value of the hash
+      // to 0 to signal a demangled symbol. We use class_getName() in that code to
+      // find the class name, but this returns a demangled name for Swift symbols.
+      // For those symbols, recompute the hash here by reading their name from the
+      // runtime.
+      if (name_hash)
+        AddClass(isa, descriptor_sp, name_hash);
+      else
+        AddClass(isa, descriptor_sp, descriptor_sp->GetClassName().AsCString(nullptr));
       num_parsed++;
       if (should_log)
         log->Printf("AppleObjCRuntimeV2 added isa=0x%" PRIx64
@@ -1565,7 +1582,7 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapSharedCache() {
   ValueList arguments;
   FunctionCaller *get_shared_cache_class_info_function = nullptr;
 
-  if (!m_get_shared_cache_class_info_code.get()) {
+  if (!m_get_shared_cache_class_info_code) {
     Status error;
     m_get_shared_cache_class_info_code.reset(
         GetTargetRef().GetUtilityFunctionForLanguage(
@@ -1589,7 +1606,7 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapSharedCache() {
       }
     }
 
-    if (!m_get_shared_cache_class_info_code.get())
+    if (!m_get_shared_cache_class_info_code)
       return DescriptorMapUpdateResult::Fail();
 
     // Next make the function caller for our implementation utility function.
@@ -1662,7 +1679,7 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapSharedCache() {
     options.SetTryAllThreads(false);
     options.SetStopOthers(true);
     options.SetIgnoreBreakpoints(true);
-    options.SetTimeout(g_utility_function_timeout);
+    options.SetTimeout(process->GetUtilityExpressionTimeout());
     options.SetIsForUtilityExpr(true);
 
     Value return_value;
@@ -1686,9 +1703,7 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapSharedCache() {
       if (log)
         log->Printf("Discovered %u ObjC classes in shared cache\n",
                     num_class_infos);
-#ifdef LLDB_CONFIGURATION_DEBUG
       assert(num_class_infos <= num_classes);
-#endif
       if (num_class_infos > 0) {
         if (num_class_infos > num_classes) {
           num_class_infos = num_classes;
@@ -1946,13 +1961,13 @@ AppleObjCRuntimeV2::GetActualTypeName(ObjCLanguageRuntime::ObjCISA isa) {
 }
 
 DeclVendor *AppleObjCRuntimeV2::GetDeclVendor() {
-  if (!m_decl_vendor_ap.get())
-    m_decl_vendor_ap.reset(new AppleObjCDeclVendor(*this));
+  if (!m_decl_vendor_up)
+    m_decl_vendor_up.reset(new AppleObjCDeclVendor(*this));
 
-  return m_decl_vendor_ap.get();
+  return m_decl_vendor_up.get();
 }
 
-lldb::addr_t AppleObjCRuntimeV2::LookupRuntimeSymbol(const ConstString &name) {
+lldb::addr_t AppleObjCRuntimeV2::LookupRuntimeSymbol(ConstString name) {
   lldb::addr_t ret = LLDB_INVALID_ADDRESS;
 
   const char *name_cstr = name.AsCString();
@@ -2550,7 +2565,8 @@ bool AppleObjCRuntimeV2::NonPointerISACache::EvaluateNonPointerISA(
 
 ObjCLanguageRuntime::EncodingToTypeSP AppleObjCRuntimeV2::GetEncodingToType() {
   if (!m_encoding_to_type_sp)
-    m_encoding_to_type_sp.reset(new AppleObjCTypeEncodingParser(*this));
+    m_encoding_to_type_sp =
+        std::make_shared<AppleObjCTypeEncodingParser>(*this);
   return m_encoding_to_type_sp;
 }
 
@@ -2558,8 +2574,8 @@ lldb_private::AppleObjCRuntime::ObjCISA
 AppleObjCRuntimeV2::GetPointerISA(ObjCISA isa) {
   ObjCISA ret = isa;
 
-  if (m_non_pointer_isa_cache_ap)
-    m_non_pointer_isa_cache_ap->EvaluateNonPointerISA(isa, ret);
+  if (m_non_pointer_isa_cache_up)
+    m_non_pointer_isa_cache_up->EvaluateNonPointerISA(isa, ret);
 
   return ret;
 }
@@ -2629,6 +2645,8 @@ class ObjCExceptionRecognizedStackFrame : public RecognizedStackFrame {
     value.SetCompilerType(voidstar);
     exception = ValueObjectConstResult::Create(frame_sp.get(), value,
                                                ConstString("exception"));
+    exception = ValueObjectRecognizerSynthesizedValue::Create(
+        *exception, eValueTypeVariableArgument);
     exception = exception->GetDynamicValue(eDynamicDontRunTarget);
       
     m_arguments = ValueObjectListSP(new ValueObjectList());
@@ -2641,7 +2659,8 @@ class ObjCExceptionRecognizedStackFrame : public RecognizedStackFrame {
 };
 
 class ObjCExceptionThrowFrameRecognizer : public StackFrameRecognizer {
-  lldb::RecognizedStackFrameSP RecognizeFrame(lldb::StackFrameSP frame) {
+  lldb::RecognizedStackFrameSP
+  RecognizeFrame(lldb::StackFrameSP frame) override {
     return lldb::RecognizedStackFrameSP(
         new ObjCExceptionRecognizedStackFrame(frame));
   };

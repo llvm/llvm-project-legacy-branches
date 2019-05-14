@@ -1,9 +1,8 @@
 //===-- PlatformRemoteDarwinDevice.cpp -----------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -35,9 +34,7 @@ PlatformRemoteDarwinDevice::SDKDirectoryInfo::SDKDirectoryInfo(
   build.SetString(build_str);
 }
 
-//------------------------------------------------------------------
 /// Default Constructor
-//------------------------------------------------------------------
 PlatformRemoteDarwinDevice::PlatformRemoteDarwinDevice()
     : PlatformDarwin(false), // This is a remote platform
       m_sdk_directory_infos(), m_device_support_directory(),
@@ -45,12 +42,10 @@ PlatformRemoteDarwinDevice::PlatformRemoteDarwinDevice()
       m_last_module_sdk_idx(UINT32_MAX),
       m_connected_module_sdk_idx(UINT32_MAX) {}
 
-//------------------------------------------------------------------
 /// Destructor.
 ///
 /// The destructor is virtual since this class is designed to be
 /// inherited from by the plug-in instance.
-//------------------------------------------------------------------
 PlatformRemoteDarwinDevice::~PlatformRemoteDarwinDevice() {}
 
 void PlatformRemoteDarwinDevice::GetStatus(Stream &strm) {

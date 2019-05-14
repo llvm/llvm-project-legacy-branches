@@ -1,9 +1,8 @@
 //===-- RegisterContextWindows.cpp ------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,9 +23,7 @@ using namespace lldb_private;
 
 const DWORD kWinContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
 
-//------------------------------------------------------------------
 // Constructors and Destructors
-//------------------------------------------------------------------
 RegisterContextWindows::RegisterContextWindows(Thread &thread,
                                                uint32_t concrete_frame_idx)
     : RegisterContext(thread, concrete_frame_idx), m_context(),
@@ -79,9 +76,7 @@ uint32_t RegisterContextWindows::ConvertRegisterKindToRegisterNumber(
   return LLDB_INVALID_REGNUM;
 }
 
-//------------------------------------------------------------------
 // Subclasses can these functions if desired
-//------------------------------------------------------------------
 uint32_t RegisterContextWindows::NumSupportedHardwareBreakpoints() {
   // Support for hardware breakpoints not yet implemented.
   return 0;

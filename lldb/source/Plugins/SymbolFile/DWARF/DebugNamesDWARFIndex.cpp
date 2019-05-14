@@ -1,9 +1,8 @@
 //===-- DebugNamesDWARFIndex.cpp -------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -56,7 +55,7 @@ DIERef DebugNamesDWARFIndex::ToDIERef(const DebugNames::Entry &entry) {
   if (!cu_offset)
     return DIERef();
 
-  DWARFUnit *cu = m_debug_info.GetCompileUnit(*cu_offset);
+  DWARFUnit *cu = m_debug_info.GetCompileUnitAtOffset(*cu_offset);
   if (!cu)
     return DIERef();
 
@@ -165,7 +164,7 @@ void DebugNamesDWARFIndex::GetCompleteObjCClass(ConstString class_name,
     if (!ref)
       continue;
 
-    DWARFUnit *cu = m_debug_info.GetCompileUnit(ref.cu_offset);
+    DWARFUnit *cu = m_debug_info.GetCompileUnitAtOffset(ref.cu_offset);
     if (!cu || !cu->Supports_DW_AT_APPLE_objc_complete_type()) {
       incomplete_types.push_back(ref);
       continue;

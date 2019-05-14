@@ -1,9 +1,8 @@
 //===-- lldb-gdbserver.cpp --------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -23,7 +22,6 @@
 #include "LLDBServerUtilities.h"
 #include "Plugins/Process/gdb-remote/GDBRemoteCommunicationServerLLGS.h"
 #include "Plugins/Process/gdb-remote/ProcessGDBRemoteLog.h"
-#include "lldb/Core/PluginManager.h"
 #include "lldb/Host/ConnectionFileDescriptor.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/HostGetOpt.h"
@@ -32,6 +30,7 @@
 #include "lldb/Host/Socket.h"
 #include "lldb/Host/StringConvert.h"
 #include "lldb/Host/common/NativeProcessProtocol.h"
+#include "lldb/Target/Process.h"
 #include "lldb/Utility/Status.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Errno.h"
@@ -80,9 +79,7 @@ public:
 #endif
 }
 
-//----------------------------------------------------------------------
 // option descriptors for getopt_long_only()
-//----------------------------------------------------------------------
 
 static int g_debug = 0;
 static int g_verbose = 0;
@@ -107,9 +104,7 @@ static struct option g_long_options[] = {
     {"fd", required_argument, NULL, 'F'},
     {NULL, 0, NULL, 0}};
 
-//----------------------------------------------------------------------
 // Watch for signals
-//----------------------------------------------------------------------
 static int g_sighup_received_count = 0;
 
 #ifndef _WIN32
@@ -357,9 +352,7 @@ void ConnectToRemote(MainLoop &mainloop,
   printf("Connection established.\n");
 }
 
-//----------------------------------------------------------------------
 // main
-//----------------------------------------------------------------------
 int main_gdbserver(int argc, char *argv[]) {
   Status error;
   MainLoop mainloop;
@@ -534,7 +527,12 @@ int main_gdbserver(int argc, char *argv[]) {
     return 1;
   }
 
-  mainloop.Run();
+  Status ret = mainloop.Run();
+  if (ret.Fail()) {
+    fprintf(stderr, "lldb-server terminating due to error: %s\n",
+            ret.AsCString());
+    return 1;
+  }
   fprintf(stderr, "lldb-server exiting...\n");
 
   return 0;

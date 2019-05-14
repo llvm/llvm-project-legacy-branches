@@ -1,9 +1,8 @@
 //===-- ObjectFileMachO.h ---------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -12,16 +11,14 @@
 
 #include "lldb/Core/Address.h"
 #include "lldb/Core/FileSpecList.h"
-#include "lldb/Core/RangeMap.h"
 #include "lldb/Host/SafeMachO.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Utility/FileSpec.h"
+#include "lldb/Utility/RangeMap.h"
 #include "lldb/Utility/UUID.h"
 
-//----------------------------------------------------------------------
 // This class needs to be hidden as eventually belongs in a plugin that
 // will export the ObjectFile protocol
-//----------------------------------------------------------------------
 class ObjectFileMachO : public lldb_private::ObjectFile {
 public:
   ObjectFileMachO(const lldb::ModuleSP &module_sp, lldb::DataBufferSP &data_sp,
@@ -34,9 +31,7 @@ public:
 
   ~ObjectFileMachO() override = default;
 
-  //------------------------------------------------------------------
   // Static Functions
-  //------------------------------------------------------------------
   static void Initialize();
 
   static void Terminate();
@@ -68,9 +63,7 @@ public:
   static bool MagicBytesMatch(lldb::DataBufferSP &data_sp, lldb::addr_t offset,
                               lldb::addr_t length);
 
-  //------------------------------------------------------------------
   // Member Functions
-  //------------------------------------------------------------------
   bool ParseHeader() override;
 
   bool SetLoadAddress(lldb_private::Target &target, lldb::addr_t value,
@@ -94,7 +87,7 @@ public:
 
   lldb_private::ArchSpec GetArchitecture() override;
 
-  bool GetUUID(lldb_private::UUID *uuid) override;
+  lldb_private::UUID GetUUID() override;
 
   uint32_t GetDependentModules(lldb_private::FileSpecList &files) override;
 
@@ -133,19 +126,16 @@ public:
 
   bool AllowAssemblyEmulationUnwindPlans() override;
 
-  //------------------------------------------------------------------
   // PluginInterface protocol
-  //------------------------------------------------------------------
   lldb_private::ConstString GetPluginName() override;
 
   uint32_t GetPluginVersion() override;
 
 protected:
-  static bool
+  static lldb_private::UUID
   GetUUID(const llvm::MachO::mach_header &header,
           const lldb_private::DataExtractor &data,
-          lldb::offset_t lc_offset, // Offset to the first load command
-          lldb_private::UUID &uuid);
+          lldb::offset_t lc_offset); // Offset to the first load command
 
   static lldb_private::ArchSpec
   GetArchitecture(const llvm::MachO::mach_header &header,
@@ -195,14 +185,14 @@ protected:
   bool SectionIsLoadable(const lldb_private::Section *section);
 
   llvm::MachO::mach_header m_header;
-  static const lldb_private::ConstString &GetSegmentNameTEXT();
-  static const lldb_private::ConstString &GetSegmentNameDATA();
-  static const lldb_private::ConstString &GetSegmentNameDATA_DIRTY();
-  static const lldb_private::ConstString &GetSegmentNameDATA_CONST();
-  static const lldb_private::ConstString &GetSegmentNameOBJC();
-  static const lldb_private::ConstString &GetSegmentNameLINKEDIT();
-  static const lldb_private::ConstString &GetSegmentNameDWARF();
-  static const lldb_private::ConstString &GetSectionNameEHFrame();
+  static lldb_private::ConstString GetSegmentNameTEXT();
+  static lldb_private::ConstString GetSegmentNameDATA();
+  static lldb_private::ConstString GetSegmentNameDATA_DIRTY();
+  static lldb_private::ConstString GetSegmentNameDATA_CONST();
+  static lldb_private::ConstString GetSegmentNameOBJC();
+  static lldb_private::ConstString GetSegmentNameLINKEDIT();
+  static lldb_private::ConstString GetSegmentNameDWARF();
+  static lldb_private::ConstString GetSectionNameEHFrame();
 
   llvm::MachO::dysymtab_command m_dysymtab;
   std::vector<llvm::MachO::segment_command_64> m_mach_segments;

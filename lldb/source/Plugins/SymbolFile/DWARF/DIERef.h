@@ -1,9 +1,8 @@
 //===-- DIERef.h ------------------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -21,22 +20,18 @@ struct DIERef {
 
   DIERef(dw_offset_t c, dw_offset_t d) : cu_offset(c), die_offset(d) {}
 
-  //----------------------------------------------------------------------
   // In order to properly decode a lldb::user_id_t back into a DIERef we
   // need the DWARF file since it knows if DWARF in .o files is being used
   // (MacOSX) or if DWO files are being used. The encoding of the user ID
   // differs between the two types of DWARF.
-  //----------------------------------------------------------------------
   explicit DIERef(lldb::user_id_t uid, SymbolFileDWARF *dwarf);
 
   explicit DIERef(const DWARFFormValue &form_value);
 
-  //----------------------------------------------------------------------
   // In order to properly encode a DIERef unto a lldb::user_id_t we need
   // the DWARF file since it knows if DWARF in .o files is being used
   // (MacOSX) or if DWO files are being used. The encoding of the user ID
   // differs between the two types of DWARF.
-  //----------------------------------------------------------------------
   lldb::user_id_t GetUID(SymbolFileDWARF *dwarf) const;
 
   bool operator<(const DIERef &ref) const {

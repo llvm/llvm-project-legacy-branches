@@ -1,10 +1,9 @@
 //===-- LanguageRuntime.h ---------------------------------------------------*-
 // C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -144,6 +143,8 @@ public:
     return false;
   }
 
+  /// Identify whether a value is a language implementation detaul
+  /// that should be hidden from the user interface by default.
   virtual bool IsRuntimeSupportValue(ValueObject &valobj) { return false; }
 
   virtual void ModulesDidLoad(const ModuleList &module_list) {}
@@ -163,9 +164,7 @@ public:
   }
 
 protected:
-  //------------------------------------------------------------------
   // Classes that inherit from LanguageRuntime can see and modify these
-  //------------------------------------------------------------------
 
   LanguageRuntime(Process *process);
   Process *m_process;

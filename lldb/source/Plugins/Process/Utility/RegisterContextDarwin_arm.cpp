@@ -1,9 +1,8 @@
 //===-- RegisterContextDarwin_arm.cpp ---------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -19,6 +18,8 @@
 #include "llvm/Support/Compiler.h"
 
 #include "Plugins/Process/Utility/InstructionUtils.h"
+
+#include <memory>
 
 // Support building against older versions of LLVM, this macro was added
 // recently.
@@ -959,11 +960,9 @@ const size_t k_num_gpr_registers = llvm::array_lengthof(g_gpr_regnums);
 const size_t k_num_fpu_registers = llvm::array_lengthof(g_fpu_regnums);
 const size_t k_num_exc_registers = llvm::array_lengthof(g_exc_regnums);
 
-//----------------------------------------------------------------------
 // Register set definitions. The first definitions at register set index of
 // zero is for all registers, followed by other registers sets. The register
 // information for the all register set need not be filled in.
-//----------------------------------------------------------------------
 static const RegisterSet g_reg_sets[] = {
     {
         "General Purpose Registers", "gpr", k_num_gpr_registers, g_gpr_regnums,
@@ -983,9 +982,7 @@ const RegisterSet *RegisterContextDarwin_arm::GetRegisterSet(size_t reg_set) {
   return NULL;
 }
 
-//----------------------------------------------------------------------
 // Register information definitions for 32 bit i386.
-//----------------------------------------------------------------------
 int RegisterContextDarwin_arm::GetSetForNativeRegNum(int reg) {
   if (reg < fpu_s0)
     return GPRRegSet;
@@ -1297,7 +1294,7 @@ bool RegisterContextDarwin_arm::WriteRegister(const RegisterInfo *reg_info,
 
 bool RegisterContextDarwin_arm::ReadAllRegisterValues(
     lldb::DataBufferSP &data_sp) {
-  data_sp.reset(new DataBufferHeap(REG_CONTEXT_SIZE, 0));
+  data_sp = std::make_shared<DataBufferHeap>(REG_CONTEXT_SIZE, 0);
   if (data_sp && ReadGPR(false) == KERN_SUCCESS &&
       ReadFPU(false) == KERN_SUCCESS && ReadEXC(false) == KERN_SUCCESS) {
     uint8_t *dst = data_sp->GetBytes();

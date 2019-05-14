@@ -1,9 +1,8 @@
 //===-- SocketTest.cpp ------------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -19,6 +18,7 @@
 #include "lldb/Host/common/UDPSocket.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Testing/Support/Error.h"
 
 #ifndef LLDB_DISABLE_POSIX
 #include "lldb/Host/posix/DomainSocket.h"
@@ -29,17 +29,10 @@ using namespace lldb_private;
 class SocketTest : public testing::Test {
 public:
   void SetUp() override {
-#if defined(_MSC_VER)
-    WSADATA data;
-    ::WSAStartup(MAKEWORD(2, 2), &data);
-#endif
+    ASSERT_THAT_ERROR(Socket::Initialize(), llvm::Succeeded());
   }
 
-  void TearDown() override {
-#if defined(_MSC_VER)
-    ::WSACleanup();
-#endif
-  }
+  void TearDown() override { Socket::Terminate(); }
 
 protected:
   static void AcceptThread(Socket *listen_socket,
@@ -180,7 +173,7 @@ TEST_F(SocketTest, TCPListen0ConnectAccept) {
       [=](const TCPSocket &s) {
         char connect_remote_address[64];
         snprintf(connect_remote_address, sizeof(connect_remote_address),
-                 "localhost:%u", s.GetLocalPortNumber());
+                 "127.0.0.1:%u", s.GetLocalPortNumber());
         return std::string(connect_remote_address);
       },
       &socket_a_up, &socket_b_up);
@@ -194,7 +187,7 @@ TEST_F(SocketTest, TCPGetAddress) {
       [=](const TCPSocket &s) {
         char connect_remote_address[64];
         snprintf(connect_remote_address, sizeof(connect_remote_address),
-                 "localhost:%u", s.GetLocalPortNumber());
+                 "127.0.0.1:%u", s.GetLocalPortNumber());
         return std::string(connect_remote_address);
       },
       &socket_a_up, &socket_b_up);

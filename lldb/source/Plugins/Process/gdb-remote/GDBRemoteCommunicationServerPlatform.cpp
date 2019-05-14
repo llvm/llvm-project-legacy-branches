@@ -1,9 +1,8 @@
 //===-- GDBRemoteCommunicationServerPlatform.cpp ----------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,11 +21,10 @@
 
 #include "lldb/Host/Config.h"
 #include "lldb/Host/ConnectionFileDescriptor.h"
+#include "lldb/Host/FileAction.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
-#include "lldb/Target/FileAction.h"
 #include "lldb/Target/Platform.h"
-#include "lldb/Target/Process.h"
 #include "lldb/Target/UnixSignals.h"
 #include "lldb/Utility/JSON.h"
 #include "lldb/Utility/Log.h"
@@ -41,9 +39,7 @@ using namespace lldb;
 using namespace lldb_private;
 using namespace lldb_private::process_gdb_remote;
 
-//----------------------------------------------------------------------
 // GDBRemoteCommunicationServerPlatform constructor
-//----------------------------------------------------------------------
 GDBRemoteCommunicationServerPlatform::GDBRemoteCommunicationServerPlatform(
     const Socket::SocketProtocol socket_protocol, const char *socket_scheme)
     : GDBRemoteCommunicationServerCommon("gdb-remote.server",
@@ -87,9 +83,7 @@ GDBRemoteCommunicationServerPlatform::GDBRemoteCommunicationServerPlatform(
                         });
 }
 
-//----------------------------------------------------------------------
 // Destructor
-//----------------------------------------------------------------------
 GDBRemoteCommunicationServerPlatform::~GDBRemoteCommunicationServerPlatform() {}
 
 Status GDBRemoteCommunicationServerPlatform::LaunchGDBServer(
@@ -207,7 +201,7 @@ GDBRemoteCommunicationServerPlatform::Handle_qLaunchGDBServer(
                   port + m_port_offset);
   if (!socket_name.empty()) {
     response.PutCString("socket_name:");
-    response.PutCStringAsRawHex8(socket_name.c_str());
+    response.PutStringAsRawHex8(socket_name);
     response.PutChar(';');
   }
 
@@ -399,7 +393,7 @@ GDBRemoteCommunicationServerPlatform::Handle_jSignalsInfo(
     StringExtractorGDBRemote &packet) {
   StructuredData::Array signal_array;
 
-  const auto &signals = Host::GetUnixSignals();
+  lldb::UnixSignalsSP signals = UnixSignals::CreateForHost();
   for (auto signo = signals->GetFirstSignalNumber();
        signo != LLDB_INVALID_SIGNAL_NUMBER;
        signo = signals->GetNextSignalNumber(signo)) {

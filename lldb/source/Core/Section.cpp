@@ -1,9 +1,8 @@
 //===-- Section.cpp ---------------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -144,7 +143,7 @@ const char *Section::GetTypeAsCString() const {
 }
 
 Section::Section(const ModuleSP &module_sp, ObjectFile *obj_file,
-                 user_id_t sect_id, const ConstString &name,
+                 user_id_t sect_id, ConstString name,
                  SectionType sect_type, addr_t file_addr, addr_t byte_size,
                  lldb::offset_t file_offset, lldb::offset_t file_size,
                  uint32_t log2align, uint32_t flags,
@@ -166,7 +165,7 @@ Section::Section(const ModuleSP &module_sp, ObjectFile *obj_file,
 
 Section::Section(const lldb::SectionSP &parent_section_sp,
                  const ModuleSP &module_sp, ObjectFile *obj_file,
-                 user_id_t sect_id, const ConstString &name,
+                 user_id_t sect_id, ConstString name,
                  SectionType sect_type, addr_t file_addr, addr_t byte_size,
                  lldb::offset_t file_offset, lldb::offset_t file_size,
                  uint32_t log2align, uint32_t flags,
@@ -382,9 +381,7 @@ bool Section::Slide(addr_t slide_amount, bool slide_children) {
   return false;
 }
 
-//------------------------------------------------------------------
 /// Get the permissions as OR'ed bits from lldb::Permissions
-//------------------------------------------------------------------
 uint32_t Section::GetPermissions() const {
   uint32_t permissions = 0;
   if (m_readable)
@@ -396,9 +393,7 @@ uint32_t Section::GetPermissions() const {
   return permissions;
 }
 
-//------------------------------------------------------------------
 /// Set the permissions using bits OR'ed from lldb::Permissions
-//------------------------------------------------------------------
 void Section::SetPermissions(uint32_t permissions) {
   m_readable = (permissions & ePermissionsReadable) != 0;
   m_writable = (permissions & ePermissionsWritable) != 0;
@@ -507,7 +502,7 @@ SectionSP SectionList::GetSectionAtIndex(size_t idx) const {
 }
 
 SectionSP
-SectionList::FindSectionByName(const ConstString &section_dstr) const {
+SectionList::FindSectionByName(ConstString section_dstr) const {
   SectionSP sect_sp;
   // Check if we have a valid section string
   if (section_dstr && !m_sections.empty()) {

@@ -1,13 +1,10 @@
 //===-- CommandObjectBreakpoint.cpp -----------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-
-#include <vector>
 
 #include "CommandObjectBreakpoint.h"
 #include "CommandObjectBreakpointCommand.h"
@@ -31,6 +28,9 @@
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/StreamString.h"
 
+#include <memory>
+#include <vector>
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -42,9 +42,7 @@ static void AddBreakpointDescription(Stream *s, Breakpoint *bp,
   s->EOL();
 }
 
-//-------------------------------------------------------------------------
 // Modifiable Breakpoint Options
-//-------------------------------------------------------------------------
 #pragma mark Modify::CommandOptions
 static constexpr OptionDefinition g_breakpoint_modify_options[] = {
     // clang-format off
@@ -322,9 +320,7 @@ static constexpr OptionDefinition g_breakpoint_set_options[] = {
     // clang-format on
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointSet
-//-------------------------------------------------------------------------
 
 class CommandObjectBreakpointSet : public CommandObjectParsed {
 public:
@@ -616,7 +612,7 @@ public:
       m_move_to_nearest_code = eLazyBoolCalculate;
       m_source_regex_func_names.clear();
       m_python_class.clear();
-      m_extra_args_sp.reset(new StructuredData::Dictionary());
+      m_extra_args_sp = std::make_shared<StructuredData::Dictionary>();
       m_current_key.clear();
     }
 
@@ -901,7 +897,7 @@ protected:
       const bool show_locations = false;
       bp_sp->GetDescription(&output_stream, lldb::eDescriptionLevelInitial,
                          show_locations);
-      if (target == m_interpreter.GetDebugger().GetDummyTarget())
+      if (target == GetDebugger().GetDummyTarget())
         output_stream.Printf("Breakpoint set in dummy target, will get copied "
                              "into future targets.\n");
       else {
@@ -962,9 +958,7 @@ private:
   OptionGroupOptions m_all_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointModify
-//-------------------------------------------------------------------------
 #pragma mark Modify
 
 class CommandObjectBreakpointModify : public CommandObjectParsed {
@@ -1046,9 +1040,7 @@ private:
   OptionGroupOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointEnable
-//-------------------------------------------------------------------------
 #pragma mark Enable
 
 class CommandObjectBreakpointEnable : public CommandObjectParsed {
@@ -1137,9 +1129,7 @@ protected:
   }
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointDisable
-//-------------------------------------------------------------------------
 #pragma mark Disable
 
 class CommandObjectBreakpointDisable : public CommandObjectParsed {
@@ -1252,9 +1242,7 @@ protected:
   }
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointList
-//-------------------------------------------------------------------------
 
 #pragma mark List::CommandOptions
 static constexpr OptionDefinition g_breakpoint_list_options[] = {
@@ -1418,9 +1406,7 @@ private:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointClear
-//-------------------------------------------------------------------------
 #pragma mark Clear::CommandOptions
 
 static constexpr OptionDefinition g_breakpoint_clear_options[] = {
@@ -1578,9 +1564,7 @@ private:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointDelete
-//-------------------------------------------------------------------------
 static constexpr OptionDefinition g_breakpoint_delete_options[] = {
     // clang-format off
   { LLDB_OPT_SET_1, false, "force",             'f', OptionParser::eNoArgument, nullptr, {}, 0, eArgTypeNone, "Delete all breakpoints without querying for confirmation." },
@@ -1734,9 +1718,7 @@ private:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointName
-//-------------------------------------------------------------------------
 
 static constexpr OptionDefinition g_breakpoint_name_options[] = {
     // clang-format off
@@ -2245,9 +2227,7 @@ private:
   OptionGroupOptions m_option_group;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointName
-//-------------------------------------------------------------------------
 class CommandObjectBreakpointName : public CommandObjectMultiword {
 public:
   CommandObjectBreakpointName(CommandInterpreter &interpreter)
@@ -2272,9 +2252,7 @@ public:
   ~CommandObjectBreakpointName() override = default;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointRead
-//-------------------------------------------------------------------------
 #pragma mark Read::CommandOptions
 static constexpr OptionDefinition g_breakpoint_read_options[] = {
     // clang-format off
@@ -2403,9 +2381,7 @@ private:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectBreakpointWrite
-//-------------------------------------------------------------------------
 #pragma mark Write::CommandOptions
 static constexpr OptionDefinition g_breakpoint_write_options[] = {
     // clang-format off
@@ -2517,9 +2493,7 @@ private:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectMultiwordBreakpoint
-//-------------------------------------------------------------------------
 #pragma mark MultiwordBreakpoint
 
 CommandObjectMultiwordBreakpoint::CommandObjectMultiwordBreakpoint(

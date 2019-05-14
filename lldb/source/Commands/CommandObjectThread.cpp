@@ -1,9 +1,8 @@
 //===-- CommandObjectThread.cpp ---------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -38,9 +37,7 @@
 using namespace lldb;
 using namespace lldb_private;
 
-//-------------------------------------------------------------------------
 // CommandObjectIterateOverThreads
-//-------------------------------------------------------------------------
 
 class CommandObjectIterateOverThreads : public CommandObjectParsed {
 
@@ -239,9 +236,7 @@ protected:
   bool m_add_return = true;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectThreadBacktrace
-//-------------------------------------------------------------------------
 
 static constexpr OptionDefinition g_thread_backtrace_options[] = {
     // clang-format off
@@ -322,7 +317,10 @@ public:
             "indexes can be specified as arguments.\n"
             "Use the thread-index \"all\" to see all threads.\n"
             "Use the thread-index \"unique\" to see threads grouped by unique "
-            "call stacks.",
+            "call stacks.\n"
+            "Use 'settings set frame-format' to customize the printing of "
+            "frames in the backtrace and 'settings set thread-format' to "
+            "customize the thread header.",
             nullptr,
             eCommandRequiresProcess | eCommandRequiresThread |
                 eCommandTryTargetAPILock | eCommandProcessMustBeLaunched |
@@ -617,7 +615,7 @@ protected:
         result.AppendErrorWithFormat("empty class name for scripted step.");
         result.SetStatus(eReturnStatusFailed);
         return false;
-      } else if (!m_interpreter.GetScriptInterpreter()->CheckObjectExists(
+      } else if (!GetDebugger().GetScriptInterpreter()->CheckObjectExists(
                      m_options.m_class_name.c_str())) {
         result.AppendErrorWithFormat(
             "class for scripted step: \"%s\" does not exist.",
@@ -808,9 +806,7 @@ protected:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectThreadContinue
-//-------------------------------------------------------------------------
 
 class CommandObjectThreadContinue : public CommandObjectParsed {
 public:
@@ -843,7 +839,7 @@ public:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
     bool synchronous_execution = m_interpreter.GetSynchronous();
 
-    if (!m_interpreter.GetDebugger().GetSelectedTarget()) {
+    if (!GetDebugger().GetSelectedTarget()) {
       result.AppendError("invalid target, create a debug target using the "
                          "'target create' command");
       result.SetStatus(eReturnStatusFailed);
@@ -988,9 +984,7 @@ public:
   }
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectThreadUntil
-//-------------------------------------------------------------------------
 
 static constexpr OptionEnumValueElement g_duo_running_mode[] = {
     {eOnlyThisThread, "this-thread", "Run only this thread"},
@@ -1125,7 +1119,7 @@ protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
     bool synchronous_execution = m_interpreter.GetSynchronous();
 
-    Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+    Target *target = GetDebugger().GetSelectedTarget().get();
     if (target == nullptr) {
       result.AppendError("invalid target, create a debug target using the "
                          "'target create' command");
@@ -1329,9 +1323,7 @@ protected:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectThreadSelect
-//-------------------------------------------------------------------------
 
 class CommandObjectThreadSelect : public CommandObjectParsed {
 public:
@@ -1392,16 +1384,16 @@ protected:
   }
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectThreadList
-//-------------------------------------------------------------------------
 
 class CommandObjectThreadList : public CommandObjectParsed {
 public:
   CommandObjectThreadList(CommandInterpreter &interpreter)
       : CommandObjectParsed(
             interpreter, "thread list",
-            "Show a summary of each thread in the current target process.",
+            "Show a summary of each thread in the current target process.  "
+            "Use 'settings set thread-format' to customize the individual "
+            "thread listings.",
             "thread list",
             eCommandRequiresProcess | eCommandTryTargetAPILock |
                 eCommandProcessMustBeLaunched | eCommandProcessMustBePaused) {}
@@ -1424,9 +1416,7 @@ protected:
   }
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectThreadInfo
-//-------------------------------------------------------------------------
 
 static constexpr OptionDefinition g_thread_info_options[] = {
     // clang-format off
@@ -1519,9 +1509,7 @@ public:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectThreadException
-//-------------------------------------------------------------------------
 
 class CommandObjectThreadException : public CommandObjectIterateOverThreads {
  public:
@@ -1564,9 +1552,7 @@ class CommandObjectThreadException : public CommandObjectIterateOverThreads {
   }
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectThreadReturn
-//-------------------------------------------------------------------------
 
 static constexpr OptionDefinition g_thread_return_options[] = {
     // clang-format off
@@ -1742,9 +1728,7 @@ protected:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectThreadJump
-//-------------------------------------------------------------------------
 
 static constexpr OptionDefinition g_thread_jump_options[] = {
     // clang-format off
@@ -1890,13 +1874,9 @@ protected:
   CommandOptions m_options;
 };
 
-//-------------------------------------------------------------------------
 // Next are the subcommands of CommandObjectMultiwordThreadPlan
-//-------------------------------------------------------------------------
 
-//-------------------------------------------------------------------------
 // CommandObjectThreadPlanList
-//-------------------------------------------------------------------------
 
 static constexpr OptionDefinition g_thread_plan_list_options[] = {
     // clang-format off
@@ -2062,9 +2042,7 @@ public:
   }
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectMultiwordThreadPlan
-//-------------------------------------------------------------------------
 
 class CommandObjectMultiwordThreadPlan : public CommandObjectMultiword {
 public:
@@ -2083,9 +2061,7 @@ public:
   ~CommandObjectMultiwordThreadPlan() override = default;
 };
 
-//-------------------------------------------------------------------------
 // CommandObjectMultiwordThread
-//-------------------------------------------------------------------------
 
 CommandObjectMultiwordThread::CommandObjectMultiwordThread(
     CommandInterpreter &interpreter)

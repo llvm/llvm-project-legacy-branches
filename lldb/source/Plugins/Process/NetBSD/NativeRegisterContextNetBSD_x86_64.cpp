@@ -1,9 +1,8 @@
 //===-- NativeRegisterContextNetBSD_x86_64.cpp ---------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -32,9 +31,7 @@
 using namespace lldb_private;
 using namespace lldb_private::process_netbsd;
 
-// ----------------------------------------------------------------------------
 // Private namespace.
-// ----------------------------------------------------------------------------
 
 namespace {
 // x86 64-bit general purpose registers.
@@ -153,9 +150,7 @@ NativeRegisterContextNetBSD::CreateHostNativeRegisterContextNetBSD(
   return new NativeRegisterContextNetBSD_x86_64(target_arch, native_thread);
 }
 
-// ----------------------------------------------------------------------------
 // NativeRegisterContextNetBSD_x86_64 members.
-// ----------------------------------------------------------------------------
 
 static RegisterInfoInterface *
 CreateRegisterInfoInterface(const ArchSpec &target_arch) {
@@ -407,7 +402,7 @@ NativeRegisterContextNetBSD_x86_64::ReadRegister(const RegisterInfo *reg_info,
   case lldb_mm5_x86_64:
   case lldb_mm6_x86_64:
   case lldb_mm7_x86_64:
-    reg_value.SetBytes(&m_fpr_x86_64.fxstate.fx_xmm[reg - lldb_mm0_x86_64],
+    reg_value.SetBytes(&m_fpr_x86_64.fxstate.fx_87_ac[reg - lldb_mm0_x86_64],
                        reg_info->byte_size, endian::InlHostByteOrder());
     break;
   case lldb_xmm0_x86_64:
@@ -603,7 +598,7 @@ Status NativeRegisterContextNetBSD_x86_64::WriteRegister(
   case lldb_mm5_x86_64:
   case lldb_mm6_x86_64:
   case lldb_mm7_x86_64:
-    ::memcpy(&m_fpr_x86_64.fxstate.fx_xmm[reg - lldb_mm0_x86_64],
+    ::memcpy(&m_fpr_x86_64.fxstate.fx_87_ac[reg - lldb_mm0_x86_64],
              reg_value.GetBytes(), reg_value.GetByteSize());
     break;
   case lldb_xmm0_x86_64:

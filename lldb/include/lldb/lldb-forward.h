@@ -1,9 +1,8 @@
 //===-- lldb-forward.h ------------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -14,9 +13,7 @@
 
 #include "lldb/Utility/SharingPtr.h"
 
-//----------------------------------------------------------------------
 // lldb forward declarations
-//----------------------------------------------------------------------
 namespace lldb_private {
 
 class ABI;
@@ -240,9 +237,7 @@ class SyntheticChildren;
 class SyntheticChildrenFrontEnd;
 class TypeFilterImpl;
 class TypeSystem;
-#ifndef LLDB_DISABLE_PYTHON
 class ScriptedSyntheticChildren;
-#endif
 class Queue;
 class QueueItem;
 class QueueImpl;
@@ -276,7 +271,6 @@ class TypeEnumMemberImpl;
 class TypeEnumMemberListImpl;
 class TypeFormatImpl;
 class TypeNameSpecifierImpl;
-class TypePair;
 class TypeValidatorImpl;
 class UUID;
 class UnixSignals;
@@ -305,9 +299,7 @@ struct LineEntry;
 
 } // namespace lldb_private
 
-//----------------------------------------------------------------------
 // lldb forward declarations
-//----------------------------------------------------------------------
 namespace lldb {
 
 typedef std::shared_ptr<lldb_private::ABI> ABISP;
@@ -479,10 +471,8 @@ typedef std::shared_ptr<lldb_private::TypeNameSpecifierImpl>
 typedef std::shared_ptr<lldb_private::TypeSummaryImpl> TypeSummaryImplSP;
 typedef std::shared_ptr<lldb_private::TypeSummaryOptions> TypeSummaryOptionsSP;
 typedef std::shared_ptr<lldb_private::TypeValidatorImpl> TypeValidatorImplSP;
-#ifndef LLDB_DISABLE_PYTHON
 typedef std::shared_ptr<lldb_private::ScriptedSyntheticChildren>
     ScriptedSyntheticChildrenSP;
-#endif
 typedef std::shared_ptr<lldb_private::UnixSignals> UnixSignalsSP;
 typedef std::weak_ptr<lldb_private::UnixSignals> UnixSignalsWP;
 typedef std::shared_ptr<lldb_private::UnwindAssembly> UnwindAssemblySP;
@@ -498,9 +488,7 @@ typedef std::shared_ptr<lldb_private::Watchpoint> WatchpointSP;
 
 } // namespace lldb
 
-//----------------------------------------------------------------------
 // llvm forward declarations
-//----------------------------------------------------------------------
 namespace llvm {
 
 struct ItaniumPartialDemangler;

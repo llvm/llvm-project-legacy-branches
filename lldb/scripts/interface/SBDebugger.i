@@ -1,9 +1,8 @@
 //===-- SWIG Interface for SBDebugger ---------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -114,8 +113,7 @@ target = debugger.CreateTarget('')
 error = lldb.SBError()
 process = target.AttachToProcessWithName(debugger.GetListener(), 'PROCESS_NAME', False, error)
 
-or the equivalent arguments for AttachToProcessWithID.
-") SBDebugger;
+or the equivalent arguments for AttachToProcessWithID.") SBDebugger;
 class SBDebugger
 {
 public:
@@ -123,8 +121,8 @@ public:
     static void
     Initialize();
 
-    static void
-    Initialize(lldb::SBInitializerOptions& options);
+    static SBError
+    InitializeWithErrorHandling();
 
     static void
     Terminate();
@@ -152,6 +150,8 @@ public:
 
     bool
     IsValid() const;
+
+    explicit operator bool() const;
 
     void
     Clear ();
@@ -278,8 +278,7 @@ public:
 
     @param idx Zero-based index of the platform for which info should be
                retrieved, must be less than the value returned by
-               GetNumAvailablePlatforms().
-    ") GetAvailablePlatformInfoAtIndex;
+               GetNumAvailablePlatforms().") GetAvailablePlatformInfoAtIndex;
     lldb::SBStructuredData
     GetAvailablePlatformInfoAtIndex (uint32_t idx);
 
@@ -434,6 +433,17 @@ public:
 
     lldb::SBError
     RunREPL (lldb::LanguageType language, const char *repl_options);
+
+    %pythoncode%{
+    def __iter__(self):
+        '''Iterate over all targets in a lldb.SBDebugger object.'''
+        return lldb_iter(self, 'GetNumTargets', 'GetTargetAtIndex')
+
+    def __len__(self):
+        '''Return the number of targets in a lldb.SBDebugger object.'''
+        return self.GetNumTargets()
+    %}
+
 }; // class SBDebugger
 
 } // namespace lldb

@@ -1,9 +1,8 @@
 //===-- ABISysV_x86_64.cpp --------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -1085,9 +1084,7 @@ bool ABISysV_x86_64::GetPointerReturnRegister(const char *&name) {
 
 size_t ABISysV_x86_64::GetRedZoneSize() const { return 128; }
 
-//------------------------------------------------------------------
 // Static Functions
-//------------------------------------------------------------------
 
 ABISP
 ABISysV_x86_64::CreateInstance(lldb::ProcessSP process_sp, const ArchSpec &arch) {
@@ -1500,19 +1497,20 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectSimple(
         if (*byte_size <= altivec_reg->byte_size) {
           ProcessSP process_sp(thread.GetProcess());
           if (process_sp) {
-            std::unique_ptr<DataBufferHeap> heap_data_ap(
+            std::unique_ptr<DataBufferHeap> heap_data_up(
                 new DataBufferHeap(*byte_size, 0));
             const ByteOrder byte_order = process_sp->GetByteOrder();
             RegisterValue reg_value;
             if (reg_ctx->ReadRegister(altivec_reg, reg_value)) {
               Status error;
               if (reg_value.GetAsMemoryData(
-                      altivec_reg, heap_data_ap->GetBytes(),
-                      heap_data_ap->GetByteSize(), byte_order, error)) {
-                DataExtractor data(DataBufferSP(heap_data_ap.release()),
-                                   byte_order, process_sp->GetTarget()
-                                                   .GetArchitecture()
-                                                   .GetAddressByteSize());
+                      altivec_reg, heap_data_up->GetBytes(),
+                      heap_data_up->GetByteSize(), byte_order, error)) {
+                DataExtractor data(DataBufferSP(heap_data_up.release()),
+                                   byte_order,
+                                   process_sp->GetTarget()
+                                       .GetArchitecture()
+                                       .GetAddressByteSize());
                 return_valobj_sp = ValueObjectConstResult::Create(
                     &thread, return_compiler_type, ConstString(""), data);
               }
@@ -1524,7 +1522,7 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectSimple(
           if (altivec_reg2) {
             ProcessSP process_sp(thread.GetProcess());
             if (process_sp) {
-              std::unique_ptr<DataBufferHeap> heap_data_ap(
+              std::unique_ptr<DataBufferHeap> heap_data_up(
                   new DataBufferHeap(*byte_size, 0));
               const ByteOrder byte_order = process_sp->GetByteOrder();
               RegisterValue reg_value;
@@ -1534,17 +1532,18 @@ ValueObjectSP ABISysV_x86_64::GetReturnValueObjectSimple(
 
                 Status error;
                 if (reg_value.GetAsMemoryData(
-                        altivec_reg, heap_data_ap->GetBytes(),
+                        altivec_reg, heap_data_up->GetBytes(),
                         altivec_reg->byte_size, byte_order, error) &&
                     reg_value2.GetAsMemoryData(
                         altivec_reg2,
-                        heap_data_ap->GetBytes() + altivec_reg->byte_size,
-                        heap_data_ap->GetByteSize() - altivec_reg->byte_size,
+                        heap_data_up->GetBytes() + altivec_reg->byte_size,
+                        heap_data_up->GetByteSize() - altivec_reg->byte_size,
                         byte_order, error)) {
-                  DataExtractor data(DataBufferSP(heap_data_ap.release()),
-                                     byte_order, process_sp->GetTarget()
-                                                     .GetArchitecture()
-                                                     .GetAddressByteSize());
+                  DataExtractor data(DataBufferSP(heap_data_up.release()),
+                                     byte_order,
+                                     process_sp->GetTarget()
+                                         .GetArchitecture()
+                                         .GetAddressByteSize());
                   return_valobj_sp = ValueObjectConstResult::Create(
                       &thread, return_compiler_type, ConstString(""), data);
                 }
@@ -1896,9 +1895,7 @@ lldb_private::ConstString ABISysV_x86_64::GetPluginNameStatic() {
   return g_name;
 }
 
-//------------------------------------------------------------------
 // PluginInterface protocol
-//------------------------------------------------------------------
 
 lldb_private::ConstString ABISysV_x86_64::GetPluginName() {
   return GetPluginNameStatic();

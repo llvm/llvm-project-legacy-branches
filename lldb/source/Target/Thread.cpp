@@ -1,9 +1,8 @@
 //===-- Thread.cpp ----------------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -51,6 +50,8 @@
 #include "lldb/Utility/StreamString.h"
 #include "lldb/lldb-enumerations.h"
 
+#include <memory>
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -91,7 +92,7 @@ enum {
 
 class ThreadOptionValueProperties : public OptionValueProperties {
 public:
-  ThreadOptionValueProperties(const ConstString &name)
+  ThreadOptionValueProperties(ConstString name)
       : OptionValueProperties(name) {}
 
   // This constructor is used when creating ThreadOptionValueProperties when it
@@ -122,12 +123,12 @@ public:
 
 ThreadProperties::ThreadProperties(bool is_global) : Properties() {
   if (is_global) {
-    m_collection_sp.reset(
-        new ThreadOptionValueProperties(ConstString("thread")));
+    m_collection_sp =
+        std::make_shared<ThreadOptionValueProperties>(ConstString("thread"));
     m_collection_sp->Initialize(g_properties);
   } else
-    m_collection_sp.reset(
-        new ThreadOptionValueProperties(Thread::GetGlobalProperties().get()));
+    m_collection_sp = std::make_shared<ThreadOptionValueProperties>(
+        Thread::GetGlobalProperties().get());
 }
 
 ThreadProperties::~ThreadProperties() = default;
@@ -137,9 +138,9 @@ const RegularExpression *ThreadProperties::GetSymbolsToAvoidRegexp() {
   return m_collection_sp->GetPropertyAtIndexAsOptionValueRegex(nullptr, idx);
 }
 
-FileSpecList &ThreadProperties::GetLibrariesToAvoid() const {
+FileSpecList ThreadProperties::GetLibrariesToAvoid() const {
   const uint32_t idx = ePropertyStepAvoidLibraries;
-  OptionValueFileSpecList *option_value =
+  const OptionValueFileSpecList *option_value =
       m_collection_sp->GetPropertyAtIndexAsOptionValueFileSpecList(nullptr,
                                                                    false, idx);
   assert(option_value);
@@ -170,11 +171,9 @@ uint64_t ThreadProperties::GetMaxBacktraceDepth() const {
       nullptr, idx, g_properties[idx].default_uint_value != 0);
 }
 
-//------------------------------------------------------------------
 // Thread Event Data
-//------------------------------------------------------------------
 
-const ConstString &Thread::ThreadEventData::GetFlavorString() {
+ConstString Thread::ThreadEventData::GetFlavorString() {
   static ConstString g_flavor("Thread::ThreadEventData");
   return g_flavor;
 }
@@ -233,9 +232,7 @@ Thread::ThreadEventData::GetStackFrameFromEvent(const Event *event_ptr) {
   return frame_sp;
 }
 
-//------------------------------------------------------------------
 // Thread class
-//------------------------------------------------------------------
 
 ConstString &Thread::GetStaticBroadcasterClass() {
   static ConstString class_name("lldb.thread");
@@ -255,7 +252,7 @@ Thread::Thread(Process &process, lldb::tid_t tid, bool use_invalid_index_id)
       m_curr_frames_sp(), m_prev_frames_sp(),
       m_resume_signal(LLDB_INVALID_SIGNAL_NUMBER),
       m_resume_state(eStateRunning), m_temporary_resume_state(eStateRunning),
-      m_unwinder_ap(), m_destroy_called(false),
+      m_unwinder_up(), m_destroy_called(false),
       m_override_should_notify(eLazyBoolCalculate),
       m_extended_info_fetched(false), m_extended_info() {
   Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_OBJECT));
@@ -305,7 +302,7 @@ void Thread::DestroyThread() {
 
   m_stop_info_sp.reset();
   m_reg_context_sp.reset();
-  m_unwinder_ap.reset();
+  m_unwinder_up.reset();
   std::lock_guard<std::recursive_mutex> guard(m_frame_mutex);
   m_curr_frames_sp.reset();
   m_prev_frames_sp.reset();
@@ -561,8 +558,8 @@ bool Thread::RestoreRegisterStateFromCheckpoint(
         // Clear out all stack frames as our world just changed.
         ClearStackFrames();
         reg_ctx_sp->InvalidateIfNeeded(true);
-        if (m_unwinder_ap.get())
-          m_unwinder_ap->Clear();
+        if (m_unwinder_up)
+          m_unwinder_up->Clear();
         return ret;
       }
     }
@@ -1384,9 +1381,9 @@ ThreadPlanSP Thread::QueueThreadPlanForStepOverRange(
     const SymbolContext &addr_context, lldb::RunMode stop_other_threads,
     Status &status, LazyBool step_out_avoids_code_withoug_debug_info) {
   ThreadPlanSP thread_plan_sp;
-  thread_plan_sp.reset(new ThreadPlanStepOverRange(
+  thread_plan_sp = std::make_shared<ThreadPlanStepOverRange>(
       *this, range, addr_context, stop_other_threads,
-      step_out_avoids_code_withoug_debug_info));
+      step_out_avoids_code_withoug_debug_info);
 
   status = QueueThreadPlan(thread_plan_sp, abort_other_plans);
   return thread_plan_sp;
@@ -1398,10 +1395,12 @@ ThreadPlanSP Thread::QueueThreadPlanForStepOverRange(
     bool abort_other_plans, const LineEntry &line_entry,
     const SymbolContext &addr_context, lldb::RunMode stop_other_threads,
     Status &status, LazyBool step_out_avoids_code_withoug_debug_info) {
+  const bool include_inlined_functions = true;
+  auto address_range =
+      line_entry.GetSameLineContiguousAddressRange(include_inlined_functions);
   return QueueThreadPlanForStepOverRange(
-      abort_other_plans, line_entry.GetSameLineContiguousAddressRange(),
-      addr_context, stop_other_threads, status,
-      step_out_avoids_code_withoug_debug_info);
+      abort_other_plans, address_range, addr_context, stop_other_threads,
+      status, step_out_avoids_code_withoug_debug_info);
 }
 
 ThreadPlanSP Thread::QueueThreadPlanForStepInRange(
@@ -1431,8 +1430,10 @@ ThreadPlanSP Thread::QueueThreadPlanForStepInRange(
     lldb::RunMode stop_other_threads, Status &status,
     LazyBool step_in_avoids_code_without_debug_info,
     LazyBool step_out_avoids_code_without_debug_info) {
+  const bool include_inlined_functions = false;
   return QueueThreadPlanForStepInRange(
-      abort_other_plans, line_entry.GetSameLineContiguousAddressRange(),
+      abort_other_plans,
+      line_entry.GetSameLineContiguousAddressRange(include_inlined_functions),
       addr_context, step_in_target, stop_other_threads, status,
       step_in_avoids_code_without_debug_info,
       step_out_avoids_code_without_debug_info);
@@ -1599,15 +1600,13 @@ void Thread::CalculateExecutionContext(ExecutionContext &exe_ctx) {
 }
 
 StackFrameListSP Thread::GetStackFrameList() {
-  StackFrameListSP frame_list_sp;
   std::lock_guard<std::recursive_mutex> guard(m_frame_mutex);
-  if (m_curr_frames_sp) {
-    frame_list_sp = m_curr_frames_sp;
-  } else {
-    frame_list_sp.reset(new StackFrameList(*this, m_prev_frames_sp, true));
-    m_curr_frames_sp = frame_list_sp;
-  }
-  return frame_list_sp;
+
+  if (!m_curr_frames_sp)
+    m_curr_frames_sp =
+        std::make_shared<StackFrameList>(*this, m_prev_frames_sp, true);
+
+  return m_curr_frames_sp;
 }
 
 void Thread::ClearStackFrames() {
@@ -2055,7 +2054,7 @@ size_t Thread::GetStackFrameStatus(Stream &strm, uint32_t first_frame,
 }
 
 Unwind *Thread::GetUnwinder() {
-  if (!m_unwinder_ap) {
+  if (!m_unwinder_up) {
     const ArchSpec target_arch(CalculateTarget()->GetArchitecture());
     const llvm::Triple::ArchType machine = target_arch.GetMachine();
     switch (machine) {
@@ -2073,16 +2072,16 @@ Unwind *Thread::GetUnwinder() {
     case llvm::Triple::ppc64le:
     case llvm::Triple::systemz:
     case llvm::Triple::hexagon:
-      m_unwinder_ap.reset(new UnwindLLDB(*this));
+      m_unwinder_up.reset(new UnwindLLDB(*this));
       break;
 
     default:
       if (target_arch.GetTriple().getVendor() == llvm::Triple::Apple)
-        m_unwinder_ap.reset(new UnwindMacOSXFrameBackchain(*this));
+        m_unwinder_up.reset(new UnwindMacOSXFrameBackchain(*this));
       break;
     }
   }
-  return m_unwinder_ap.get();
+  return m_unwinder_up.get();
 }
 
 void Thread::Flush() {

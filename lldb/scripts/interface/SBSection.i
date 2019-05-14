@@ -1,9 +1,8 @@
 //===-- SWIG Interface for SBSection ----------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -50,6 +49,8 @@ public:
     bool
     IsValid () const;
 
+    explicit operator bool() const;
+
     const char *
     GetName ();
 
@@ -70,7 +71,7 @@ public:
 
     lldb::addr_t
     GetLoadAddress (lldb::SBTarget &target);
-    
+
     lldb::addr_t
     GetByteSize ();
 
@@ -79,7 +80,7 @@ public:
 
     uint64_t
     GetFileByteSize ();
-    
+
     lldb::SBData
     GetSectionData ();
 
@@ -94,29 +95,34 @@ public:
     GetPermissions() const;
 
     %feature("docstring", "
-    //------------------------------------------------------------------
-    /// Return the size of a target's byte represented by this section
-    /// in numbers of host bytes. Note that certain architectures have
-    /// varying minimum addressable unit (i.e. byte) size for their 
-    /// CODE or DATA buses.
-    ///
-    /// @return
-    ///     The number of host (8-bit) bytes needed to hold a target byte
-    //------------------------------------------------------------------
-    ") GetTargetByteSize;
+    Return the size of a target's byte represented by this section
+    in numbers of host bytes. Note that certain architectures have
+    varying minimum addressable unit (i.e. byte) size for their
+    CODE or DATA buses.
+
+    @return
+        The number of host (8-bit) bytes needed to hold a target byte") GetTargetByteSize;
     uint32_t
     GetTargetByteSize ();
 
     bool
     GetDescription (lldb::SBStream &description);
-    
+
     bool
     operator == (const lldb::SBSection &rhs);
 
     bool
     operator != (const lldb::SBSection &rhs);
-     
+
     %pythoncode %{
+        def __iter__(self):
+            '''Iterate over all subsections in a lldb.SBSection object.'''
+            return lldb_iter(self, 'GetNumSubSections', 'GetSubSectionAtIndex')
+
+        def __len__(self):
+            '''Return the number of subsections in a lldb.SBSection object.'''
+            return self.GetNumSubSections()
+
         def get_addr(self):
             return SBAddress(self, 0)
 
